@@ -156,7 +156,10 @@
                 <tbody>
                     {% for f in l.fracturas %}
                     <tr>
-                        <td>#{{ f.id }}{% if f.abierta %} <span class="badge bg-success" style="font-size:.55rem">en curso</span>{% endif %}</td>
+                        <td>#{{ f.id }}{% if f.abierta %}
+                            {% if l.ociosa %}<span class="badge bg-secondary" style="font-size:.55rem">última</span>
+                            {% else %}<span class="badge bg-success" style="font-size:.55rem">en curso</span>{% endif %}
+                        {% endif %}</td>
                         <td class="font-monospace">{{ f.arrival|date:"d/m/y" }} → {% if f.abierta %}hoy{% else %}{{ f.hasta|date:"d/m/y" }}{% endif %}</td>
                         <td class="text-end">{{ f.dias }}</td>
                         <td class="text-end {% if f.pct >= 80 %}text-success{% elif f.pct >= 50 %}text-warning{% else %}text-danger{% endif %}">{{ f.pct }}%</td>
