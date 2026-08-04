@@ -53,6 +53,9 @@ logger = logging.getLogger(__name__)
 
 # IDs de minerales basicos en EVE Online
 MINERAL_IDS = [34, 35, 36, 37, 38, 39, 40, 11399]
+# Grupos de mineral lunar (Ubiquitous..Exceptional). Se anaden al descubrimiento
+# porque NO rinden ninguno de los 8 minerales clasicos y se caian de la lista.
+MOON_ORE_GROUPS_STR = "1884,1920,1921,1922,1923"
 # groupID de ice en el SDE de EVE
 ICE_GROUP_ID = 465
 # Region The Forge (Jita) para precios de referencia
@@ -260,10 +263,11 @@ def _get_ore_data():
             cursor.execute(
                 "SELECT DISTINCT it.id, it.name, COALESCE(it.portionSize, 100) "
                 "FROM eve_sde_itemtype it "
-                "JOIN eve_sde_itemtypematerials itm ON itm.item_type_id = it.id "
-                "WHERE itm.material_item_type_id IN (" + mineral_ids_str + ") "
-                "AND it.published = 1 "
-                "ORDER BY it.name"
+                "WHERE it.published = 1 AND ("
+                "  it.group_id IN (" + MOON_ORE_GROUPS_STR + ") OR "
+                "  it.id IN (SELECT itm.item_type_id FROM eve_sde_itemtypematerials itm "
+                "            WHERE itm.material_item_type_id IN (" + mineral_ids_str + "))"
+                ") ORDER BY it.name"
             )
             rows = cursor.fetchall()
     except Exception:
@@ -272,10 +276,11 @@ def _get_ore_data():
                 cursor.execute(
                     "SELECT DISTINCT it.id, it.name "
                     "FROM eve_sde_itemtype it "
-                    "JOIN eve_sde_itemtypematerials itm ON itm.item_type_id = it.id "
-                    "WHERE itm.material_item_type_id IN (" + mineral_ids_str + ") "
-                    "AND it.published = 1 "
-                    "ORDER BY it.name"
+                    "WHERE it.published = 1 AND ("
+                    "  it.group_id IN (" + MOON_ORE_GROUPS_STR + ") OR "
+                    "  it.id IN (SELECT itm.item_type_id FROM eve_sde_itemtypematerials itm "
+                    "            WHERE itm.material_item_type_id IN (" + mineral_ids_str + "))"
+                    ") ORDER BY it.name"
                 )
                 rows = [(r[0], r[1], 100) for r in cursor.fetchall()]
         except Exception as exc2:
@@ -303,24 +308,61 @@ def _get_ore_data():
     portion_by_id = {r[0]: r[2] for r in raw_ores}
     ore_materials = {}
 
+    # Rendimiento por unidad. SIN filtrar a los 8 minerales clasicos: el mineral
+    # lunar rinde materiales lunares (Hydrocarbons, Chromium, Silicates...) y
+    # filtrarlos dejaba a Chromite y Lavish Chromite valorados a cero.
+    crudo_mats = {}
     if raw_ids:
         ph = ",".join(["%s"] * len(raw_ids))
         with connection.cursor() as cursor:
             cursor.execute(
                 "SELECT item_type_id, material_item_type_id, quantity "
                 "FROM eve_sde_itemtypematerials "
-                "WHERE item_type_id IN (" + ph + ") "
-                "AND material_item_type_id IN (" + mineral_ids_str + ")",
+                "WHERE item_type_id IN (" + ph + ")",
                 raw_ids
             )
             for ore_id, mat_id, qty in cursor.fetchall():
-                ps = portion_by_id.get(ore_id, 100)
                 if qty is None:
                     continue
-                qty_per_unit = float(qty) / max(ps, 1)
-                ore_materials.setdefault(ore_id, []).append((mat_id, qty_per_unit))
+                ps = portion_by_id.get(ore_id, 100)
+                crudo_mats.setdefault(ore_id, {})[mat_id] = float(qty)
+                ore_materials.setdefault(ore_id, []).append(
+                    (mat_id, float(qty) / max(ps, 1)))
 
-    return raw_ores, ore_materials, compressed_map
+    # Ratio de compresion DERIVADO del SDE: cuantas unidades crudas cunde un
+    # comprimido. Se compara el rendimiento de los dos por un material comun.
+    #
+    # NO usar `portion_size` para esto: es el tamano de tanda de REPROCESADO,
+    # no el ratio. Confundirlos hizo que el contrato del tax lunar pidiera el 1%
+    # de lo debido. Verificado 2026-08-04: Veldspar 34:400 vs Compressed
+    # Veldspar 34:400, y Chromite 16633:10,16641:40 igual que su comprimido.
+    # Todo el mineral comprime 1:1, pero se deriva por si algun ore no lo cumple.
+    ratios = {}
+    comp_ids = [c for c in compressed_map.values()]
+    comp_mats = {}
+    if comp_ids:
+        ph = ",".join(["%s"] * len(comp_ids))
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT item_type_id, material_item_type_id, quantity "
+                "FROM eve_sde_itemtypematerials "
+                "WHERE item_type_id IN (" + ph + ")",
+                comp_ids
+            )
+            for cid, mat_id, qty in cursor.fetchall():
+                if qty:
+                    comp_mats.setdefault(cid, {})[mat_id] = float(qty)
+
+    for raw_id, comp_id in compressed_map.items():
+        r_mats, c_mats = crudo_mats.get(raw_id, {}), comp_mats.get(comp_id, {})
+        comunes = set(r_mats) & set(c_mats)
+        if not comunes:
+            continue
+        mat = max(comunes, key=lambda m: r_mats[m])
+        if r_mats[mat]:
+            ratios[raw_id] = c_mats[mat] / r_mats[mat]
+
+    return raw_ores, ore_materials, compressed_map, ratios
 
 
 def _get_ice_data():
@@ -502,15 +544,17 @@ def update_ore_prices():
 
     Debe ejecutarse ANTES de aggregate_character_monthly_ore.
     """
-    raw_ores, ore_materials, compressed_map = _get_ore_data()
+    raw_ores, ore_materials, compressed_map, ratios = _get_ore_data()
     if not raw_ores:
         logger.warning("update_ore_prices: no se encontraron ores en SDE")
         return 0
 
+    todos_los_materiales = {m for mats in ore_materials.values() for m, _ in mats}
     all_ids = (
         [tid for tid, _, _ in raw_ores]
         + list(compressed_map.values())
         + MINERAL_IDS
+        + list(todos_los_materiales)
     )
     prices = _fetch_fuzzwork_prices(list(set(all_ids)))
 
@@ -525,7 +569,10 @@ def update_ore_prices():
         comp_id = compressed_map.get(ore_id)
         if comp_id and comp_id in prices:
             comp_sell = prices[comp_id].get("sell", 0)
-            price_compressed = comp_sell / max(portion_size, 1)
+            # Precio por unidad CRUDA equivalente. El ratio sale del SDE, no de
+            # `portion_size` (ver _get_ore_data): con la division por 100 este
+            # valor salia 100 veces por debajo del reprocesado.
+            price_compressed = comp_sell / max(ratios.get(ore_id, 1.0), 0.0001)
         else:
             price_compressed = 0.0
 
