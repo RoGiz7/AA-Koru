@@ -2698,6 +2698,13 @@ def rebuild_moon_tax_ledger(period=None):
     if period:
         periodo_sql = "AND DATE_FORMAT(mo.last_updated, '%%Y-%%m') = %s"
         params.append(period)
+    else:
+        # Sin corte se generaria deuda desde 2023 aplicando las tasas de HOY a
+        # minado viejo: 1.706 filas y ~8 M de comprimidos sin sentido.
+        desde = (cfg.period_desde or "").strip()
+        if desde:
+            periodo_sql = "AND DATE_FORMAT(mo.last_updated, '%%Y-%%m') >= %s"
+            params.append(desde)
 
     sql = SQL_DEUDA_POR_MINERAL.format(
         corps=",".join(["%s"] * len(corp_ids)), periodo=periodo_sql)

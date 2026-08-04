@@ -47,6 +47,11 @@ class MoonTaxConfig(models.Model):
     rare_rate         = models.DecimalField(max_digits=5, decimal_places=2, default=18.00)
     exceptional_rate  = models.DecimalField(max_digits=5, decimal_places=2, default=25.00)
     is_active         = models.BooleanField(default=True)
+    period_desde      = models.CharField(
+        max_length=7, default="2026-07",
+        help_text="Primer período que se cobra (YYYY-MM). El minado anterior NO genera deuda: "
+                  "aplicar las tasas de hoy a minado viejo produce cifras sin sentido. "
+                  "Arranca en 2026-07 porque la fractura #190 se repartio entre julio y agosto.")
     updated_at        = models.DateTimeField(auto_now=True)
 
     class Meta:
