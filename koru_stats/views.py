@@ -1901,6 +1901,12 @@ def _fracturas_por_estructura(structure_ids, inicio_periodo, fin_periodo):
         lista = [f for f in lista if f["arrival"]]
         lista.sort(key=lambda x: x["arrival"], reverse=True)
         out = []
+        proxima = None
+        for f in lista:                        # futuras: la mas cercana
+            if f["arrival"] > ahora and (proxima is None or f["arrival"] < proxima):
+                proxima = f["arrival"]
+
+        llegadas = [f for f in lista if f["arrival"] <= tope]
         for i, f in enumerate(lista):
             if f["arrival"] > tope:
                 continue                       # todavia no ha llegado
@@ -1939,7 +1945,7 @@ def _fracturas_por_estructura(structure_ids, inicio_periodo, fin_periodo):
                 "detalle": detalle, "disponible": td, "minado": tm,
                 "perdido": max(td - tm, 0),
                 "pct": round(100 * tm / td, 1) if td else 0,
-                "abierta": i == 0,
+                "abierta": bool(llegadas and f["id"] == llegadas[0]["id"]),
                 "en_periodo": en_periodo,
                 "desborda": desborda,
             })
@@ -1950,7 +1956,11 @@ def _fracturas_por_estructura(structure_ids, inicio_periodo, fin_periodo):
         delp = [f for f in out if f["en_periodo"]] or out[:1]
         rd = sum(f["disponible"] for f in delp)
         rm = sum(f["minado"] for f in delp)
+        ultima = llegadas[0]["arrival"] if llegadas else None
         salida[sid] = {
+            "proxima": proxima,
+            "ultima":  ultima,
+            "dias_sin_fractura": round((ahora - ultima).total_seconds() / 86400, 1) if ultima else None,
             "lista":   out,
             "n":       len(delp),
             "fechas":  [f["arrival"] for f in delp],
@@ -4166,7 +4176,20 @@ def _lunas_pyl():
             "tax_isk":      sum(x["tax_isk"] for x in lista),
             "coste":        sum(x["coste"] for x in lista),
             "margen_corp":  sum(x["margen_corp"] for x in lista),
-            "activa":       bool(lista and lista[0].get("abierta")),
+            # Ociosa = encendida, SIN fractura programada y la ultima llego hace
+            # mas de 30 dias. Antes se miraba el indice 0 de la lista completa,
+            # pero las futuras se descartaban despues de asignarlo: la luna que
+            # producia salia "ociosa" y la parada desde marzo, "en curso".
+            "proxima":      info.get("proxima"),
+            "dias_sin":     info.get("dias_sin_fractura"),
+            "ociosa":       bool(
+                                not info.get("proxima")
+                                and (info.get("dias_sin_fractura") is None
+                                     or info.get("dias_sin_fractura") > 30)
+                            ),
+            "activa":       bool(info.get("proxima")
+                                 or (info.get("dias_sin_fractura") is not None
+                                     and info.get("dias_sin_fractura") <= 30)),
         })
 
     salida.sort(key=lambda x: x["margen_corp"])
@@ -4187,6 +4210,6 @@ def corp_moons_dashboard(request):
         "kpi_coste_mes": sum(l["coste_mes"] for l in lunas),
         "kpi_margen":   sum(l["tax_isk"] for l in lunas) - sum(l["coste"] for l in lunas),
         "kpi_lunas":    len(lunas),
-        "kpi_ociosas":  sum(1 for l in lunas if not l["activa"] and l["coste_dia"]),
+        "kpi_ociosas":  sum(1 for l in lunas if l["ociosa"] and l["coste_dia"]),
     }
     return render(request, "koru_stats/corp_moons_dashboard.html", context)

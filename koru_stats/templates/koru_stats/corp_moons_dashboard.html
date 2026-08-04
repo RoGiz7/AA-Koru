@@ -72,14 +72,36 @@
         </div>
     </div>
 
+    {% if lunas %}
+    <ul class="nav nav-pills mb-3 flex-wrap gap-1" role="tablist">
+        {% for l in lunas %}
+        <li class="nav-item">
+            <button class="nav-link {% if forloop.first %}active{% endif %} d-flex align-items-center gap-2"
+                    data-bs-toggle="pill" data-bs-target="#luna{{ l.structure_id }}" type="button">
+                <i class="fas fa-moon {% if l.ociosa %}text-danger{% else %}text-warning{% endif %}"></i>
+                <span class="font-monospace" style="font-size:.8rem">{{ l.nombre }}</span>
+                <span class="badge {% if l.margen_corp >= 0 %}bg-success{% else %}bg-danger{% endif %}">{{ l.margen_corp|rkisk }}</span>
+                {% if l.ociosa %}<i class="fas fa-triangle-exclamation text-danger" title="Ociosa"></i>{% endif %}
+            </button>
+        </li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+
+    <div class="tab-content">
     {% for l in lunas %}
-    <div class="card mb-4 {% if not l.activa and l.coste_dia %}border-danger{% endif %}">
+    <div class="tab-pane fade {% if forloop.first %}show active{% endif %}" id="luna{{ l.structure_id }}" role="tabpanel">
+    <div class="card mb-4 {% if l.ociosa and l.coste_dia %}border-danger{% endif %}">
         <div class="card-header d-flex align-items-center gap-2 flex-wrap">
             <i class="fas fa-moon text-warning"></i>
             <strong class="font-monospace">{{ l.nombre }}</strong>
             <span class="badge bg-secondary">{{ l.corp }}</span>
-            {% if l.activa %}<span class="badge bg-success">fractura en curso</span>
-            {% elif l.coste_dia %}<span class="badge bg-danger">ociosa — quemando combustible</span>{% endif %}
+            {% if l.ociosa %}
+                <span class="badge bg-danger">ociosa — {{ l.dias_sin|floatformat:0 }} días sin fracturar</span>
+            {% elif l.dias_sin != None and l.dias_sin <= 30 %}
+                <span class="badge bg-success">fractura en curso</span>
+            {% endif %}
+            {% if l.proxima %}<span class="badge bg-info">próxima {{ l.proxima|date:"d/m/Y" }}</span>{% endif %}
             <span class="ms-auto small text-muted">
                 {% if l.consumo %}{{ l.consumo }} bl/h · {{ l.coste_mes|rkisk }} ISK/mes{% else %}sin datos de combustible{% endif %}
             </span>
@@ -152,11 +174,13 @@
 
         </div>
     </div>
+    </div>
     {% empty %}
     <div class="alert alert-info">
         <i class="fas fa-info-circle me-2"></i>No hay lunas de vuestras corps con fracturas registradas.
     </div>
     {% endfor %}
+    </div>
 
     <div class="text-muted" style="font-size:.7rem">
         <i class="fas fa-info-circle me-1"></i>
