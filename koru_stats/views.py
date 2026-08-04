@@ -1385,39 +1385,64 @@ def _generar_contrato_comprimidos(nombre, detalle_ores, rates, period_str):
     """
     Genera el texto copy-paste del contrato de comprimidos para un piloto.
     Ratio universal: 100 unidades normales = 1 comprimido.
+
+    IMPORTANTE (fix 2026-08): se agrega PRIMERO por tipo de mineral, sumando
+    todos los alts, y SOLO DESPUES se aplica la tasa y se pasa a comprimidos.
+    Antes se redondeaba fila a fila (alt x mineral) con `// 100`, perdiendo
+    hasta 99 unidades por fila: con 12 alts x 2 minerales el contrato salia
+    sistematicamente un 4-6% por debajo del tax adeudado.
     """
-    comprimidos = {}
-    total_isk = 0
+    from decimal import Decimal, ROUND_HALF_UP
 
+    # 1) Agregar por mineral (todos los alts juntos)
+    por_ore = {}
     for r in detalle_ores:
-        group_id = int(r["group_id"])
-        tasa     = rates.get(group_id, 0)
-        unidades = int(r["unidades"])
-        isk      = float(r["isk_estimado"] or 0)
+        acc = por_ore.setdefault(r["ore"], {
+            "group_id": int(r["group_id"]), "unidades": 0, "isk": 0.0,
+        })
+        acc["unidades"] += int(r["unidades"])
+        acc["isk"]      += float(r["isk_estimado"] or 0)
 
-        tax_unidades   = int(unidades * tasa)
-        tax_comprimidos = tax_unidades // 100
-        tax_isk        = isk * tasa
-        total_isk     += tax_isk
+    # 2) Aplicar tasa y convertir a comprimidos UNA sola vez por mineral
+    comprimidos     = {}
+    total_isk       = 0.0   # tax teorico exacto
+    valor_entregado = 0.0   # valor de los comprimidos que realmente se piden
 
-        if tax_comprimidos > 0:
-            comp_name = f"Compressed {r['ore']}"
-            comprimidos[comp_name] = comprimidos.get(comp_name, 0) + tax_comprimidos
+    for ore, acc in por_ore.items():
+        tasa = rates.get(acc["group_id"], 0)
+        if not tasa:
+            continue
+
+        total_isk += acc["isk"] * tasa
+
+        tax_unidades    = Decimal(acc["unidades"]) * Decimal(str(tasa))
+        tax_comprimidos = int(
+            (tax_unidades / Decimal(100)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        )
+        if tax_comprimidos <= 0:
+            continue
+
+        precio_unit      = (acc["isk"] / acc["unidades"]) if acc["unidades"] else 0.0
+        valor_entregado += tax_comprimidos * 100 * precio_unit
+
+        comp_name = "Compressed {}".format(ore)
+        comprimidos[comp_name] = comprimidos.get(comp_name, 0) + tax_comprimidos
 
     if not comprimidos:
         return None
 
     # Texto para copiar en el contrato de EVE
-    lineas = [f"=== Tax Lunar Rekium — {nombre} — {period_str} ==="]
+    lineas = ["=== Tax Lunar Rekium \u2014 {} \u2014 {} ===".format(nombre, period_str)]
     for comp_name in sorted(comprimidos.keys()):
-        cantidad = comprimidos[comp_name]
-        lineas.append(f"{comp_name}: {cantidad:,}")
-    lineas.append(f"--- Valor ISK referencia: {total_isk/1e6:.2f} M ISK ---")
+        lineas.append("{}: {:,}".format(comp_name, comprimidos[comp_name]))
+    lineas.append("--- Valor ISK referencia: {:.2f} M ISK ---".format(valor_entregado / 1e6))
 
     return {
-        "texto":       "\n".join(lineas),
-        "comprimidos": comprimidos,
-        "total_isk":   total_isk,
+        "texto":           "\n".join(lineas),
+        "comprimidos":     comprimidos,
+        "total_isk":       total_isk,
+        "valor_entregado": valor_entregado,
+        "desvio_isk":      valor_entregado - total_isk,
     }
 
 @permission_required("koru_stats.moon_tax_access")
@@ -1919,7 +1944,8 @@ def moon_dashboard_v2(request):
 
 SQL_MOON_OBS_POR_LUNA = """
     SELECT
-        COALESCE(mn.name, CONCAT('Structure ', mo.structure_id)) AS luna,
+        COALESCE(mn.name, el.location_name,
+                 CONCAT('Structure ', mo.structure_id))                   AS luna,
         mo.structure_id,
         COUNT(DISTINCT mo.character_id)                                    AS mineros,
         SUM(mo.quantity)                                                   AS unidades,
@@ -1927,12 +1953,13 @@ SQL_MOON_OBS_POR_LUNA = """
         ROUND(SUM(mo.quantity * COALESCE(omp.price_raw, 0)), 2)        AS isk_estimado
     FROM moons_miningobservation mo
     LEFT JOIN corptools_mapsystemmoon    mn  ON mn.moon_id      = mo.moon_id
+    LEFT JOIN corptools_evelocation      el  ON el.location_id  = mo.structure_id
     JOIN eve_sde_itemtype               it  ON it.id            = mo.type_id
     JOIN eve_sde_itemgroup              ig  ON ig.id            = it.group_id
     LEFT JOIN koru_stats_oremarketprice omp ON omp.type_id = mo.type_id
     WHERE ig.id IN (1884, 1920, 1921, 1922, 1923)
       AND mo.last_updated >= %s AND mo.last_updated < %s
-    GROUP BY mo.structure_id, mn.name
+    GROUP BY mo.structure_id, mn.name, el.location_name
     ORDER BY isk_estimado DESC
 """
 
