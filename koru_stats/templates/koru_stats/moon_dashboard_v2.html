@@ -39,6 +39,10 @@ details > summary { cursor: pointer; user-select: none; }
     padding: 10px 12px; font-family: monospace; font-size: 0.78rem;
     white-space: pre-line; color: #c9d1d9; margin-top: 8px;
 }
+.luna-row { cursor: pointer; }
+.luna-row:hover { background: rgba(255,255,255,.04); }
+.luna-caret { transition: transform .15s; }
+.luna-row.abierta .luna-caret { transform: rotate(90deg); }
 .comp-badge {
     display: inline-block; background: rgba(255,255,255,.08);
     border-radius: 4px; padding: 1px 6px; font-size: 0.72rem;
@@ -241,13 +245,17 @@ details > summary { cursor: pointer; user-select: none; }
                                 <th class="text-center">Mineros</th>
                                 <th class="text-end">Unidades</th>
                                 <th class="text-end">m³</th>
+                                <th class="text-center">Fractura</th>
+                                <th class="text-end">Aprovechado</th>
                                 <th class="text-end">ISK est.</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for r in por_luna %}
-                            <tr>
+                            {% with fr=fracturas|dict_key:r.structure_id %}
+                            <tr class="luna-row" role="button" data-luna="luna{{ r.structure_id }}">
                                 <td class="font-monospace small">
+                                    {% if fr %}<i class="fas fa-caret-right luna-caret me-1 text-muted"></i>{% else %}<span class="me-3"></span>{% endif %}
                                     <i class="fas fa-moon text-warning me-2"></i>{{ r.luna }}
                                 </td>
                                 <td class="text-center">
@@ -255,8 +263,80 @@ details > summary { cursor: pointer; user-select: none; }
                                 </td>
                                 <td class="text-end font-monospace small">{{ r.unidades|rknum }}</td>
                                 <td class="text-end font-monospace small">{{ r.m3_total|rknum }}</td>
+                                <td class="text-center small">
+                                    {% if fr %}
+                                        {% for d in fr.fechas %}<span class="badge bg-dark text-info me-1">{{ d|date:"d/m" }}</span>{% endfor %}
+                                        {% if fr.n > 1 %}<span class="text-muted">({{ fr.n }})</span>{% endif %}
+                                    {% else %}<span class="text-muted">—</span>{% endif %}
+                                </td>
+                                <td class="text-end font-monospace small">
+                                    {% if fr %}
+                                        <span class="{% if fr.pct >= 80 %}text-success{% elif fr.pct >= 50 %}text-warning{% else %}text-danger{% endif %} fw-bold">{{ fr.pct }}%</span>
+                                        <div class="text-muted" style="font-size:.65rem">{{ fr.perdido|rknum }} m³ sin minar</div>
+                                    {% else %}<span class="text-muted">—</span>{% endif %}
+                                </td>
                                 <td class="text-end font-monospace small text-warning">{{ r.isk_estimado|rkisk }}</td>
                             </tr>
+                            {% if fr %}
+                            <tr class="luna-detalle d-none" id="luna{{ r.structure_id }}">
+                                <td colspan="7" class="bg-black bg-opacity-25">
+                                    <div class="small text-muted mb-2">
+                                        <i class="fas fa-gem me-1"></i>Rendimiento de las fracturas — cuánto traía la luna y cuánto se sacó
+                                    </div>
+                                    {% for f in fr.lista %}
+                                    <div class="mb-3">
+                                        <div class="d-flex align-items-center gap-2 mb-1 flex-wrap">
+                                            <span class="badge bg-info">Fractura #{{ f.id }}</span>
+                                            <span class="small">
+                                                <i class="fas fa-hourglass-start text-muted me-1"></i>
+                                                <strong>{{ f.arrival|date:"d/m/Y H:i" }}</strong>
+                                                <span class="text-muted mx-1">→</span>
+                                                {% if f.abierta %}<span class="text-success">en curso</span>
+                                                {% else %}<strong>{{ f.hasta|date:"d/m/Y H:i" }}</strong>{% endif %}
+                                            </span>
+                                            <span class="small text-muted">· minado imputado a esta ventana</span>
+                                            <span class="ms-auto small">
+                                                <span class="text-muted">aprovechado</span>
+                                                <strong class="{% if f.pct >= 80 %}text-success{% elif f.pct >= 50 %}text-warning{% else %}text-danger{% endif %}">{{ f.pct }}%</strong>
+                                            </span>
+                                        </div>
+                                        <table class="table table-sm table-dark mb-0" style="font-size:.75rem">
+                                            <thead><tr>
+                                                <th>Mineral</th>
+                                                <th class="text-end">Disponible m³</th>
+                                                <th class="text-end">Minado m³</th>
+                                                <th class="text-end">Sin minar m³</th>
+                                                <th class="text-end">Aprovechado</th>
+                                            </tr></thead>
+                                            <tbody>
+                                                {% for d in f.detalle %}
+                                                <tr>
+                                                    <td>{{ d.ore }}</td>
+                                                    <td class="text-end font-monospace">{{ d.disponible|rknum }}</td>
+                                                    <td class="text-end font-monospace text-info">{{ d.minado|rknum }}</td>
+                                                    <td class="text-end font-monospace text-muted">{{ d.perdido|rknum }}</td>
+                                                    <td class="text-end font-monospace {% if d.pct >= 80 %}text-success{% elif d.pct >= 50 %}text-warning{% else %}text-danger{% endif %}">{{ d.pct }}%</td>
+                                                </tr>
+                                                {% endfor %}
+                                                <tr class="fw-bold">
+                                                    <td>Total</td>
+                                                    <td class="text-end font-monospace">{{ f.disponible|rknum }}</td>
+                                                    <td class="text-end font-monospace text-info">{{ f.minado|rknum }}</td>
+                                                    <td class="text-end font-monospace text-muted">{{ f.perdido|rknum }}</td>
+                                                    <td class="text-end font-monospace">{{ f.pct }}%</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    {% endfor %}
+                                    <div class="text-muted" style="font-size:.68rem">
+                                        <i class="fas fa-info-circle me-1"></i>El disponible es la estimación de la notificación por mineral base;
+                                        las variantes (Brimful, Lavish) se suman a su base, así que un mineral puede pasar del 100%.
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endif %}
+                            {% endwith %}
                             {% endfor %}
                         </tbody>
                     </table>
@@ -657,6 +737,16 @@ details > summary { cursor: pointer; user-select: none; }
             b.classList.remove('btn-outline-danger');
             b.classList.add('btn-danger', 'active');
             pintaRek(b.dataset.rmode);
+        });
+    });
+
+    // Desplegable de rendimiento por luna
+    document.querySelectorAll('.luna-row').forEach(row => {
+        row.addEventListener('click', () => {
+            const det = el(row.dataset.luna);
+            if (!det) return;
+            det.classList.toggle('d-none');
+            row.classList.toggle('abierta');
         });
     });
 

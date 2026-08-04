@@ -1775,6 +1775,142 @@ SQL_MOON_OBS_PERIODOS = """
 """
 
 
+SQL_FRACTURAS = """
+    SELECT f.id, f.structure_id, f.arrival_time, it.name AS ore, fo.total_m3
+    FROM moons_moonfrack f
+    JOIN moons_frackore  fo ON fo.frack_id = f.id
+    LEFT JOIN eve_sde_itemtype it ON it.id = fo.ore_id
+    WHERE f.structure_id IN ({ids})
+    ORDER BY f.arrival_time DESC
+"""
+
+SQL_MINADO_VENTANA = """
+    SELECT it.name AS ore, ROUND(SUM(mo.quantity * it.volume), 2) AS m3
+    FROM moons_miningobservation mo
+    JOIN eve_sde_itemtype it ON it.id = mo.type_id
+    WHERE mo.structure_id = %s
+      AND mo.last_updated >= %s AND mo.last_updated < %s
+    GROUP BY it.name
+"""
+
+
+def _base_ore(nombre, bases):
+    """
+    'Lavish Chromite' -> 'Chromite'. Se deriva del NOMBRE: una variante termina
+    con el de su mineral base. Sin listas fijas de prefijos, que CCP anade
+    variantes nuevas cada pocos anos.
+    """
+    if nombre in bases:
+        return nombre
+    for b in bases:
+        if nombre.endswith(" " + b):
+            return b
+    return nombre
+
+
+def _fracturas_por_estructura(structure_ids, inicio_periodo, fin_periodo):
+    """
+    {structure_id: [fractura, ...]} con el aprovechamiento por mineral.
+
+    A cada fractura se le imputa lo minado entre SU llegada y la de la
+    siguiente, no lo del mes natural: asi el porcentaje no depende de donde
+    caiga el corte del periodo.
+
+    OJO: el rendimiento de `moons_frackore` es la ESTIMACION de la notificacion
+    por mineral BASE. Las variantes (Brimful, Lavish) se agrupan con su base,
+    pero el reparto no es exacto y un mineral puede pasar del 100%.
+    """
+    from django.utils import timezone
+
+    if not structure_ids:
+        return {}
+
+    ph = ",".join(["%s"] * len(set(structure_ids)))
+    with connection.cursor() as cursor:
+        cursor.execute(SQL_FRACTURAS.format(ids=ph), list(set(structure_ids)))
+        filas = _fetchall(cursor)
+
+    fracks = {}
+    for r in filas:
+        f = fracks.setdefault(int(r["id"]), {
+            "id": int(r["id"]), "structure_id": int(r["structure_id"]),
+            "arrival": r["arrival_time"], "ores": {},
+        })
+        if r["ore"]:
+            f["ores"][r["ore"]] = float(r["total_m3"] or 0)
+
+    por_str = {}
+    for f in fracks.values():
+        por_str.setdefault(f["structure_id"], []).append(f)
+
+    ahora = timezone.now()
+    tope  = fin_periodo or ahora
+    salida = {}
+
+    for sid, lista in por_str.items():
+        lista = [f for f in lista if f["arrival"]]
+        lista.sort(key=lambda x: x["arrival"], reverse=True)
+        out = []
+        for i, f in enumerate(lista):
+            if f["arrival"] > tope:
+                continue                       # todavia no ha llegado
+            desde = f["arrival"]
+            hasta = lista[i - 1]["arrival"] if i > 0 else ahora
+
+            with connection.cursor() as cursor:
+                cursor.execute(SQL_MINADO_VENTANA, [sid, desde, hasta])
+                minado_raw = {r["ore"]: float(r["m3"] or 0) for r in _fetchall(cursor)}
+
+            bases = set(f["ores"].keys())
+            minado = {}
+            for nombre, m3 in minado_raw.items():
+                b = _base_ore(nombre, bases)
+                minado[b] = minado.get(b, 0.0) + m3
+
+            detalle, td, tm = [], 0.0, 0.0
+            for ore, disp in sorted(f["ores"].items(), key=lambda x: -x[1]):
+                m = minado.get(ore, 0.0)
+                td += disp
+                tm += m
+                detalle.append({
+                    "ore": ore, "disponible": disp, "minado": m,
+                    "perdido": max(disp - m, 0),
+                    "pct": round(100 * m / disp, 1) if disp else 0,
+                })
+
+            # ¿su ventana de minado solapa el periodo seleccionado?
+            en_periodo = bool(
+                inicio_periodo and fin_periodo
+                and desde < fin_periodo and hasta > inicio_periodo
+            )
+
+            out.append({
+                "id": f["id"], "arrival": f["arrival"], "hasta": hasta,
+                "detalle": detalle, "disponible": td, "minado": tm,
+                "perdido": max(td - tm, 0),
+                "pct": round(100 * tm / td, 1) if td else 0,
+                "abierta": i == 0,
+                "en_periodo": en_periodo,
+            })
+            if len(out) >= 4:
+                break
+
+        # Resumen para la fila plegada: solo las fracturas del periodo
+        delp = [f for f in out if f["en_periodo"]] or out[:1]
+        rd = sum(f["disponible"] for f in delp)
+        rm = sum(f["minado"] for f in delp)
+        salida[sid] = {
+            "lista":   out,
+            "n":       len(delp),
+            "fechas":  [f["arrival"] for f in delp],
+            "disponible": rd,
+            "minado":  rm,
+            "perdido": max(rd - rm, 0),
+            "pct":     round(100 * rm / rd, 1) if rd else 0,
+        }
+    return salida
+
+
 def _build_chart_rekium(pilotos):
     """
     Barras apiladas: una barra por piloto, un segmento por mineral.
@@ -2057,6 +2193,9 @@ def moon_dashboard_v2(request):
         "total_pendiente":   total_pendiente,
         "total_isk_ext":     total_isk_ext,
         "por_luna":          por_luna,
+        "fracturas":         _fracturas_por_estructura(
+                                 [r.get("structure_id") for r in por_luna if r.get("structure_id")],
+                                 inicio, fin),
         "moon_ore_groups":   MOON_ORE_GROUPS,
         "moon_ore_colors":   MOON_ORE_COLORS,
         "can_manage_tax":    request.user.has_perm("koru_stats.moon_tax_admin"),

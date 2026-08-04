@@ -32,12 +32,13 @@ import calendar
 import logging
 import time
 import traceback
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import requests as http_requests
 from celery import shared_task
 from django.db import connection
 from django.db.models import Sum as OrmSum
+from django.utils import timezone
 
 from .models import (
     CharacterMonthlyOre,
@@ -2234,3 +2235,226 @@ def build_social_graph(ventana_dias=90, peso_min=2):
     SocialEdge.objects.bulk_create(objs, batch_size=1000)
     logger.info("koru build_social_graph: %s aristas (ventana=%s)", len(objs), ventana)
     return len(objs)
+
+
+# ---------------------------------------------------------------------------
+# Tax lunar — ingesta de contratos (F1)
+#
+# NO hace falta scope ESI ni pedir tokens: corptools ya ingiere los contratos de
+# corp en `corptools_corporatecontract` y su task esta viva.
+#
+# TRES TRAMPAS de esa tabla, verificadas contra los datos reales (2026-08-04):
+#   1. Cada contrato esta REPETIDO una vez por corp que lo ve. La PK `id` es
+#      varchar = str(corporation_id) + str(contract_id). Sus items tambien se
+#      duplican, porque `corporatecontractitem.contract_id` apunta al `id`
+#      varchar. 263.729 filas para 226.584 contratos unicos. Deduplicar SIEMPRE
+#      por `contract_id` o cada piloto parecera haber pagado el doble.
+#   2. `issuer_id` vale 0 en TODAS las filas. El emisor sale de `issuer_name_id`.
+#   3. `raw_quantity` no es `quantity`: el negativo marca copia/original de BPO.
+# ---------------------------------------------------------------------------
+
+MOON_ORE_GROUP_IDS = (1884, 1920, 1921, 1922, 1923)
+
+
+def _resolve_mains(char_ids):
+    """{character_id: (main_char_id, main_name)}. El emisor suele ser un alt."""
+    if not char_ids:
+        return {}
+    ph = ",".join(["%s"] * len(char_ids))
+    sql = (
+        "SELECT ec.character_id, main_ec.character_id, main_ec.character_name "
+        "FROM eveonline_evecharacter ec "
+        "JOIN authentication_characterownership co ON co.character_id = ec.id "
+        "JOIN authentication_userprofile        up ON up.user_id      = co.user_id "
+        "JOIN eveonline_evecharacter       main_ec ON main_ec.id      = up.main_character_id "
+        "WHERE ec.character_id IN (" + ph + ")"
+    )
+    out = {}
+    with connection.cursor() as cursor:
+        cursor.execute(sql, list(char_ids))
+        for alt_id, main_id, main_name in cursor.fetchall():
+            out[int(alt_id)] = (int(main_id), main_name or "")
+    return out
+
+
+def _moon_ore_catalog():
+    """
+    {type_id: (nombre, group_id, es_comprimido, base_type_id, base_nombre)}
+
+    El mineral lunar comprime 1:1, asi que el comprimido se empareja con su
+    crudo por nombre: "Compressed X" -> "X".
+    """
+    ph = ",".join(str(g) for g in MOON_ORE_GROUP_IDS)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT it.id, it.name, it.group_id FROM eve_sde_itemtype it "
+            "WHERE it.group_id IN (" + ph + ")"
+        )
+        rows = [(int(i), n or "", int(g)) for i, n, g in cursor.fetchall()]
+
+    por_nombre = {n: (i, g) for i, n, g in rows}
+    cat = {}
+    for tid, nombre, gid in rows:
+        if nombre.startswith("Compressed "):
+            base = nombre[len("Compressed "):]
+            base_id, _ = por_nombre.get(base, (None, None))
+            cat[tid] = (nombre, gid, True, base_id, base)
+        else:
+            cat[tid] = (nombre, gid, False, tid, nombre)
+    return cat
+
+
+SQL_CONTRATOS_TAX = """
+    SELECT c.id, c.contract_id, c.issuer_name_id, c.assignee_id,
+           c.price, c.reward, c.volume, c.contract_type, c.status,
+           c.start_location_id, c.date_issued, c.date_accepted, c.date_completed
+    FROM corptools_corporatecontract c
+    JOIN (
+        SELECT contract_id, MIN(id) AS rid
+        FROM corptools_corporatecontract
+        WHERE assignee_id IN ({dest})
+          AND date_issued >= %s
+        GROUP BY contract_id
+    ) u ON u.rid = c.id
+    ORDER BY c.date_issued DESC
+"""
+
+
+@shared_task
+def sync_moon_tax_contracts(dias=120):
+    """
+    Vuelca los contratos de tax lunar a MoonTaxContract / MoonTaxContractItem.
+
+    Solo DETECTA y marca: no decide si un pago es valido. Eso lo hace el
+    director validando el saldo (ver MoonTaxLedger).
+    """
+    from .models import (MoonTaxRecipient, MoonTaxContract, MoonTaxContractItem)
+
+    destinos = list(MoonTaxRecipient.objects.filter(is_active=True))
+    if not destinos:
+        logger.warning("koru sync_moon_tax_contracts: sin destinatarios activos, no hago nada")
+        return 0
+
+    por_destino = {d.entity_id: d for d in destinos}
+    desde = timezone.now() - timedelta(days=int(dias))
+
+    sql = SQL_CONTRATOS_TAX.format(dest=",".join(["%s"] * len(por_destino)))
+    with connection.cursor() as cursor:
+        cursor.execute(sql, list(por_destino.keys()) + [desde])
+        cols = [d[0] for d in cursor.description]
+        contratos = [dict(zip(cols, r)) for r in cursor.fetchall()]
+
+    if not contratos:
+        logger.info("koru sync_moon_tax_contracts: 0 contratos en los ultimos %s dias", dias)
+        return 0
+
+    # items de golpe, por el `id` varchar de la fila deduplicada
+    row_ids = [c["id"] for c in contratos]
+    ph = ",".join(["%s"] * len(row_ids))
+    items_por_contrato = {}
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT i.contract_id, i.type_name_id, SUM(i.quantity) "
+            "FROM corptools_corporatecontractitem i "
+            "WHERE i.contract_id IN (" + ph + ") AND i.is_included = 1 "
+            "GROUP BY i.contract_id, i.type_name_id",
+            row_ids,
+        )
+        for rid, tid, qty in cursor.fetchall():
+            items_por_contrato.setdefault(rid, []).append((int(tid or 0), int(qty or 0)))
+
+    catalogo = _moon_ore_catalog()
+    mains = _resolve_mains({int(c["issuer_name_id"] or 0) for c in contratos})
+
+    nombres = {}
+    ids_nombre = {int(c["issuer_name_id"] or 0) for c in contratos}
+    if ids_nombre:
+        ph2 = ",".join(["%s"] * len(ids_nombre))
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT eve_id, name FROM corptools_evename WHERE eve_id IN (" + ph2 + ")",
+                list(ids_nombre),
+            )
+            nombres = {int(i): n or "" for i, n in cursor.fetchall()}
+
+    guardados = 0
+    for c in contratos:
+        issuer = int(c["issuer_name_id"] or 0)
+        main_id, main_name = mains.get(issuer, (None, ""))
+        destino = por_destino.get(int(c["assignee_id"] or 0))
+
+        items = items_por_contrato.get(c["id"], [])
+        tiene_bruto = items_ajenos = False
+        detalle = []
+        for tid, qty in items:
+            if tid in catalogo:
+                nombre, gid, comprimido, base_id, base_nombre = catalogo[tid]
+                if not comprimido:
+                    tiene_bruto = True          # solo se acepta comprimido
+            else:
+                nombre, gid, comprimido, base_id, base_nombre = ("", None, False, None, "")
+                items_ajenos = True
+            detalle.append({
+                "type_id": tid, "type_name": nombre, "quantity": qty,
+                "group_id": gid, "is_compressed": comprimido,
+                "base_type_id": base_id, "base_name": base_nombre,
+            })
+
+        # El contrato se identifica por su CONTENIDO, no por el titulo ni el tipo:
+        # si no trae mineral lunar no es un pago de tax y no se ingiere. Asi la
+        # tabla no se llena con las ventas normales que recibe la corp.
+        if not any(d["group_id"] in MOON_ORE_GROUP_IDS for d in detalle):
+            continue
+
+        cobra_isk = bool((c["price"] or 0) or (c["reward"] or 0))
+        ubicacion_rara = bool(
+            destino and destino.expected_location_id
+            and int(c["start_location_id"] or 0) != int(destino.expected_location_id)
+        )
+
+        avisos = []
+        if tiene_bruto:    avisos.append("mineral sin comprimir")
+        if ubicacion_rara: avisos.append("entregado fuera de la ubicacion esperada")
+        if cobra_isk:      avisos.append("price/reward distinto de cero")
+        if items_ajenos:   avisos.append("items que no son mineral lunar")
+        if (c["contract_type"] or "") != "item_exchange":
+            avisos.append("tipo de contrato %s" % c["contract_type"])
+        if main_id is None: avisos.append("emisor sin main resuelto")
+
+        anomalia = bool(avisos)
+        obj, _ = MoonTaxContract.objects.update_or_create(
+            contract_id=int(c["contract_id"]),
+            defaults={
+                "issuer_id":      issuer,
+                "issuer_name":    nombres.get(issuer, ""),
+                "main_char_id":   main_id,
+                "main_name":      main_name,
+                "assignee_id":    int(c["assignee_id"] or 0),
+                "price":          c["price"] or 0,
+                "reward":         c["reward"] or 0,
+                "volume":         c["volume"] or 0,
+                "contract_type":  c["contract_type"] or "",
+                "esi_status":     c["status"] or "",
+                "start_location_id":   c["start_location_id"],
+                "start_location_name": (destino.expected_location_name if destino else ""),
+                "date_issued":    c["date_issued"],
+                "date_accepted":  c["date_accepted"],
+                "date_completed": c["date_completed"],
+                "estado":         (MoonTaxContract.ESTADO_REVISAR if anomalia
+                                   else MoonTaxContract.ESTADO_DETECTADO),
+                "tiene_bruto":    tiene_bruto,
+                "ubicacion_rara": ubicacion_rara,
+                "cobra_isk":      cobra_isk,
+                "items_ajenos":   items_ajenos,
+                "aviso":          "; ".join(avisos)[:250],
+            },
+        )
+
+        obj.items.all().delete()
+        MoonTaxContractItem.objects.bulk_create(
+            [MoonTaxContractItem(contract=obj, **d) for d in detalle]
+        )
+        guardados += 1
+
+    logger.info("koru sync_moon_tax_contracts: %s contratos (%s dias)", guardados, dias)
+    return guardados

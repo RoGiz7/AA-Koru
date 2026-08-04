@@ -724,6 +724,11 @@ class MoonTaxRecipient(models.Model):
     entity_id   = models.BigIntegerField(unique=True, help_text="ID de la corp o personaje que recibe los contratos")
     entity_name = models.CharField(max_length=100, blank=True, default="")
     is_active   = models.BooleanField(default=True, db_index=True)
+    expected_location_id = models.BigIntegerField(
+        null=True, blank=True,
+        help_text="Ubicacion donde se espera la entrega. Si el contrato viene de otro sitio se marca para revisar. "
+                  "Vacio = no se comprueba.")
+    expected_location_name = models.CharField(max_length=150, blank=True, default="")
     notes       = models.CharField(max_length=200, blank=True, default="")
 
     class Meta:
