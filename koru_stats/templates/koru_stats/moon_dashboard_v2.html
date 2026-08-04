@@ -65,6 +65,12 @@ details > summary { cursor: pointer; user-select: none; }
                     <strong>Período:</strong>
                     {% include "koru_stats/includes/periodo_selector.html" %}
                     <span class="text-muted small">Mostrando <strong>{{ mes }}</strong></span>
+                    {% if can_manage_tax %}
+                    <a href="{% url 'koru_stats:moon_tax_gestion' %}?periodo={{ periodo_sel }}"
+                       class="btn btn-sm btn-outline-warning">
+                        <i class="fas fa-gavel me-1"></i>Gestión de cobro
+                    </a>
+                    {% endif %}
 
                     {# Valoracion del ISK: solo informativo, el tax va por unidades #}
                     <div class="d-flex align-items-center gap-2">

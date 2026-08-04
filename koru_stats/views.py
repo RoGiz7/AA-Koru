@@ -3738,3 +3738,125 @@ def corp_social_dashboard(request):
         "salidas_bloque": salidas_bloque,
     }
     return render(request, "koru_stats/corp_social_dashboard.html", context)
+
+
+# ---------------------------------------------------------------------------
+# Tax lunar — F4: Gestion (director)
+#
+# La deteccion PROPONE, el director DISPONE. Aqui no se decide nada solo: se
+# enseña el desglose mineral a mineral y el director valida con una nota, que
+# queda como registro de por que se acepto (o no) una compensacion.
+# ---------------------------------------------------------------------------
+
+@permission_required("koru_stats.moon_tax_admin")
+def moon_tax_gestion(request):
+    from .models import MoonTaxContract, MoonTaxLedger
+
+    periodos = list(
+        MoonTaxLedger.objects.values_list("period", flat=True).distinct().order_by("-period")
+    )
+    period = request.GET.get("periodo") or (periodos[0] if periodos else None)
+
+    filas = MoonTaxLedger.objects.filter(period=period) if period else MoonTaxLedger.objects.none()
+
+    pilotos = {}
+    for l in filas:
+        p = pilotos.setdefault(l.main_char_id, {
+            "main_char_id": l.main_char_id,
+            "nombre":       l.main_name or f"Unknown ({l.main_char_id})",
+            "minerales":    [],
+            "debe": 0, "entregado": 0, "pendiente": 0,
+            "validado": True, "notes": "", "validado_por": None, "validado_at": None,
+        })
+        pend = l.pendiente
+        p["minerales"].append({
+            "ore": l.base_name, "group_id": l.group_id, "tasa": l.tasa,
+            "unidades": l.unidades_minadas, "debe": l.debe,
+            "entregado": l.entregado, "pendiente": pend,
+            "pct": round(100 * l.entregado / l.debe, 1) if l.debe else 0,
+        })
+        p["debe"]      += l.debe
+        p["entregado"] += l.entregado
+        p["pendiente"] += pend
+        if not l.validado:
+            p["validado"] = False
+        if l.notes:
+            p["notes"] = l.notes
+        if l.validado_por:
+            p["validado_por"] = l.validado_por.username
+            p["validado_at"]  = l.validado_at
+
+    for p in pilotos.values():
+        p["minerales"].sort(key=lambda x: -x["debe"])
+        p["pct"] = round(100 * p["entregado"] / p["debe"], 1) if p["debe"] else 0
+
+    lista = sorted(pilotos.values(), key=lambda x: -x["pendiente"])
+
+    # Contratos detectados de esos pilotos (todos, no solo del periodo: un pago
+    # puede llegar en cualquier momento y cubrir meses anteriores)
+    mains = list(pilotos.keys())
+    contratos = (MoonTaxContract.objects
+                 .filter(main_char_id__in=mains)
+                 .prefetch_related("items")
+                 .order_by("-date_issued")) if mains else MoonTaxContract.objects.none()
+
+    por_piloto = {}
+    for c in contratos:
+        por_piloto.setdefault(c.main_char_id, []).append(c)
+    for p in lista:
+        p["contratos"] = por_piloto.get(p["main_char_id"], [])
+
+    huerfanos = (MoonTaxContract.objects.filter(main_char_id__isnull=True)
+                 .prefetch_related("items").order_by("-date_issued"))
+
+    context = {
+        "periodos":   periodos,
+        "period":     period,
+        "lista":      lista,
+        "huerfanos":  huerfanos,
+        "kpi_debe":       sum(p["debe"] for p in lista),
+        "kpi_entregado":  sum(p["entregado"] for p in lista),
+        "kpi_pendiente":  sum(p["pendiente"] for p in lista),
+        "kpi_validados":  sum(1 for p in lista if p["validado"]),
+        "kpi_pilotos":    len(lista),
+        "kpi_contratos":  contratos.count() if mains else 0,
+        "kpi_revisar":    sum(1 for c in contratos if c.estado == MoonTaxContract.ESTADO_REVISAR) if mains else 0,
+        "moon_ore_groups": MOON_ORE_GROUPS,
+    }
+    return render(request, "koru_stats/moon_tax_gestion.html", context)
+
+
+@permission_required("koru_stats.moon_tax_admin")
+def moon_tax_validar(request, main_char_id):
+    """
+    Congela el saldo de un piloto en un periodo.
+
+    A partir de aqui la fila es un asiento contable y deja de recalcularse: los
+    contratos de EVE se borran (hay 81.530 en `deleted`) y un saldo calculado en
+    vivo haria reaparecer como moroso a quien si pago.
+    """
+    from django.shortcuts import redirect
+    from django.urls import reverse
+    from django.utils import timezone
+    from .models import MoonTaxLedger
+
+    period = request.POST.get("periodo") or ""
+    notes  = (request.POST.get("notes") or "").strip()
+    accion = request.POST.get("accion") or "validar"
+
+    filas = MoonTaxLedger.objects.filter(main_char_id=main_char_id, period=period)
+    if accion == "reabrir":
+        filas.update(validado=False, validado_por=None, validado_at=None,
+                     saldo_cerrado=0, notes=notes)
+    else:
+        ahora = timezone.now()
+        for l in filas:
+            l.saldo_cerrado = max(l.debe - l.entregado, 0)
+            l.validado      = True
+            l.validado_por  = request.user
+            l.validado_at   = ahora
+            l.notes         = notes
+            l.save(update_fields=["saldo_cerrado", "validado", "validado_por",
+                                  "validado_at", "notes"])
+
+    return redirect(f"{reverse('koru_stats:moon_tax_gestion')}?periodo={period}")

@@ -1,0 +1,269 @@
+{% extends 'allianceauth/base-bs5.html' %}
+{% load i18n koru_stats_tags %}
+
+{% block page_title %}Gestión de Tax Lunar{% endblock %}
+
+{% block content %}
+<style>
+.kpi-card { border-left: 4px solid #6c757d; }
+.kpi-card.green  { border-left-color: #22c55e; }
+.kpi-card.red    { border-left-color: #ef4444; }
+.kpi-card.yellow { border-left-color: #f59e0b; }
+.kpi-card.blue   { border-left-color: #3b82f6; }
+.stat-big   { font-size: 1.6rem; font-weight: 700; line-height: 1.1; }
+.stat-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: #6c757d; }
+.pilot-portrait { width: 32px; height: 32px; border-radius: 50%; }
+details > summary { cursor: pointer; user-select: none; }
+.ok-row  { background: rgba(34,197,94,.06); }
+.contrato-box { background:#0b0b0b; border:1px solid #333; border-radius:6px;
+                padding:.5rem .75rem; font-family:monospace; font-size:.72rem; }
+</style>
+
+<div class="container-fluid">
+
+    <div class="d-flex align-items-center gap-3 mb-3 flex-wrap">
+        <h4 class="mb-0"><i class="fas fa-gavel text-warning me-2"></i>Gestión de Tax Lunar</h4>
+        <form method="get" class="d-flex align-items-center gap-2 mb-0">
+            <select name="periodo" class="form-select form-select-sm w-auto" onchange="this.form.submit()">
+                {% for p in periodos %}
+                <option value="{{ p }}" {% if p == period %}selected{% endif %}>{{ p }}</option>
+                {% endfor %}
+            </select>
+        </form>
+        <a href="{% url 'koru_stats:moon_dashboard' %}" class="btn btn-sm btn-outline-info">
+            <i class="fas fa-moon me-1"></i>Ir a Tax Lunas
+        </a>
+        <span class="ms-auto text-muted small">
+            <i class="fas fa-info-circle me-1"></i>El tax se cobra en piedras. El saldo se congela al validar.
+        </span>
+    </div>
+
+    {# KPIs #}
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-2">
+            <div class="card kpi-card yellow h-100"><div class="card-body">
+                <div class="stat-label mb-1">Adeudado</div>
+                <div class="stat-big text-warning">{{ kpi_debe|rknum }}</div>
+                <small class="text-muted">comprimidos</small>
+            </div></div>
+        </div>
+        <div class="col-6 col-md-2">
+            <div class="card kpi-card green h-100"><div class="card-body">
+                <div class="stat-label mb-1">Entregado</div>
+                <div class="stat-big text-success">{{ kpi_entregado|rknum }}</div>
+                <small class="text-muted">en contratos aceptados</small>
+            </div></div>
+        </div>
+        <div class="col-6 col-md-2">
+            <div class="card kpi-card red h-100"><div class="card-body">
+                <div class="stat-label mb-1">Pendiente</div>
+                <div class="stat-big text-danger">{{ kpi_pendiente|rknum }}</div>
+                <small class="text-muted">comprimidos</small>
+            </div></div>
+        </div>
+        <div class="col-6 col-md-2">
+            <div class="card kpi-card blue h-100"><div class="card-body">
+                <div class="stat-label mb-1">Validados</div>
+                <div class="stat-big text-info">{{ kpi_validados }}/{{ kpi_pilotos }}</div>
+                <small class="text-muted">pilotos</small>
+            </div></div>
+        </div>
+        <div class="col-6 col-md-2">
+            <div class="card kpi-card h-100"><div class="card-body">
+                <div class="stat-label mb-1">Contratos</div>
+                <div class="stat-big text-primary">{{ kpi_contratos }}</div>
+                <small class="text-muted">detectados</small>
+            </div></div>
+        </div>
+        <div class="col-6 col-md-2">
+            <div class="card kpi-card red h-100"><div class="card-body">
+                <div class="stat-label mb-1">A revisar</div>
+                <div class="stat-big text-danger">{{ kpi_revisar }}</div>
+                <small class="text-muted">con anomalías</small>
+            </div></div>
+        </div>
+    </div>
+
+    {# Saldos por piloto #}
+    <div class="card mb-4">
+        <div class="card-header"><i class="fas fa-users me-2"></i><strong>Saldos — {{ period }}</strong></div>
+        <div class="card-body p-0">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-dark">
+                    <tr>
+                        <th></th><th>Piloto</th>
+                        <th class="text-end">Debe</th>
+                        <th class="text-end">Entregado</th>
+                        <th class="text-end">Pendiente</th>
+                        <th class="text-center">Estado</th>
+                        <th class="text-center">Acción</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in lista %}
+                    <tr class="{% if p.validado %}ok-row{% endif %}">
+                        <td>
+                            <img src="https://images.evetech.net/characters/{{ p.main_char_id }}/portrait?size=32"
+                                 class="pilot-portrait" onerror="this.style.display='none'">
+                        </td>
+                        <td>
+                            <details>
+                                <summary class="fw-semibold">{{ p.nombre }}</summary>
+                                <div class="mt-2 ms-2">
+
+                                    <table class="table table-sm table-dark mt-1" style="font-size:.75rem">
+                                        <thead><tr>
+                                            <th>Mineral</th><th class="text-end">Minado</th>
+                                            <th class="text-end">Tasa</th><th class="text-end">Debe</th>
+                                            <th class="text-end">Entregado</th><th class="text-end">Pendiente</th>
+                                        </tr></thead>
+                                        <tbody>
+                                            {% for m in p.minerales %}
+                                            <tr>
+                                                <td>{{ m.ore }}</td>
+                                                <td class="text-end font-monospace">{{ m.unidades|rknum }}</td>
+                                                <td class="text-end">{{ m.tasa }}%</td>
+                                                <td class="text-end font-monospace">{{ m.debe|rknum }}</td>
+                                                <td class="text-end font-monospace text-success">{{ m.entregado|rknum }}</td>
+                                                <td class="text-end font-monospace {% if m.pendiente %}text-danger{% else %}text-muted{% endif %}">{{ m.pendiente|rknum }}</td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+
+                                    {% if p.contratos %}
+                                    <div class="small text-muted mb-1"><i class="fas fa-file-contract me-1"></i>Contratos detectados:</div>
+                                    {% for c in p.contratos %}
+                                    <div class="contrato-box mb-2">
+                                        <div class="d-flex gap-2 flex-wrap align-items-center mb-1">
+                                            <span class="badge bg-secondary">#{{ c.contract_id }}</span>
+                                            <span>{{ c.issuer_name }}</span>
+                                            <span class="badge {% if c.esi_status == 'finished' %}bg-success{% elif c.esi_status == 'outstanding' %}bg-warning text-dark{% else %}bg-dark{% endif %}">{{ c.esi_status }}</span>
+                                            {% if c.estado == 'revisar' %}<span class="badge bg-danger">revisar</span>{% endif %}
+                                            <span class="text-muted">{{ c.date_issued|date:"d/m/Y H:i" }}</span>
+                                            {% if c.aviso %}<span class="text-warning">⚠ {{ c.aviso }}</span>{% endif %}
+                                        </div>
+                                        {% for i in c.items.all %}
+                                        <div>{{ i.type_name }}: {{ i.quantity|rknum }}{% if not i.is_compressed %} <span class="text-danger">(sin comprimir)</span>{% endif %}</div>
+                                        {% endfor %}
+                                    </div>
+                                    {% endfor %}
+                                    {% else %}
+                                    <div class="small text-muted"><i class="fas fa-inbox me-1"></i>Sin contratos detectados</div>
+                                    {% endif %}
+
+                                    {% if p.notes %}
+                                    <div class="small mt-2"><i class="fas fa-sticky-note text-info me-1"></i>{{ p.notes }}</div>
+                                    {% endif %}
+                                </div>
+                            </details>
+                        </td>
+                        <td class="text-end font-monospace">{{ p.debe|rknum }}</td>
+                        <td class="text-end font-monospace text-success">{{ p.entregado|rknum }}</td>
+                        <td class="text-end font-monospace fw-bold {% if p.pendiente %}text-danger{% else %}text-success{% endif %}">{{ p.pendiente|rknum }}</td>
+                        <td class="text-center">
+                            {% if p.validado %}
+                                <span class="badge bg-success"><i class="fas fa-lock me-1"></i>Validado</span>
+                                {% if p.validado_por %}<div class="text-muted" style="font-size:.65rem">{{ p.validado_por }} · {{ p.validado_at|date:"d/m/Y" }}</div>{% endif %}
+                            {% elif p.pendiente %}
+                                <span class="badge bg-danger">Pendiente {{ p.pct }}%</span>
+                            {% else %}
+                                <span class="badge bg-warning text-dark">Cubierto, sin validar</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            <button class="btn btn-sm {% if p.validado %}btn-outline-secondary{% else %}btn-success{% endif %}"
+                                    data-bs-toggle="modal" data-bs-target="#modalValidar"
+                                    data-main="{{ p.main_char_id }}" data-nombre="{{ p.nombre }}"
+                                    data-pendiente="{{ p.pendiente }}" data-validado="{{ p.validado|yesno:'1,0' }}"
+                                    data-notes="{{ p.notes }}">
+                                {% if p.validado %}<i class="fas fa-unlock me-1"></i>Reabrir{% else %}<i class="fas fa-check me-1"></i>Validar{% endif %}
+                            </button>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="7" class="text-center text-muted py-4">
+                        <i class="fas fa-inbox fa-2x mb-2 d-block"></i>Sin saldos para este período.
+                        Lanza <code>rebuild_moon_tax_ledger()</code>.
+                    </td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    {% if huerfanos %}
+    <div class="card mb-4 border-danger">
+        <div class="card-header"><i class="fas fa-question-circle text-danger me-2"></i>
+            <strong>Contratos sin piloto resuelto</strong>
+            <span class="text-muted small ms-2">el emisor no tiene main en el Auth</span>
+        </div>
+        <div class="card-body">
+            {% for c in huerfanos %}
+            <div class="contrato-box mb-2">
+                <span class="badge bg-secondary">#{{ c.contract_id }}</span>
+                {{ c.issuer_name|default:c.issuer_id }} · {{ c.esi_status }} ·
+                {{ c.date_issued|date:"d/m/Y H:i" }}
+                {% if c.aviso %}<span class="text-warning ms-1">⚠ {{ c.aviso }}</span>{% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+</div>
+
+{# Modal validar #}
+<div class="modal fade" id="modalValidar" tabindex="-1">
+    <div class="modal-dialog">
+        <form method="post" id="formValidar" action="">
+            {% csrf_token %}
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Validar saldo — <span id="mvNombre"></span></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="small text-muted mb-2">
+                        Al validar se <strong>congela</strong> el saldo: pasa a ser un asiento contable
+                        y deja de recalcularse aunque el contrato desaparezca de la ESI.
+                    </p>
+                    <div class="alert alert-warning py-2 small" id="mvAviso">
+                        Quedan <strong><span id="mvPendiente"></span></strong> comprimidos sin cubrir.
+                        Si los das por buenos, explica por qué en la nota.
+                    </div>
+                    <label class="form-label small">Nota (por qué se acepta o no)</label>
+                    <textarea name="notes" id="mvNotes" class="form-control form-control-sm" rows="3"
+                              placeholder="Ej: compensa con Chromite de más, acordado con el piloto"></textarea>
+                    <input type="hidden" name="periodo" value="{{ period }}">
+                    <input type="hidden" name="accion" id="mvAccion" value="validar">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-success btn-sm" id="mvSubmit">Confirmar</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+(function() {
+    const el = id => document.getElementById(id);
+    const modal = el('modalValidar');
+    if (!modal) return;
+    modal.addEventListener('show.bs.modal', e => {
+        const b = e.relatedTarget;
+        const validado = b.dataset.validado === '1';
+        el('mvNombre').textContent = b.dataset.nombre;
+        el('mvPendiente').textContent = Number(b.dataset.pendiente || 0).toLocaleString('en-US');
+        el('mvNotes').value = b.dataset.notes || '';
+        el('mvAccion').value = validado ? 'reabrir' : 'validar';
+        el('mvSubmit').textContent = validado ? 'Reabrir' : 'Confirmar';
+        el('mvSubmit').className = 'btn btn-sm ' + (validado ? 'btn-warning' : 'btn-success');
+        el('mvAviso').style.display = (!validado && Number(b.dataset.pendiente) > 0) ? '' : 'none';
+        el('formValidar').action = '/koru/lunas/gestion/validar/' + b.dataset.main + '/';
+    });
+})();
+</script>
+{% endblock %}

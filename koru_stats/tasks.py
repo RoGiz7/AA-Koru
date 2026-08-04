@@ -2617,3 +2617,171 @@ def snapshot_moon_fuel(solo_corps=True):
 
     logger.info("koru snapshot_moon_fuel: %s estructuras (%s)", guardados, hoy)
     return guardados
+
+
+# ---------------------------------------------------------------------------
+# Tax lunar — F2: comparador y libro de saldos
+#
+# NO se empareja un contrato con un mes. Se acumula lo que se debe contra lo
+# que se ha entregado y las entregas se imputan al periodo mas antiguo primero
+# (FIFO). Asi el sistema absorbe solo: pagar dos meses juntos, partir el pago en
+# varios contratos, pagar de mas, o pagar en nombre de un alt.
+#
+# Una fila VALIDADA esta congelada: es un asiento contable y ya no se recalcula
+# aunque el contrato desaparezca de la ESI (hay 81.530 en estado `deleted`).
+# ---------------------------------------------------------------------------
+
+SQL_DEUDA_POR_MINERAL = """
+    SELECT DATE_FORMAT(mo.last_updated, '%%Y-%%m')      AS period,
+           main_ec.character_id                         AS main_char_id,
+           main_ec.character_name                       AS main_name,
+           it.id                                        AS ore_type_id,
+           it.name                                      AS ore,
+           ig.id                                        AS group_id,
+           SUM(mo.quantity)                             AS unidades
+    FROM moons_miningobservation mo
+    JOIN eve_sde_itemtype              it ON it.id = mo.type_id
+    JOIN eve_sde_itemgroup             ig ON ig.id = it.group_id
+    JOIN eveonline_evecharacter        ec ON ec.character_id = mo.character_id
+    JOIN authentication_characterownership co ON co.character_id = ec.id
+    JOIN authentication_userprofile    up ON up.user_id = co.user_id
+    JOIN eveonline_evecharacter   main_ec ON main_ec.id = up.main_character_id
+    WHERE ig.id IN (1884, 1920, 1921, 1922, 1923)
+      AND mo.recorded_corporation_id IN ({corps})
+      {periodo}
+    GROUP BY period, main_ec.character_id, main_ec.character_name,
+             it.id, it.name, ig.id
+    ORDER BY period, main_ec.character_name
+"""
+
+
+def _reparto_resto_mayor(exacto):
+    """
+    Redondea un dict {clave: valor_float} al alza en TOTAL, repartiendo el
+    sobrante a las claves con mayor parte fraccionaria (Hare).
+
+    Elegido por Zigor sobre el ceil por mineral, que penalizaba hasta un +3,8%
+    a quien mina poco y variado.
+    """
+    import math
+
+    objetivo = int(math.ceil(sum(exacto.values())))
+    asignado = {k: int(math.floor(v)) for k, v in exacto.items()}
+    falta = objetivo - sum(asignado.values())
+    if falta > 0:
+        orden = sorted(exacto.items(), key=lambda x: -(x[1] - math.floor(x[1])))
+        for k, _ in orden[:falta]:
+            asignado[k] += 1
+    return asignado
+
+
+@shared_task
+def rebuild_moon_tax_ledger(period=None):
+    """Recalcula MoonTaxLedger. Respeta las filas ya validadas por un director."""
+    from decimal import Decimal
+    from .models import (MoonTaxConfig, MoonTaxContract, MoonTaxContractItem,
+                         MoonTaxLedger)
+
+    cfg = MoonTaxConfig.objects.filter(is_active=True).first()
+    if not cfg:
+        logger.warning("koru rebuild_moon_tax_ledger: sin MoonTaxConfig activa")
+        return 0
+    rates = cfg.rates_by_group
+
+    corp_ids = _get_active_corp_ids()
+    if not corp_ids:
+        logger.warning("koru rebuild_moon_tax_ledger: sin corps activas")
+        return 0
+
+    params = list(corp_ids)
+    periodo_sql = ""
+    if period:
+        periodo_sql = "AND DATE_FORMAT(mo.last_updated, '%%Y-%%m') = %s"
+        params.append(period)
+
+    sql = SQL_DEUDA_POR_MINERAL.format(
+        corps=",".join(["%s"] * len(corp_ids)), periodo=periodo_sql)
+    with connection.cursor() as cursor:
+        cursor.execute(sql, params)
+        cols = [d[0] for d in cursor.description]
+        filas = [dict(zip(cols, r)) for r in cursor.fetchall()]
+
+    if not filas:
+        logger.info("koru rebuild_moon_tax_ledger: sin minado que imputar")
+        return 0
+
+    # 1) deuda: se redondea por (main, periodo, tier), no mineral a mineral
+    bloques = {}
+    for f in filas:
+        clave = (int(f["main_char_id"]), f["period"], int(f["group_id"]))
+        bloques.setdefault(clave, {})[int(f["ore_type_id"])] = {
+            "ore": f["ore"], "unidades": int(f["unidades"] or 0),
+            "main_name": f["main_name"] or "",
+        }
+
+    deuda = {}   # (main, periodo, ore_type_id) -> dict
+    for (main_id, periodo, gid), ores in bloques.items():
+        tasa = rates.get(gid, 0)
+        if not tasa:
+            continue
+        # unidades adeudadas == comprimidos: el mineral lunar comprime 1:1
+        exacto = {tid: d["unidades"] * tasa for tid, d in ores.items()}
+        for tid, comp in _reparto_resto_mayor(exacto).items():
+            deuda[(main_id, periodo, tid)] = {
+                "main_name": ores[tid]["main_name"],
+                "ore":       ores[tid]["ore"],
+                "group_id":  gid,
+                "unidades":  ores[tid]["unidades"],
+                "tasa":      tasa * 100,
+                "debe":      comp,
+            }
+
+    # 2) entregado: solo contratos FINALIZADOS (un `outstanding` no esta pagado)
+    entregado = {}
+    qs = (MoonTaxContractItem.objects
+          .filter(is_compressed=True,
+                  contract__esi_status="finished",
+                  contract__estado__in=[MoonTaxContract.ESTADO_DETECTADO,
+                                        MoonTaxContract.ESTADO_REVISAR],
+                  contract__main_char_id__isnull=False)
+          .values("contract__main_char_id", "base_type_id", "quantity"))
+    for r in qs:
+        clave = (int(r["contract__main_char_id"]), int(r["base_type_id"] or 0))
+        entregado[clave] = entregado.get(clave, 0) + int(r["quantity"] or 0)
+
+    # 3) imputar FIFO al periodo mas antiguo
+    validadas = {
+        (l.main_char_id, l.period, l.base_type_id): l
+        for l in MoonTaxLedger.objects.filter(validado=True)
+    }
+    for (main_id, periodo, tid), val in validadas.items():
+        clave = (main_id, tid)
+        if clave in entregado:
+            entregado[clave] = max(entregado[clave] - val.entregado, 0)
+
+    guardados = 0
+    for clave in sorted(deuda.keys(), key=lambda k: (k[0], k[2], k[1])):
+        main_id, periodo, tid = clave
+        if clave in validadas:
+            continue                      # congelada, no se toca
+        d = deuda[clave]
+        disponible = entregado.get((main_id, tid), 0)
+        imputado = min(disponible, d["debe"])
+        entregado[(main_id, tid)] = disponible - imputado
+
+        MoonTaxLedger.objects.update_or_create(
+            main_char_id=main_id, period=periodo, base_type_id=tid,
+            defaults={
+                "main_name":        d["main_name"],
+                "base_name":        d["ore"],
+                "group_id":         d["group_id"],
+                "unidades_minadas": d["unidades"],
+                "tasa":             Decimal(str(round(d["tasa"], 2))),
+                "debe":             d["debe"],
+                "entregado":        imputado,
+            },
+        )
+        guardados += 1
+
+    logger.info("koru rebuild_moon_tax_ledger: %s filas de saldo", guardados)
+    return guardados
