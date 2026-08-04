@@ -699,3 +699,187 @@ class SocialEdge(models.Model):
 
     def __str__(self):
         return f"{self.main_a_name} <-> {self.main_b_name} ({self.peso})"
+
+
+# ---------------------------------------------------------------------------
+# Tax lunar — control de contratos (F1: ingesta)
+#
+# Diseño en `Auth Reki/koru-tax-contratos-diseno.md`. Puntos clave:
+#   - La deteccion PROPONE, el director DISPONE. Nada se da por pagado solo.
+#   - Al validar se CONGELA una foto: los contratos de EVE se borran (ya hay
+#     81.530 en estado `deleted`), asi que un saldo calculado en vivo haria
+#     reaparecer como morosos a quienes si pagaron.
+#   - Libro de saldos por piloto y mineral, no un contrato = un mes.
+# ---------------------------------------------------------------------------
+
+class MoonTaxRecipient(models.Model):
+    """
+    Destinatarios validos de un contrato de tax lunar.
+
+    CONFIGURABLE A PROPOSITO, no una constante en el codigo: en la BD conviven
+    contratos `item_exchange` a precio 0 dirigidos a Goonswarm Federation
+    (1354830081), que NO son el tax de Rekium. Si el comparador no filtrase por
+    destinatario, daria por pagada la deuda a quien pago en otro sitio.
+    """
+    entity_id   = models.BigIntegerField(unique=True, help_text="ID de la corp o personaje que recibe los contratos")
+    entity_name = models.CharField(max_length=100, blank=True, default="")
+    is_active   = models.BooleanField(default=True, db_index=True)
+    notes       = models.CharField(max_length=200, blank=True, default="")
+
+    class Meta:
+        verbose_name        = "Tax lunar — destinatario válido"
+        verbose_name_plural = "Tax lunar — destinatarios válidos"
+        ordering            = ["entity_name"]
+
+    def __str__(self):
+        estado = "activo" if self.is_active else "inactivo"
+        return f"{self.entity_name or self.entity_id} ({estado})"
+
+
+class MoonTaxContract(models.Model):
+    """
+    Foto de un contrato detectado, ya deduplicado.
+
+    OJO con `corptools_corporatecontract`: cada contrato esta repetido una vez
+    por corp que lo ve (la PK `id` es varchar = corporation_id + contract_id),
+    y sus items tambien. Hay que deduplicar por `contract_id` o cada piloto
+    parecera haber pagado el doble. Ademas `issuer_id` vale 0 en TODAS las
+    filas: el emisor sale de `issuer_name_id`.
+    """
+    ESTADO_DETECTADO  = "detectado"
+    ESTADO_REVISAR    = "revisar"
+    ESTADO_DESCARTADO = "descartado"
+    ESTADOS = [
+        (ESTADO_DETECTADO,  "Detectado"),
+        (ESTADO_REVISAR,    "Revisar"),
+        (ESTADO_DESCARTADO, "Descartado"),
+    ]
+
+    contract_id     = models.BigIntegerField(unique=True, db_index=True)
+
+    issuer_id       = models.BigIntegerField(db_index=True, help_text="De issuer_name_id; issuer_id viene a 0 siempre")
+    issuer_name     = models.CharField(max_length=100, blank=True, default="")
+    main_char_id    = models.BigIntegerField(null=True, blank=True, db_index=True, help_text="Main al que se imputa; el emisor puede ser un alt")
+    main_name       = models.CharField(max_length=100, blank=True, default="")
+
+    assignee_id     = models.BigIntegerField(db_index=True)
+    price           = models.DecimalField(max_digits=20, decimal_places=2, default=0)
+    reward          = models.DecimalField(max_digits=20, decimal_places=2, default=0)
+    volume          = models.DecimalField(max_digits=20, decimal_places=2, default=0)
+    contract_type   = models.CharField(max_length=20, blank=True, default="")
+    esi_status      = models.CharField(max_length=25, blank=True, default="", help_text="status de la ESI: outstanding / finished / deleted...")
+
+    start_location_id   = models.BigIntegerField(null=True, blank=True)
+    start_location_name = models.CharField(max_length=150, blank=True, default="")
+
+    date_issued     = models.DateTimeField(null=True, blank=True, db_index=True)
+    date_accepted   = models.DateTimeField(null=True, blank=True)
+    date_completed  = models.DateTimeField(null=True, blank=True)
+
+    estado          = models.CharField(max_length=20, choices=ESTADOS, default=ESTADO_DETECTADO, db_index=True)
+
+    # Banderas de anomalia -> el sistema marca, el director resuelve
+    tiene_bruto     = models.BooleanField(default=False, help_text="Trae mineral sin comprimir (no se acepta: transporte inviable)")
+    ubicacion_rara  = models.BooleanField(default=False, help_text="Entregado fuera de la ubicacion esperada")
+    cobra_isk       = models.BooleanField(default=False, help_text="price o reward distintos de cero")
+    items_ajenos    = models.BooleanField(default=False, help_text="Trae cosas que no son mineral lunar")
+    aviso           = models.CharField(max_length=250, blank=True, default="")
+
+    detected_at     = models.DateTimeField(auto_now_add=True)
+    updated_at      = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name        = "Tax lunar — contrato"
+        verbose_name_plural = "Tax lunar — contratos"
+        ordering            = ["-date_issued"]
+        indexes = [
+            models.Index(fields=["main_char_id", "date_issued"], name="koru_mtc_main_fecha"),
+            models.Index(fields=["estado", "date_issued"],       name="koru_mtc_estado_fecha"),
+        ]
+
+    @property
+    def tiene_anomalias(self):
+        return any([self.tiene_bruto, self.ubicacion_rara, self.cobra_isk, self.items_ajenos])
+
+    def __str__(self):
+        return f"#{self.contract_id} · {self.main_name or self.issuer_name} · {self.esi_status}"
+
+
+class MoonTaxContractItem(models.Model):
+    """Un ítem del contrato. `quantity`, nunca `raw_quantity` (ese marca copia/original de BPO)."""
+    contract     = models.ForeignKey(MoonTaxContract, on_delete=models.CASCADE, related_name="items")
+    type_id      = models.BigIntegerField(db_index=True)
+    type_name    = models.CharField(max_length=150, blank=True, default="")
+    quantity     = models.BigIntegerField(default=0)
+    group_id     = models.IntegerField(null=True, blank=True, db_index=True)
+    is_compressed = models.BooleanField(default=False)
+    base_type_id = models.BigIntegerField(null=True, blank=True, db_index=True,
+                                          help_text="Mineral base al que corresponde (comprime 1:1)")
+    base_name    = models.CharField(max_length=150, blank=True, default="")
+
+    class Meta:
+        verbose_name        = "Tax lunar — ítem de contrato"
+        verbose_name_plural = "Tax lunar — ítems de contrato"
+        ordering            = ["-quantity"]
+        constraints = [
+            models.UniqueConstraint(fields=["contract", "type_id"], name="uniq_mtc_item"),
+        ]
+
+    def __str__(self):
+        return f"{self.type_name} x{self.quantity:,}"
+
+
+class MoonTaxLedger(models.Model):
+    """
+    Libro de saldos por piloto, período y mineral base.
+
+    NO se empareja un contrato con un mes: se acumula lo que debe contra lo que
+    ha entregado. Asi el sistema absorbe solo pagar dos meses juntos, partir el
+    pago en varios contratos, pagar de mas o pagar en nombre de un alt.
+
+    `validado` congela la fila: a partir de ahi es un asiento contable y deja de
+    recalcularse aunque el contrato desaparezca de la ESI.
+    """
+    main_char_id  = models.BigIntegerField(db_index=True)
+    main_name     = models.CharField(max_length=100, blank=True, default="")
+    period        = models.CharField(max_length=7, db_index=True, help_text="YYYY-MM")
+
+    base_type_id  = models.BigIntegerField(db_index=True)
+    base_name     = models.CharField(max_length=150, blank=True, default="")
+    group_id      = models.IntegerField(null=True, blank=True)
+
+    unidades_minadas = models.BigIntegerField(default=0)
+    tasa             = models.DecimalField(max_digits=5, decimal_places=2, default=0, help_text="% aplicado")
+    debe             = models.BigIntegerField(default=0, help_text="Comprimidos adeudados (el mineral lunar comprime 1:1)")
+    entregado        = models.BigIntegerField(default=0, help_text="Comprimidos detectados en contratos")
+
+    validado      = models.BooleanField(default=False, db_index=True)
+    validado_por  = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL,
+                                      related_name="moon_tax_ledger_validado")
+    validado_at   = models.DateTimeField(null=True, blank=True)
+    saldo_cerrado = models.BigIntegerField(default=0, help_text="Lo que el director dejo pendiente al validar; es esto lo que arrastra")
+    notes         = models.TextField(blank=True, default="", help_text="Por que se acepto o no una compensacion entre minerales")
+
+    created_at    = models.DateTimeField(auto_now_add=True)
+    updated_at    = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name        = "Tax lunar — saldo"
+        verbose_name_plural = "Tax lunar — saldos"
+        ordering            = ["-period", "main_name", "base_name"]
+        constraints = [
+            models.UniqueConstraint(fields=["main_char_id", "period", "base_type_id"], name="uniq_mtl_saldo"),
+        ]
+        indexes = [
+            models.Index(fields=["period", "validado"], name="koru_mtl_periodo_val"),
+        ]
+
+    @property
+    def pendiente(self):
+        """Lo que falta por entregar. Si esta validado manda el saldo que fijo el director."""
+        if self.validado:
+            return self.saldo_cerrado
+        return max(self.debe - self.entregado, 0)
+
+    def __str__(self):
+        return f"{self.main_name} · {self.period} · {self.base_name}: {self.entregado:,}/{self.debe:,}"
