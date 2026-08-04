@@ -773,6 +773,11 @@ class MoonTaxContract(models.Model):
     main_name       = models.CharField(max_length=100, blank=True, default="")
 
     assignee_id     = models.BigIntegerField(db_index=True)
+    # Quien lo acepto en el juego. A diferencia de `issuer_id` (que vale 0 en las
+    # 263.729 filas), `acceptor_id` SI trae el id de EVE correcto: de 167.595
+    # contratos `finished`, ninguno lo tiene vacio ni sin fecha.
+    acceptor_id     = models.BigIntegerField(null=True, blank=True, db_index=True)
+    acceptor_name   = models.CharField(max_length=100, blank=True, default="")
     price           = models.DecimalField(max_digits=20, decimal_places=2, default=0)
     reward          = models.DecimalField(max_digits=20, decimal_places=2, default=0)
     volume          = models.DecimalField(max_digits=20, decimal_places=2, default=0)

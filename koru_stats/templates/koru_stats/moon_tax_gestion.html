@@ -142,6 +142,12 @@ details > summary { cursor: pointer; user-select: none; }
                                             <span class="badge {% if c.esi_status == 'finished' %}bg-success{% elif c.esi_status == 'outstanding' %}bg-warning text-dark{% else %}bg-dark{% endif %}">{{ c.esi_status }}</span>
                                             {% if c.estado == 'revisar' %}<span class="badge bg-danger">revisar</span>{% endif %}
                                             <span class="text-muted">{{ c.date_issued|date:"d/m/Y H:i" }}</span>
+                                            {% if c.acceptor_name %}
+                                            <span class="text-success" title="Quien lo aceptó en el juego">
+                                                <i class="fas fa-handshake me-1"></i>{{ c.acceptor_name }}
+                                                · {{ c.date_accepted|date:"d/m/Y H:i" }}
+                                            </span>
+                                            {% endif %}
                                             {% if c.aviso %}<span class="text-warning">⚠ {{ c.aviso }}</span>{% endif %}
                                         </div>
                                         {% for i in c.items.all %}

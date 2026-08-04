@@ -2312,7 +2312,7 @@ def _moon_ore_catalog():
 
 
 SQL_CONTRATOS_TAX = """
-    SELECT c.id, c.contract_id, c.issuer_name_id, c.assignee_id,
+    SELECT c.id, c.contract_id, c.issuer_name_id, c.assignee_id, c.acceptor_name_id,
            c.price, c.reward, c.volume, c.contract_type, c.status,
            c.start_location_id, c.date_issued, c.date_accepted, c.date_completed
     FROM corptools_corporatecontract c
@@ -2375,6 +2375,7 @@ def sync_moon_tax_contracts(dias=120):
 
     nombres = {}
     ids_nombre = {int(c["issuer_name_id"] or 0) for c in contratos}
+    ids_nombre |= {int(c["acceptor_name_id"] or 0) for c in contratos if c["acceptor_name_id"]}
     if ids_nombre:
         ph2 = ",".join(["%s"] * len(ids_nombre))
         with connection.cursor() as cursor:
@@ -2437,6 +2438,8 @@ def sync_moon_tax_contracts(dias=120):
                 "main_char_id":   main_id,
                 "main_name":      main_name,
                 "assignee_id":    int(c["assignee_id"] or 0),
+                "acceptor_id":    int(c["acceptor_name_id"]) or None,
+                "acceptor_name":  nombres.get(int(c["acceptor_name_id"] or 0), ""),
                 "price":          c["price"] or 0,
                 "reward":         c["reward"] or 0,
                 "volume":         c["volume"] or 0,
