@@ -46,14 +46,14 @@
             <div class="card kpi-card red h-100"><div class="card-body">
                 <div class="stat-label mb-1">Combustible</div>
                 <div class="stat-big text-danger">{{ kpi_coste_mes|rkisk }}</div>
-                <small class="text-muted">al mes, todas</small>
+                <small class="text-muted">al mes · alianza {{ kpi_tarifa|rkisk }}</small>
             </div></div>
         </div>
         <div class="col-6 col-md-2">
             <div class="card kpi-card {% if kpi_margen >= 0 %}green{% else %}red{% endif %} h-100"><div class="card-body">
                 <div class="stat-label mb-1">Margen corp</div>
                 <div class="stat-big {% if kpi_margen >= 0 %}text-success{% else %}text-danger{% endif %}">{{ kpi_margen|rkisk }}</div>
-                <small class="text-muted">tax − combustible</small>
+                <small class="text-muted">tax − combustible − alianza</small>
             </div></div>
         </div>
         <div class="col-6 col-md-2">
@@ -118,6 +118,10 @@
                         {% if alq %}<div class="d-flex justify-content-between small"><span>Alquiler</span><span class="text-success">+{{ alq|rkisk }}</span></div>{% endif %}
                         {% endwith %}
                         <div class="d-flex justify-content-between small"><span>Combustible</span><span class="text-danger">−{{ l.coste|rkisk }}</span></div>
+                        <div class="d-flex justify-content-between small">
+                            <span>Tarifa de alianza <span class="text-muted" style="font-size:.7rem">({{ l.n_fracturas }} fract.)</span></span>
+                            <span class="{% if l.tarifa %}text-danger{% else %}text-muted{% endif %}">−{{ l.tarifa|rkisk }}</span>
+                        </div>
                         <hr class="my-2">
                         <div class="d-flex justify-content-between align-items-center">
                             <span class="small text-muted">¿se paga sola?</span>
@@ -147,7 +151,7 @@
                     <th>Fractura</th><th>Ventana</th><th class="text-end">Días</th>
                     <th class="text-end">Aprovechado</th><th class="text-end">Valor extraído</th>
                     <th class="text-end">Sin minar</th><th class="text-end">Tax</th>
-                    <th class="text-end">Combustible</th><th class="text-end">Margen corp</th>
+                    <th class="text-end">Combustible</th><th class="text-end">Alianza</th><th class="text-end">Margen corp</th>
                 </tr></thead>
                 <tbody>
                     {% for f in l.fracturas %}
@@ -163,6 +167,7 @@
                             {{ f.coste|rkisk }}
                             {% if f.coste_estimado %}<div style="font-size:.6rem" class="text-muted" title="No hay foto de combustible de esa fecha; se aplica el consumo actual">estimado</div>{% endif %}
                         </td>
+                        <td class="text-end font-monospace {% if f.tarifa %}text-danger{% else %}text-muted{% endif %}">{{ f.tarifa|rkisk }}</td>
                         <td class="text-end font-monospace fw-bold {% if f.margen_corp >= 0 %}text-success{% else %}text-danger{% endif %}">{{ f.margen_corp|rkisk }}</td>
                     </tr>
                     {% endfor %}

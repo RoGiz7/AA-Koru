@@ -954,3 +954,38 @@ class MoonFuelSnapshot(models.Model):
 
     def __str__(self):
         return f"{self.structure_name or self.structure_id} · {self.fecha} · {self.consumo_hora} bl/h"
+
+
+class MoonAllianceFee(models.Model):
+    """
+    Lo que la alianza cobra a la corp por CADA fractura.
+
+    Es un coste real que no sale de ninguna API: lo declara un director. Se
+    imputa por fractura, no por mes.
+
+    `structure_id` vacio = tarifa por DEFECTO para todas las lunas. Una fila con
+    structure_id concreto la sobrescribe (las alianzas suelen cobrar segun el
+    tipo de luna). `valid_from` permite subir la tarifa sin reescribir el pasado.
+    """
+    structure_id     = models.BigIntegerField(
+        null=True, blank=True, db_index=True,
+        help_text="Vacio = tarifa por defecto para todas las lunas")
+    structure_name   = models.CharField(max_length=150, blank=True, default="")
+    isk_por_fractura = models.DecimalField(max_digits=20, decimal_places=2, default=0)
+    valid_from       = models.DateField(
+        help_text="Desde cuando aplica. Las fracturas anteriores usan la tarifa vigente entonces.")
+    notes            = models.CharField(max_length=200, blank=True, default="")
+    created_at       = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name        = "Luna — tarifa de alianza"
+        verbose_name_plural = "Luna — tarifas de alianza"
+        ordering            = ["-valid_from", "structure_name"]
+        constraints = [
+            models.UniqueConstraint(fields=["structure_id", "valid_from"],
+                                    name="uniq_moon_fee_desde"),
+        ]
+
+    def __str__(self):
+        quien = self.structure_name or self.structure_id or "todas las lunas"
+        return f"{quien} · {self.isk_por_fractura} ISK/fractura desde {self.valid_from}"

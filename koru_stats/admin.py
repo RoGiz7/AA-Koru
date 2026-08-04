@@ -9,6 +9,7 @@ from .models import (
     KoruMarketPrice, CharacterValueSnapshot,
     CharacterOwnershipSnapshot, CharacterLifecycleEvent,
     TicketsConfig, Ticket,
+    MoonAllianceFee, MoonTaxRecipient,
 )
 
 
@@ -277,3 +278,27 @@ class TicketAdmin(admin.ModelAdmin):
 
     def has_add_permission(self, request):
         return False  # La puebla el sync
+
+
+# ---------------------------------------------------------------------------
+# Tax lunar — destinatarios y tarifa de la alianza
+# ---------------------------------------------------------------------------
+
+@admin.register(MoonTaxRecipient)
+class MoonTaxRecipientAdmin(admin.ModelAdmin):
+    list_display  = ("entity_name", "entity_id", "is_active", "expected_location_name")
+    list_filter   = ("is_active",)
+    search_fields = ("entity_name", "entity_id")
+
+
+@admin.register(MoonAllianceFee)
+class MoonAllianceFeeAdmin(admin.ModelAdmin):
+    list_display  = ("_quien", "isk_por_fractura", "valid_from", "notes")
+    list_filter   = ("valid_from",)
+    search_fields = ("structure_name", "notes")
+    fields        = ("structure_id", "structure_name", "isk_por_fractura",
+                     "valid_from", "notes")
+
+    @admin.display(description="Aplica a")
+    def _quien(self, obj):
+        return obj.structure_name or obj.structure_id or "TODAS las lunas (por defecto)"

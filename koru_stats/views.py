@@ -4077,6 +4077,34 @@ def _coste_estructuras():
     return out
 
 
+def _tarifas_alianza():
+    """
+    Tarifas por fractura. Devuelve (por_estructura, por_defecto), cada una como
+    lista de (valid_from, isk) ordenada de mas reciente a mas antigua.
+    """
+    from .models import MoonAllianceFee
+    por_str, defecto = {}, []
+    for f in MoonAllianceFee.objects.order_by("-valid_from"):
+        item = (f.valid_from, float(f.isk_por_fractura or 0))
+        if f.structure_id:
+            por_str.setdefault(int(f.structure_id), []).append(item)
+        else:
+            defecto.append(item)
+    return por_str, defecto
+
+
+def _tarifa_en(fecha, sid, por_str, defecto):
+    """La tarifa vigente en esa fecha. La especifica de la luna manda."""
+    if fecha is None:
+        return 0.0
+    d = fecha.date() if hasattr(fecha, "date") else fecha
+    for lista in (por_str.get(sid, []), defecto):
+        for desde, isk in lista:          # ya vienen de mas reciente a mas vieja
+            if desde <= d:
+                return isk
+    return 0.0
+
+
 def _alquileres():
     """{moon_id: ISK/mes}. La tabla existe pero suele estar vacia."""
     try:
@@ -4110,6 +4138,7 @@ def _lunas_pyl():
     costes = _coste_estructuras()
     fracturas = _fracturas_por_estructura(
         [int(e["structure_id"]) for e in estructuras], None, None)
+    tarifas_str, tarifas_def = _tarifas_alianza()
     ahora = timezone.now()
 
     salida = []
@@ -4147,15 +4176,19 @@ def _lunas_pyl():
                     perdido_isk += (d["perdido"] / max(vol, 0.01)) * precios.get(tid, 0.0)
 
             coste = coste_dia * dias
+            # Lo que la alianza cobra por fracturar. No sale de ninguna API: lo
+            # declara un director en MoonAllianceFee.
+            tarifa = _tarifa_en(f["arrival"], sid, tarifas_str, tarifas_def)
             lista.append({
                 **f,
+                "tarifa":      tarifa,
                 "dias":        round(dias, 1),
                 "valor":       valor,
                 "perdido_isk": perdido_isk,
                 "tax_comp":    int(round(tax_comp)),
                 "tax_isk":     tax_isk,
                 "coste":       coste,
-                "margen_corp": tax_isk - coste,
+                "margen_corp": tax_isk - coste - tarifa,
                 "coste_estimado": bool(fecha_foto and not (desde.date() <= fecha_foto <= min(hasta, ahora).date())),
             })
 
@@ -4175,6 +4208,7 @@ def _lunas_pyl():
             "perdido_isk":  sum(x["perdido_isk"] for x in lista),
             "tax_isk":      sum(x["tax_isk"] for x in lista),
             "coste":        sum(x["coste"] for x in lista),
+            "tarifa":       sum(x["tarifa"] for x in lista),
             "margen_corp":  sum(x["margen_corp"] for x in lista),
             # Ociosa = encendida, SIN fractura programada y la ultima llego hace
             # mas de 30 dias. Antes se miraba el indice 0 de la lista completa,
@@ -4208,7 +4242,8 @@ def corp_moons_dashboard(request):
         "kpi_perdido":  sum(l["perdido_isk"] for l in lunas),
         "kpi_tax":      sum(l["tax_isk"] for l in lunas),
         "kpi_coste_mes": sum(l["coste_mes"] for l in lunas),
-        "kpi_margen":   sum(l["tax_isk"] for l in lunas) - sum(l["coste"] for l in lunas),
+        "kpi_tarifa":   sum(l["tarifa"] for l in lunas),
+        "kpi_margen":   sum(l["margen_corp"] for l in lunas),
         "kpi_lunas":    len(lunas),
         "kpi_ociosas":  sum(1 for l in lunas if l["ociosa"] and l["coste_dia"]),
     }
