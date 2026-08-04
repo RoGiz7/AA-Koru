@@ -62,8 +62,7 @@ details > summary { cursor: pointer; user-select: none; }
                     {% include "koru_stats/includes/periodo_selector.html" %}
                     <span class="text-muted small">Mostrando <strong>{{ mes }}</strong></span>
 
-                    {# Modo de valoracion del ISK. SOLO informativo: el tax se
-                       calcula sobre unidades de mineral, no sobre ISK. #}
+                    {# Valoracion del ISK: solo informativo, el tax va por unidades #}
                     <div class="d-flex align-items-center gap-2">
                         <span class="text-muted small"><i class="fas fa-coins me-1"></i>Valorar ISK:</span>
                         <div class="btn-group btn-group-sm" role="group">
@@ -305,8 +304,8 @@ details > summary { cursor: pointer; user-select: none; }
                                                 <div class="d-flex gap-3 small text-muted mb-1 flex-wrap">
                                                     <span class="tier-badge tier-{{ gid }}">{{ tier.tier }}</span>
                                                     <span>{{ tier.unidades|rknum }} u</span>
-                                                    <span class="text-warning">{{ tier.isk|floatformat:0 }} ISK</span>
-                                                    <span class="text-danger">Tax: {{ tier.tax|floatformat:0 }} ISK ({{ tier.tasa }}%)</span>
+                                                    <span class="text-warning">{{ tier.isk|rknum }} ISK</span>
+                                                    <span class="text-danger">Tax: {{ tier.tax|rknum }} ISK ({{ tier.tasa }}%)</span>
                                                 </div>
                                                 {% endfor %}
                                             </div>
@@ -330,7 +329,7 @@ details > summary { cursor: pointer; user-select: none; }
                                                             </td>
                                                             <td><span class="tier-badge tier-{{ gid }}">{{ atier.tier }}</span></td>
                                                             <td class="text-end font-monospace">{{ atier.unidades|rknum }}</td>
-                                                            <td class="text-end font-monospace text-warning">{{ atier.isk|floatformat:0 }}</td>
+                                                            <td class="text-end font-monospace text-warning">{{ atier.isk|rknum }}</td>
                                                         </tr>
                                                         {% endfor %}
                                                         {% endfor %}
@@ -345,11 +344,11 @@ details > summary { cursor: pointer; user-select: none; }
                                                 <div class="d-flex align-items-center gap-2 mb-1">
                                                     <i class="fas fa-file-contract text-info"></i>
                                                     <strong class="small">Contrato EVE — Comprimidos:</strong>
-                                                    <span class="badge bg-dark text-info" style="font-size:.65rem">{{ p.contrato.total_comp }} comp · {{ p.contrato.unidades_tax|rknum }} u · {{ p.contrato.m3 }} m³</span>
+                                                    <span class="badge bg-dark text-info" style="font-size:.65rem">{{ p.contrato.total_comp|rknum }} comp · {{ p.contrato.unidades_tax|rknum }} u · {{ p.contrato.m3 }} m³</span>
                                                 </div>
                                                 <div class="mb-2">
                                                     {% for ore, cantidad in p.contrato.comprimidos.items %}
-                                                    <span class="comp-badge">{{ ore }}: {{ cantidad }}</span>
+                                                    <span class="comp-badge">{{ ore }}: {{ cantidad|rknum }}</span>
                                                     {% endfor %}
                                                 </div>
                                                 <div class="contrato-box" id="contrato-{{ p.char_id }}">{{ p.contrato.texto }}</div>
@@ -449,7 +448,7 @@ details > summary { cursor: pointer; user-select: none; }
                                             <div class="d-flex gap-3 small text-muted mb-1">
                                                 <span class="tier-badge tier-{{ gid }}">{{ tier.tier }}</span>
                                                 <span>{{ tier.unidades|rknum }} u</span>
-                                                <span class="text-warning">{{ tier.isk|floatformat:0 }} ISK</span>
+                                                <span class="text-warning">{{ tier.isk|rknum }} ISK</span>
                                             </div>
                                             {% endfor %}
                                             {# Detalle por ore del externo #}
