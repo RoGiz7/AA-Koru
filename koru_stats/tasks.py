@@ -2465,3 +2465,139 @@ def sync_moon_tax_contracts(dias=120):
 
     logger.info("koru sync_moon_tax_contracts: %s contratos (%s dias)", guardados, dias)
     return guardados
+
+
+# ---------------------------------------------------------------------------
+# Luna — foto diaria del combustible (R1 de rentabilidad)
+#
+# El consumo NO se declara a mano: se DERIVA de lo que corptools ya tiene.
+#     consumo (bloques/hora) = bloques en el hangar / horas hasta fuel_expires
+# Verificado 2026-08-04 contra las tres Athanor de Rekium: 5,01 bl/h las tres,
+# calculado por separado. Y se autocorrige: al apagar un servicio, fuel_expires
+# se mueve y el consumo baja solo.
+# ---------------------------------------------------------------------------
+
+SQL_FUEL_ESTRUCTURAS = """
+    SELECT a.location_id                       AS structure_id,
+           st.name                             AS structure_name,
+           st.corporation_id                   AS corporation_id,
+           st.fuel_expires                     AS fuel_expires,
+           st.state                            AS state,
+           st.id                               AS st_pk,
+           a.type_name_id                      AS fuel_type_id,
+           it.name                             AS fuel_type_name,
+           SUM(a.quantity)                     AS bloques
+    FROM corptools_corpasset a
+    JOIN eve_sde_itemtype   it ON it.id = a.type_name_id
+    JOIN corptools_structure st ON st.structure_id = a.location_id
+    WHERE it.name LIKE %s
+      {flag}
+      {corps}
+    GROUP BY a.location_id, st.name, st.corporation_id, st.fuel_expires,
+             st.state, st.id, a.type_name_id, it.name
+"""
+
+
+def _servicios_online(st_pks):
+    """{corptools_structure.id: 'Servicio A, Servicio B'} — solo los online.
+
+    OJO: `corptools_structureservice.structure_id` es int(11), asi que NO es el
+    structure_id de EVE (que no cabe): es la PK de corptools_structure.
+    """
+    if not st_pks:
+        return {}
+    ph = ",".join(["%s"] * len(st_pks))
+    out = {}
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT structure_id, name, state FROM corptools_structureservice "
+            "WHERE structure_id IN (" + ph + ")",
+            list(st_pks),
+        )
+        for pk, nombre, estado in cursor.fetchall():
+            if (estado or "").lower() == "online":
+                out.setdefault(int(pk), []).append(nombre or "")
+    return {k: ", ".join(sorted(v))[:255] for k, v in out.items()}
+
+
+@shared_task
+def snapshot_moon_fuel(solo_corps=True):
+    """Guarda la foto de hoy del combustible de las estructuras de la alianza."""
+    from decimal import Decimal
+    from .models import MoonFuelSnapshot
+
+    corp_ids = _get_active_corp_ids() if solo_corps else []
+    corps_sql = ""
+    if corp_ids:
+        corps_sql = "AND st.corporation_id IN (" + ",".join(["%s"] * len(corp_ids)) + ")"
+
+    def _leer(usar_flag):
+        """Los parametros van en el MISMO orden en que aparecen en la SQL."""
+        params = ["%Fuel Block%"]
+        flag_sql = ""
+        if usar_flag:
+            flag_sql = "AND a.location_flag = %s"
+            params.append("StructureFuel")
+        params += list(corp_ids)
+
+        with connection.cursor() as cursor:
+            cursor.execute(SQL_FUEL_ESTRUCTURAS.format(flag=flag_sql, corps=corps_sql), params)
+            cols = [d[0] for d in cursor.description]
+            return [dict(zip(cols, r)) for r in cursor.fetchall()]
+
+    # El combustible vive en el hangar `StructureFuel`. Si ese flag no devuelve
+    # nada (el nombre cambia segun version), se relee sin filtrar y se avisa.
+    filas = _leer(True)
+    if not filas:
+        logger.warning("koru snapshot_moon_fuel: sin filas con location_flag=StructureFuel, releo sin filtro")
+        filas = _leer(False)
+
+    if not filas:
+        logger.warning("koru snapshot_moon_fuel: no hay combustible en assets de corp")
+        return 0
+
+    precios = _fetch_fuzzwork_prices(sorted({int(f["fuel_type_id"]) for f in filas if f["fuel_type_id"]}))
+    servicios = _servicios_online({int(f["st_pk"]) for f in filas if f["st_pk"]})
+
+    ahora = timezone.now()
+    hoy = ahora.date()
+    guardados = 0
+
+    for f in filas:
+        bloques = int(f["bloques"] or 0)
+        expira  = _aware(f["fuel_expires"])
+        horas   = (expira - ahora).total_seconds() / 3600 if expira else 0
+        consumo = (bloques / horas) if horas > 0 and bloques else 0
+
+        tid = int(f["fuel_type_id"] or 0)
+        precio = float(precios.get(tid, {}).get("sell", 0) or 0)
+        if not precio:
+            from .models import KoruMarketPrice
+            kmp = KoruMarketPrice.objects.filter(type_id=tid).first()
+            precio = float(kmp.average_price) if kmp else 0.0
+
+        coste_hora = consumo * precio
+
+        MoonFuelSnapshot.objects.update_or_create(
+            structure_id=int(f["structure_id"]),
+            fecha=hoy,
+            defaults={
+                "structure_name":  f["structure_name"] or "",
+                "corporation_id":  f["corporation_id"],
+                "fuel_type_id":    tid or None,
+                "fuel_type_name":  f["fuel_type_name"] or "",
+                "bloques":         bloques,
+                "fuel_expires":    expira,
+                "horas_restantes": Decimal(str(round(max(horas, 0), 2))),
+                "consumo_hora":    Decimal(str(round(consumo, 3))),
+                "precio_bloque":   Decimal(str(round(precio, 2))),
+                "coste_hora":      Decimal(str(round(coste_hora, 2))),
+                "coste_dia":       Decimal(str(round(coste_hora * 24, 2))),
+                "servicios":       servicios.get(int(f["st_pk"] or 0), ""),
+                "state":           f["state"] or "",
+            },
+        )
+        guardados += 1
+
+    logger.info("koru snapshot_moon_fuel: %s estructuras (%s)", guardados, hoy)
+    return guardados

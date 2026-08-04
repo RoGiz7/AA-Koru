@@ -888,3 +888,59 @@ class MoonTaxLedger(models.Model):
 
     def __str__(self):
         return f"{self.main_name} · {self.period} · {self.base_name}: {self.entregado:,}/{self.debe:,}"
+
+
+class MoonFuelSnapshot(models.Model):
+    """
+    Foto diaria del combustible de una estructura.
+
+    El consumo NO se declara: se DERIVA de datos que corptools ya tiene.
+
+        consumo (bloques/hora) = bloques en el hangar / horas hasta fuel_expires
+
+    Verificado el 2026-08-04 contra las tres Athanor de Rekium: las tres dan
+    5,01 bloques/hora de forma independiente. Y se autocorrige solo — si apagan
+    un servicio, `fuel_expires` se mueve y el consumo recalculado baja.
+
+    Se guarda una foto AL DIA porque el combustible es un dato del momento: sin
+    histórico no se puede imputar coste a una fractura pasada.
+    """
+    structure_id    = models.BigIntegerField(db_index=True)
+    structure_name  = models.CharField(max_length=150, blank=True, default="")
+    corporation_id  = models.IntegerField(null=True, blank=True, db_index=True)
+    fecha           = models.DateField(db_index=True)
+
+    fuel_type_id    = models.IntegerField(null=True, blank=True)
+    fuel_type_name  = models.CharField(max_length=100, blank=True, default="")
+    bloques         = models.BigIntegerField(default=0)
+    fuel_expires    = models.DateTimeField(null=True, blank=True)
+
+    horas_restantes = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    consumo_hora    = models.DecimalField(max_digits=10, decimal_places=3, default=0,
+                                          help_text="Bloques/hora derivados")
+    precio_bloque   = models.DecimalField(max_digits=16, decimal_places=2, default=0)
+    coste_hora      = models.DecimalField(max_digits=20, decimal_places=2, default=0)
+    coste_dia       = models.DecimalField(max_digits=20, decimal_places=2, default=0)
+
+    servicios       = models.CharField(max_length=255, blank=True, default="",
+                                       help_text="Servicios online; explican el consumo")
+    state           = models.CharField(max_length=25, blank=True, default="")
+    created_at      = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name        = "Luna — foto de combustible"
+        verbose_name_plural = "Luna — fotos de combustible"
+        ordering            = ["-fecha", "structure_name"]
+        constraints = [
+            models.UniqueConstraint(fields=["structure_id", "fecha"], name="uniq_moon_fuel_dia"),
+        ]
+        indexes = [
+            models.Index(fields=["fecha", "structure_id"], name="koru_mfs_fecha_str"),
+        ]
+
+    @property
+    def coste_mes(self):
+        return self.coste_dia * 30
+
+    def __str__(self):
+        return f"{self.structure_name or self.structure_id} · {self.fecha} · {self.consumo_hora} bl/h"
