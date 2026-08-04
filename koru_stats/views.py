@@ -3806,6 +3806,37 @@ def moon_tax_gestion(request):
     for p in lista:
         p["contratos"] = por_piloto.get(p["main_char_id"], [])
 
+        # Resumen visual para la columna "Contrato": de un vistazo, si hay
+        # contrato y si esta como debe. Un `outstanding` existe pero NO esta
+        # aceptado, asi que no cuenta como entregado.
+        cs = {"total": 0, "aceptado": 0, "esperando": 0, "revisar": 0, "borrado": 0}
+        avisos = []
+        for c in p["contratos"]:
+            cs["total"] += 1
+            if c.estado == MoonTaxContract.ESTADO_REVISAR:
+                cs["revisar"] += 1
+            if c.esi_status == "finished":
+                cs["aceptado"] += 1
+            elif c.esi_status == "outstanding":
+                cs["esperando"] += 1
+            else:
+                cs["borrado"] += 1
+            if c.aviso:
+                avisos.append(c.aviso)
+        cs["aviso"] = " · ".join(sorted(set(avisos)))[:200]
+
+        if not cs["total"]:
+            cs["clase"], cs["texto"] = "secondary", "Sin contrato"
+        elif cs["revisar"]:
+            cs["clase"], cs["texto"] = "danger", "Con incidencias"
+        elif p["pendiente"] > 0:
+            cs["clase"], cs["texto"] = "warning", "Incompleto"
+        elif cs["esperando"]:
+            cs["clase"], cs["texto"] = "info", "Sin aceptar"
+        else:
+            cs["clase"], cs["texto"] = "success", "Correcto"
+        p["cs"] = cs
+
     huerfanos = (MoonTaxContract.objects.filter(main_char_id__isnull=True)
                  .prefetch_related("items").order_by("-date_issued"))
 

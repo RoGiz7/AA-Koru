@@ -95,6 +95,7 @@ details > summary { cursor: pointer; user-select: none; }
                         <th class="text-end">Debe</th>
                         <th class="text-end">Entregado</th>
                         <th class="text-end">Pendiente</th>
+                        <th class="text-center">Contrato</th>
                         <th class="text-center">Estado</th>
                         <th class="text-center">Acción</th>
                     </tr>
@@ -161,12 +162,33 @@ details > summary { cursor: pointer; user-select: none; }
                         <td class="text-end font-monospace">{{ p.debe|rknum }}</td>
                         <td class="text-end font-monospace text-success">{{ p.entregado|rknum }}</td>
                         <td class="text-end font-monospace fw-bold {% if p.pendiente %}text-danger{% else %}text-success{% endif %}">{{ p.pendiente|rknum }}</td>
+                        <td class="text-center" style="min-width:150px">
+                            <span class="badge bg-{{ p.cs.clase }}" {% if p.cs.aviso %}title="{{ p.cs.aviso }}"{% endif %}>
+                                {% if p.cs.total %}
+                                    {% if p.cs.revisar %}<i class="fas fa-triangle-exclamation me-1"></i>
+                                    {% elif p.cs.clase == 'success' %}<i class="fas fa-check me-1"></i>
+                                    {% else %}<i class="fas fa-hourglass-half me-1"></i>{% endif %}
+                                {% else %}<i class="fas fa-ban me-1"></i>{% endif %}
+                                {{ p.cs.texto }}
+                            </span>
+                            {% if p.cs.total %}
+                            <div class="mt-1" style="font-size:.62rem">
+                                {% if p.cs.aceptado %}<span class="badge bg-success" title="Aceptados">✓ {{ p.cs.aceptado }}</span>{% endif %}
+                                {% if p.cs.esperando %}<span class="badge bg-warning text-dark" title="Creados pero sin aceptar">⏳ {{ p.cs.esperando }}</span>{% endif %}
+                                {% if p.cs.borrado %}<span class="badge bg-dark" title="Borrados de la ESI">🗑 {{ p.cs.borrado }}</span>{% endif %}
+                                {% if p.cs.revisar %}<span class="badge bg-danger" title="{{ p.cs.aviso }}">⚠ {{ p.cs.revisar }}</span>{% endif %}
+                            </div>
+                            {% endif %}
+                        </td>
                         <td class="text-center">
                             {% if p.validado %}
                                 <span class="badge bg-success"><i class="fas fa-lock me-1"></i>Validado</span>
                                 {% if p.validado_por %}<div class="text-muted" style="font-size:.65rem">{{ p.validado_por }} · {{ p.validado_at|date:"d/m/Y" }}</div>{% endif %}
                             {% elif p.pendiente %}
-                                <span class="badge bg-danger">Pendiente {{ p.pct }}%</span>
+                                <span class="badge bg-danger">Cubierto {{ p.pct }}%</span>
+                                <div class="progress mt-1" style="height:5px">
+                                    <div class="progress-bar bg-success" style="width:{{ p.pct }}%"></div>
+                                </div>
                             {% else %}
                                 <span class="badge bg-warning text-dark">Cubierto, sin validar</span>
                             {% endif %}
@@ -182,7 +204,7 @@ details > summary { cursor: pointer; user-select: none; }
                         </td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="7" class="text-center text-muted py-4">
+                    <tr><td colspan="8" class="text-center text-muted py-4">
                         <i class="fas fa-inbox fa-2x mb-2 d-block"></i>Sin saldos para este período.
                         Lanza <code>rebuild_moon_tax_ledger()</code>.
                     </td></tr>
