@@ -2486,15 +2486,17 @@ SQL_FUEL_ESTRUCTURAS = """
            st.id                               AS st_pk,
            a.type_name_id                      AS fuel_type_id,
            it.name                             AS fuel_type_name,
-           SUM(a.quantity)                     AS bloques
+           SUM(a.quantity)                     AS bloques,
+           {col_corp}                          AS eve_corp_id
     FROM corptools_corpasset a
     JOIN eve_sde_itemtype   it ON it.id = a.type_name_id
     JOIN corptools_structure st ON st.structure_id = a.location_id
+    {join_corp}
     WHERE it.name LIKE %s
       {flag}
       {corps}
     GROUP BY a.location_id, st.name, st.corporation_id, st.fuel_expires,
-             st.state, st.id, a.type_name_id, it.name
+             st.state, st.id, a.type_name_id, it.name{grp_corp}
 """
 
 
@@ -2527,9 +2529,16 @@ def snapshot_moon_fuel(solo_corps=True):
     from .models import MoonFuelSnapshot
 
     corp_ids = _get_active_corp_ids() if solo_corps else []
-    corps_sql = ""
-    if corp_ids:
-        corps_sql = "AND st.corporation_id IN (" + ",".join(["%s"] * len(corp_ids)) + ")"
+
+    # OJO: `corptools_structure.corporation_id` NO es el id de corp de EVE, es la
+    # PK de `corptools_corporationaudit`. Y el `corporation_id` de esa tabla
+    # tampoco: es la PK de `eveonline_evecorporationinfo`. Hacen falta DOS saltos
+    # para llegar al id de EVE (98176563). Mismo patron que
+    # `corptools_structureservice.structure_id`, que es la PK de la estructura.
+    JOIN_CORP = (
+        "JOIN corptools_corporationaudit  ca  ON ca.id  = st.corporation_id "
+        "JOIN eveonline_evecorporationinfo eci ON eci.id = ca.corporation_id"
+    )
 
     def _leer(usar_flag):
         """Los parametros van en el MISMO orden en que aparecen en la SQL."""
@@ -2538,10 +2547,17 @@ def snapshot_moon_fuel(solo_corps=True):
         if usar_flag:
             flag_sql = "AND a.location_flag = %s"
             params.append("StructureFuel")
-        params += list(corp_ids)
+
+        corps_sql = ""
+        if corp_ids:
+            corps_sql = "AND eci.corporation_id IN (" + ",".join(["%s"] * len(corp_ids)) + ")"
+            params += list(corp_ids)
 
         with connection.cursor() as cursor:
-            cursor.execute(SQL_FUEL_ESTRUCTURAS.format(flag=flag_sql, corps=corps_sql), params)
+            cursor.execute(SQL_FUEL_ESTRUCTURAS.format(
+                flag=flag_sql, corps=corps_sql, join_corp=JOIN_CORP,
+                col_corp="eci.corporation_id", grp_corp=", eci.corporation_id",
+            ), params)
             cols = [d[0] for d in cursor.description]
             return [dict(zip(cols, r)) for r in cursor.fetchall()]
 
@@ -2583,7 +2599,7 @@ def snapshot_moon_fuel(solo_corps=True):
             fecha=hoy,
             defaults={
                 "structure_name":  f["structure_name"] or "",
-                "corporation_id":  f["corporation_id"],
+                "corporation_id":  f.get("eve_corp_id") or None,
                 "fuel_type_id":    tid or None,
                 "fuel_type_name":  f["fuel_type_name"] or "",
                 "bloques":         bloques,
