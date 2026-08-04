@@ -4007,3 +4007,186 @@ def moon_tax_mi(request):
     mt = _moon_tax_mi_ctx(request)
     return render(request, "koru_stats/moon_tax_mi.html",
                   {"mt": mt, "sin_main": mt is None})
+
+
+# ---------------------------------------------------------------------------
+# Rentabilidad de lunas (R2) — Koru Direccion
+#
+# DOS cuentas distintas, y las dos importan a un director:
+#   CORP     -> ingresa el TAX (+ alquiler). Responde a "¿el Athanor se paga solo?"
+#   MIEMBROS -> ingresan el valor extraido. Responde a "¿merece la pena minar aqui?"
+#
+# El valor va al 85% (reprocesado): nadie opera mineral lunar en crudo ni
+# comprimido, lo normal es reprocesar y vender el material.
+# ---------------------------------------------------------------------------
+
+SQL_LUNAS_ESTRUCTURAS = """
+    SELECT DISTINCT f.structure_id,
+           COALESCE(el.location_name, st.name, CONCAT('Structure ', f.structure_id)) AS nombre,
+           eci.corporation_id   AS corp_id,
+           eci.corporation_name AS corp_name
+    FROM moons_moonfrack f
+    JOIN corptools_structure          st  ON st.structure_id = f.structure_id
+    JOIN corptools_corporationaudit   ca  ON ca.id           = st.corporation_id
+    JOIN eveonline_evecorporationinfo eci ON eci.id          = ca.corporation_id
+    LEFT JOIN corptools_evelocation   el  ON el.location_id  = f.structure_id
+    WHERE eci.corporation_id IN ({corps})
+"""
+
+SQL_LUNAS_MINADO = """
+    SELECT it.id                                   AS type_id,
+           it.name                                 AS ore,
+           ig.id                                   AS group_id,
+           it.volume                               AS volumen,
+           SUM(mo.quantity)                        AS unidades,
+           ROUND(SUM(mo.quantity * it.volume), 2)  AS m3
+    FROM moons_miningobservation mo
+    JOIN eve_sde_itemtype  it ON it.id = mo.type_id
+    JOIN eve_sde_itemgroup ig ON ig.id = it.group_id
+    WHERE mo.structure_id = %s
+      AND mo.last_updated >= %s AND mo.last_updated < %s
+    GROUP BY it.id, it.name, ig.id, it.volume
+"""
+
+
+def _precios_reprocesado():
+    """{type_id: ISK por unidad al 85%}. Ver koru-moon-tax-contrato-redondeo."""
+    from .models import OreMarketPrice
+    return {p.type_id: float(p.price_reprocessed or 0)
+            for p in OreMarketPrice.objects.all().only("type_id", "price_reprocessed")}
+
+
+def _coste_estructuras():
+    """{structure_id: (coste_dia, fecha_foto, consumo, bloques)} de la ultima foto."""
+    from .models import MoonFuelSnapshot
+    out = {}
+    for f in MoonFuelSnapshot.objects.order_by("structure_id", "-fecha"):
+        if f.structure_id not in out:
+            out[f.structure_id] = (float(f.coste_dia or 0), f.fecha,
+                                   float(f.consumo_hora or 0), f.bloques)
+    return out
+
+
+def _alquileres():
+    """{moon_id: ISK/mes}. La tabla existe pero suele estar vacia."""
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT moon_id, price FROM moons_moonrental "
+                           "WHERE end_date IS NULL OR end_date > NOW()")
+            return {int(m): float(p or 0) for m, p in cursor.fetchall()}
+    except Exception:
+        return {}
+
+
+def _lunas_pyl():
+    """P&L por estructura y fractura. Devuelve lista de estructuras."""
+    from django.utils import timezone
+    from .models import MoonTaxConfig
+
+    corp_ids = _get_corp_ids()
+    if not corp_ids:
+        return []
+
+    with connection.cursor() as cursor:
+        cursor.execute(SQL_LUNAS_ESTRUCTURAS.format(
+            corps=",".join(["%s"] * len(corp_ids))), list(corp_ids))
+        estructuras = _fetchall(cursor)
+    if not estructuras:
+        return []
+
+    cfg = MoonTaxConfig.objects.filter(is_active=True).first()
+    rates = cfg.rates_by_group if cfg else {}
+    precios = _precios_reprocesado()
+    costes = _coste_estructuras()
+    fracturas = _fracturas_por_estructura(
+        [int(e["structure_id"]) for e in estructuras], None, None)
+    ahora = timezone.now()
+
+    salida = []
+    for e in estructuras:
+        sid = int(e["structure_id"])
+        info = fracturas.get(sid) or {}
+        coste_dia, fecha_foto, consumo, bloques = costes.get(sid, (0.0, None, 0.0, 0))
+
+        lista = []
+        for f in info.get("lista", []):
+            desde, hasta = _dia(f["arrival"]), f["hasta"]
+            dias = max((min(hasta, ahora) - desde).total_seconds() / 86400, 0)
+
+            with connection.cursor() as cursor:
+                cursor.execute(SQL_LUNAS_MINADO, [sid, _naive(desde), _naive(hasta)])
+                minado = _fetchall(cursor)
+
+            valor = tax_comp = tax_isk = 0.0
+            for r in minado:
+                u = int(r["unidades"] or 0)
+                px = precios.get(int(r["type_id"]), 0.0)
+                tasa = rates.get(int(r["group_id"]), 0)
+                valor    += u * px
+                tax_comp += u * tasa            # comprime 1:1
+                tax_isk  += u * tasa * px
+
+            # Lo que se quedo sin minar, valorado por su mineral base
+            perdido_isk = 0.0
+            for d in f["detalle"]:
+                if d["perdido"] <= 0:
+                    continue
+                tid = next((int(r["type_id"]) for r in minado if r["ore"] == d["ore"]), None)
+                vol = next((float(r["volumen"] or 10) for r in minado if r["ore"] == d["ore"]), 10.0)
+                if tid:
+                    perdido_isk += (d["perdido"] / max(vol, 0.01)) * precios.get(tid, 0.0)
+
+            coste = coste_dia * dias
+            lista.append({
+                **f,
+                "dias":        round(dias, 1),
+                "valor":       valor,
+                "perdido_isk": perdido_isk,
+                "tax_comp":    int(round(tax_comp)),
+                "tax_isk":     tax_isk,
+                "coste":       coste,
+                "margen_corp": tax_isk - coste,
+                "coste_estimado": bool(fecha_foto and not (desde.date() <= fecha_foto <= min(hasta, ahora).date())),
+            })
+
+        salida.append({
+            "structure_id": sid,
+            "nombre":       e["nombre"],
+            "corp":         e["corp_name"],
+            "fracturas":    lista,
+            "coste_dia":    coste_dia,
+            "coste_mes":    coste_dia * 30,
+            "consumo":      consumo,
+            "bloques":      bloques,
+            "fecha_foto":   fecha_foto,
+            "ultima":       lista[0] if lista else None,
+            "n_fracturas":  len(lista),
+            "valor":        sum(x["valor"] for x in lista),
+            "perdido_isk":  sum(x["perdido_isk"] for x in lista),
+            "tax_isk":      sum(x["tax_isk"] for x in lista),
+            "coste":        sum(x["coste"] for x in lista),
+            "margen_corp":  sum(x["margen_corp"] for x in lista),
+            "activa":       bool(lista and lista[0].get("abierta")),
+        })
+
+    salida.sort(key=lambda x: x["margen_corp"])
+    return salida
+
+
+@permission_required("koru_stats.auditor_corp_health")
+def corp_moons_dashboard(request):
+    lunas = _lunas_pyl()
+    alquileres = _alquileres()
+
+    context = {
+        "lunas":        lunas,
+        "alquileres":   alquileres,
+        "kpi_valor":    sum(l["valor"] for l in lunas),
+        "kpi_perdido":  sum(l["perdido_isk"] for l in lunas),
+        "kpi_tax":      sum(l["tax_isk"] for l in lunas),
+        "kpi_coste_mes": sum(l["coste_mes"] for l in lunas),
+        "kpi_margen":   sum(l["tax_isk"] for l in lunas) - sum(l["coste"] for l in lunas),
+        "kpi_lunas":    len(lunas),
+        "kpi_ociosas":  sum(1 for l in lunas if not l["activa"] and l["coste_dia"]),
+    }
+    return render(request, "koru_stats/corp_moons_dashboard.html", context)

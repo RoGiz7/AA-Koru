@@ -1,0 +1,170 @@
+{% extends 'allianceauth/base-bs5.html' %}
+{% load i18n koru_stats_tags %}
+
+{% block page_title %}Rentabilidad de lunas{% endblock %}
+
+{% block content %}
+<style>
+.kpi-card { border-left: 4px solid #6c757d; }
+.kpi-card.green { border-left-color:#22c55e; } .kpi-card.red { border-left-color:#ef4444; }
+.kpi-card.yellow{ border-left-color:#f59e0b; } .kpi-card.blue{ border-left-color:#3b82f6; }
+.stat-big   { font-size:1.5rem; font-weight:700; line-height:1.1; }
+.stat-label { font-size:.7rem; text-transform:uppercase; letter-spacing:.05em; color:#6c757d; }
+.cuenta { border:1px solid #333; border-radius:8px; padding:.75rem 1rem; }
+.cuenta h6 { font-size:.75rem; text-transform:uppercase; letter-spacing:.05em; color:#6c757d; }
+.cuenta .cifra { font-size:1.35rem; font-weight:700; }
+</style>
+
+<div class="container-fluid">
+
+    <div class="d-flex align-items-center gap-3 mb-3 flex-wrap">
+        <h4 class="mb-0"><i class="fas fa-moon text-warning me-2"></i>Rentabilidad de lunas</h4>
+        <a href="{% url 'koru_stats:corp_health_dashboard' %}" class="btn btn-sm btn-outline-info">
+            <i class="fas fa-chart-line me-1"></i>Dirección
+        </a>
+        <span class="ms-auto text-muted small">
+            <i class="fas fa-info-circle me-1"></i>Valor al 85% (reprocesado). El coste sale del combustible que corptools ya conoce.
+        </span>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-2">
+            <div class="card kpi-card blue h-100"><div class="card-body">
+                <div class="stat-label mb-1">Valor extraído</div>
+                <div class="stat-big text-info">{{ kpi_valor|rkisk }}</div>
+                <small class="text-muted">lo ganan los miembros</small>
+            </div></div>
+        </div>
+        <div class="col-6 col-md-2">
+            <div class="card kpi-card yellow h-100"><div class="card-body">
+                <div class="stat-label mb-1">Tax generado</div>
+                <div class="stat-big text-warning">{{ kpi_tax|rkisk }}</div>
+                <small class="text-muted">ingreso de la corp</small>
+            </div></div>
+        </div>
+        <div class="col-6 col-md-2">
+            <div class="card kpi-card red h-100"><div class="card-body">
+                <div class="stat-label mb-1">Combustible</div>
+                <div class="stat-big text-danger">{{ kpi_coste_mes|rkisk }}</div>
+                <small class="text-muted">al mes, todas</small>
+            </div></div>
+        </div>
+        <div class="col-6 col-md-2">
+            <div class="card kpi-card {% if kpi_margen >= 0 %}green{% else %}red{% endif %} h-100"><div class="card-body">
+                <div class="stat-label mb-1">Margen corp</div>
+                <div class="stat-big {% if kpi_margen >= 0 %}text-success{% else %}text-danger{% endif %}">{{ kpi_margen|rkisk }}</div>
+                <small class="text-muted">tax − combustible</small>
+            </div></div>
+        </div>
+        <div class="col-6 col-md-2">
+            <div class="card kpi-card h-100"><div class="card-body">
+                <div class="stat-label mb-1">Sin minar</div>
+                <div class="stat-big text-secondary">{{ kpi_perdido|rkisk }}</div>
+                <small class="text-muted">se pierde al fracturar</small>
+            </div></div>
+        </div>
+        <div class="col-6 col-md-2">
+            <div class="card kpi-card {% if kpi_ociosas %}red{% endif %} h-100"><div class="card-body">
+                <div class="stat-label mb-1">Ociosas</div>
+                <div class="stat-big {% if kpi_ociosas %}text-danger{% else %}text-success{% endif %}">{{ kpi_ociosas }}/{{ kpi_lunas }}</div>
+                <small class="text-muted">encendidas sin fracturar</small>
+            </div></div>
+        </div>
+    </div>
+
+    {% for l in lunas %}
+    <div class="card mb-4 {% if not l.activa and l.coste_dia %}border-danger{% endif %}">
+        <div class="card-header d-flex align-items-center gap-2 flex-wrap">
+            <i class="fas fa-moon text-warning"></i>
+            <strong class="font-monospace">{{ l.nombre }}</strong>
+            <span class="badge bg-secondary">{{ l.corp }}</span>
+            {% if l.activa %}<span class="badge bg-success">fractura en curso</span>
+            {% elif l.coste_dia %}<span class="badge bg-danger">ociosa — quemando combustible</span>{% endif %}
+            <span class="ms-auto small text-muted">
+                {% if l.consumo %}{{ l.consumo }} bl/h · {{ l.coste_mes|rkisk }} ISK/mes{% else %}sin datos de combustible{% endif %}
+            </span>
+        </div>
+        <div class="card-body">
+
+            {# Las dos cuentas #}
+            <div class="row g-3 mb-3">
+                <div class="col-12 col-md-6">
+                    <div class="cuenta h-100">
+                        <h6><i class="fas fa-building me-1"></i>Cuenta de la corp</h6>
+                        <div class="d-flex justify-content-between small"><span>Tax generado</span><span class="text-success">+{{ l.tax_isk|rkisk }}</span></div>
+                        {% with alq=alquileres|dict_key:l.structure_id %}
+                        {% if alq %}<div class="d-flex justify-content-between small"><span>Alquiler</span><span class="text-success">+{{ alq|rkisk }}</span></div>{% endif %}
+                        {% endwith %}
+                        <div class="d-flex justify-content-between small"><span>Combustible</span><span class="text-danger">−{{ l.coste|rkisk }}</span></div>
+                        <hr class="my-2">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="small text-muted">¿se paga sola?</span>
+                            <span class="cifra {% if l.margen_corp >= 0 %}text-success{% else %}text-danger{% endif %}">{{ l.margen_corp|rkisk }}</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-12 col-md-6">
+                    <div class="cuenta h-100">
+                        <h6><i class="fas fa-users me-1"></i>Cuenta de los miembros</h6>
+                        <div class="d-flex justify-content-between small"><span>Valor extraído</span><span class="text-info">{{ l.valor|rkisk }}</span></div>
+                        <div class="d-flex justify-content-between small"><span>Menos el tax</span><span class="text-muted">−{{ l.tax_isk|rkisk }}</span></div>
+                        <div class="d-flex justify-content-between small"><span>Se dejaron sin minar</span><span class="text-secondary">{{ l.perdido_isk|rkisk }}</span></div>
+                        <hr class="my-2">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="small text-muted">¿merece la pena minarla?</span>
+                            <span class="cifra text-info">{{ l.valor|rkisk }}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {# Fracturas #}
+            {% if l.fracturas %}
+            <table class="table table-sm table-dark mb-0" style="font-size:.75rem">
+                <thead><tr>
+                    <th>Fractura</th><th>Ventana</th><th class="text-end">Días</th>
+                    <th class="text-end">Aprovechado</th><th class="text-end">Valor extraído</th>
+                    <th class="text-end">Sin minar</th><th class="text-end">Tax</th>
+                    <th class="text-end">Combustible</th><th class="text-end">Margen corp</th>
+                </tr></thead>
+                <tbody>
+                    {% for f in l.fracturas %}
+                    <tr>
+                        <td>#{{ f.id }}{% if f.abierta %} <span class="badge bg-success" style="font-size:.55rem">en curso</span>{% endif %}</td>
+                        <td class="font-monospace">{{ f.arrival|date:"d/m/y" }} → {% if f.abierta %}hoy{% else %}{{ f.hasta|date:"d/m/y" }}{% endif %}</td>
+                        <td class="text-end">{{ f.dias }}</td>
+                        <td class="text-end {% if f.pct >= 80 %}text-success{% elif f.pct >= 50 %}text-warning{% else %}text-danger{% endif %}">{{ f.pct }}%</td>
+                        <td class="text-end font-monospace text-info">{{ f.valor|rkisk }}</td>
+                        <td class="text-end font-monospace text-secondary">{{ f.perdido_isk|rkisk }}</td>
+                        <td class="text-end font-monospace text-warning">{{ f.tax_isk|rkisk }}<div style="font-size:.6rem" class="text-muted">{{ f.tax_comp|rknum }} comp</div></td>
+                        <td class="text-end font-monospace text-danger">
+                            {{ f.coste|rkisk }}
+                            {% if f.coste_estimado %}<div style="font-size:.6rem" class="text-muted" title="No hay foto de combustible de esa fecha; se aplica el consumo actual">estimado</div>{% endif %}
+                        </td>
+                        <td class="text-end font-monospace fw-bold {% if f.margen_corp >= 0 %}text-success{% else %}text-danger{% endif %}">{{ f.margen_corp|rkisk }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="text-muted small"><i class="fas fa-inbox me-1"></i>Sin fracturas registradas.</div>
+            {% endif %}
+
+        </div>
+    </div>
+    {% empty %}
+    <div class="alert alert-info">
+        <i class="fas fa-info-circle me-2"></i>No hay lunas de vuestras corps con fracturas registradas.
+    </div>
+    {% endfor %}
+
+    <div class="text-muted" style="font-size:.7rem">
+        <i class="fas fa-info-circle me-1"></i>
+        El coste de combustible se deriva de los bloques en el hangar y su caducidad, sin declarar nada.
+        Solo hay fotos desde que se activó el seguimiento, así que en fracturas antiguas se aplica el
+        consumo actual y sale marcado como <em>estimado</em>.
+        El «sin minar» es el mineral de la fractura que nadie llegó a extraer y se pierde al llegar la siguiente.
+    </div>
+
+</div>
+{% endblock %}
