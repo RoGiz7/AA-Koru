@@ -1381,18 +1381,39 @@ SQL_MOON_DETALLE_ORE = """
 
 
 
+# Ratio de compresion del MINERAL LUNAR: 1 unidad cruda -> 1 comprimido.
+#
+# OJO: NO es 100:1. El `portion_size = 100` del SDE es el tamano de tanda para
+# REPROCESAR, no el ratio de compresion; confundirlos hacia que el contrato
+# pidiera el 1% de lo debido. Verificado por cuatro vias (2026-08-04):
+#   1. Volumen: cruda 10 m3 -> comprimida 0,1 m3 = 100x. Con 100:1 saldria
+#      10.000x, que ningun mineral de EVE hace.
+#   2. Precios: el sell del comprimido (~685 Coesite) coincide con el valor
+#      reprocesado de UNA unidad cruda (653). Con 100:1 estaria 95x por debajo.
+#   3. La calculadora de la alianza (evehaklabs.cloud) hace 1:1 explicito.
+#   4. Cordura: 426 comprimidos valian 0,3 M ISK para un tax de decenas de M.
+COMPRESION_LUNAR = 1
+VOLUMEN_COMPRIMIDO_M3 = 0.1
+
+
 def _generar_contrato_comprimidos(nombre, detalle_ores, rates, period_str):
     """
     Genera el texto copy-paste del contrato de comprimidos para un piloto.
-    Ratio universal: 100 unidades normales = 1 comprimido.
 
-    IMPORTANTE (fix 2026-08): se agrega PRIMERO por tipo de mineral, sumando
-    todos los alts, y SOLO DESPUES se aplica la tasa y se pasa a comprimidos.
-    Antes se redondeaba fila a fila (alt x mineral) con `// 100`, perdiendo
-    hasta 99 unidades por fila: con 12 alts x 2 minerales el contrato salia
-    sistematicamente un 4-6% por debajo del tax adeudado.
+    El tax se define sobre UNIDADES de mineral (el ISK es solo informativo), y
+    el mineral lunar comprime 1:1, asi que las unidades adeudadas son
+    directamente los comprimidos a entregar.
+
+    Se agrega PRIMERO por tipo de mineral, sumando todos los alts, y solo
+    despues se aplica la tasa: redondear fila a fila (alt x mineral) perdia
+    unidades por truncamiento.
+
+    Redondeo por "resto mayor" (Hare) dentro de cada tier: se redondea el TOTAL
+    del tier hacia arriba y el sobrante se asigna a los minerales con mayor
+    parte fraccionaria. Nunca se cobra de menos, sin penalizar a quien mina
+    poco y variado.
     """
-    from decimal import Decimal, ROUND_HALF_UP
+    import math
 
     # 1) Agregar por mineral (todos los alts juntos)
     por_ore = {}
@@ -1403,43 +1424,60 @@ def _generar_contrato_comprimidos(nombre, detalle_ores, rates, period_str):
         acc["unidades"] += int(r["unidades"])
         acc["isk"]      += float(r["isk_estimado"] or 0)
 
-    # 2) Aplicar tasa y convertir a comprimidos UNA sola vez por mineral
-    comprimidos     = {}
-    total_isk       = 0.0   # tax teorico exacto
-    valor_entregado = 0.0   # valor de los comprimidos que realmente se piden
-
+    # 2) Agrupar por tier: el redondeo se decide a nivel de tier
+    por_tier = {}
     for ore, acc in por_ore.items():
-        tasa = rates.get(acc["group_id"], 0)
+        por_tier.setdefault(acc["group_id"], {})[ore] = acc
+
+    comprimidos     = {}
+    total_isk       = 0.0   # tax teorico en ISK (informativo)
+    valor_entregado = 0.0
+
+    for gid, ores in por_tier.items():
+        tasa = rates.get(gid, 0)
         if not tasa:
             continue
 
-        total_isk += acc["isk"] * tasa
+        # unidades adeudadas == comprimidos a entregar (ratio 1:1)
+        exacto   = {o: a["unidades"] * tasa / COMPRESION_LUNAR
+                    for o, a in ores.items()}
+        objetivo = int(math.ceil(sum(exacto.values())))
+        asignado = {o: int(math.floor(v)) for o, v in exacto.items()}
 
-        tax_unidades    = Decimal(acc["unidades"]) * Decimal(str(tasa))
-        tax_comprimidos = int(
-            (tax_unidades / Decimal(100)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-        )
-        if tax_comprimidos <= 0:
-            continue
+        falta = objetivo - sum(asignado.values())
+        if falta > 0:
+            orden = sorted(exacto.items(), key=lambda x: -(x[1] - math.floor(x[1])))
+            for o, _ in orden[:falta]:
+                asignado[o] += 1
 
-        precio_unit      = (acc["isk"] / acc["unidades"]) if acc["unidades"] else 0.0
-        valor_entregado += tax_comprimidos * 100 * precio_unit
-
-        comp_name = "Compressed {}".format(ore)
-        comprimidos[comp_name] = comprimidos.get(comp_name, 0) + tax_comprimidos
+        for ore, n in asignado.items():
+            acc = ores[ore]
+            total_isk += acc["isk"] * tasa
+            if n <= 0:
+                continue
+            precio_unit      = (acc["isk"] / acc["unidades"]) if acc["unidades"] else 0.0
+            valor_entregado += n * COMPRESION_LUNAR * precio_unit
+            comp_name = "Compressed {}".format(ore)
+            comprimidos[comp_name] = comprimidos.get(comp_name, 0) + n
 
     if not comprimidos:
         return None
+
+    total_comp = sum(comprimidos.values())
 
     # Texto para copiar en el contrato de EVE
     lineas = ["=== Tax Lunar Rekium \u2014 {} \u2014 {} ===".format(nombre, period_str)]
     for comp_name in sorted(comprimidos.keys()):
         lineas.append("{}: {:,}".format(comp_name, comprimidos[comp_name]))
-    lineas.append("--- Valor ISK referencia: {:.2f} M ISK ---".format(valor_entregado / 1e6))
+    lineas.append("--- {:,} comprimidos \u2014 {:,.1f} m3 \u2014 ref. {:.2f} M ISK ---".format(
+        total_comp, total_comp * VOLUMEN_COMPRIMIDO_M3, valor_entregado / 1e6))
 
     return {
         "texto":           "\n".join(lineas),
         "comprimidos":     comprimidos,
+        "total_comp":      total_comp,
+        "unidades_tax":    total_comp * COMPRESION_LUNAR,
+        "m3":              round(total_comp * VOLUMEN_COMPRIMIDO_M3, 2),
         "total_isk":       total_isk,
         "valor_entregado": valor_entregado,
         "desvio_isk":      valor_entregado - total_isk,
@@ -1619,13 +1657,32 @@ def moon_mark_paid(request, payment_id):
 # Moon Dashboard v2 — basado en moons_miningobservation (lunas de Rekium)
 # ---------------------------------------------------------------------------
 
+# Modos de valoración del ISK mostrado. El tax se calcula SIEMPRE sobre
+# unidades, así que esto es solo informativo: cambia la columna que se pinta,
+# nunca cuántas piedras debe el piloto.
+PRECIO_MODOS = {
+    "repro": ("price_reprocessed", "85%",         "Valor de los minerales al reprocesar al 85%"),
+    "comp":  ("price_compressed",  "Comprimido",  "Valor de mercado del mineral comprimido"),
+    "raw":   ("price_raw",         "Bruto",       "Valor de mercado del mineral sin comprimir"),
+}
+PRECIO_MODO_DEFAULT = "repro"
+
+
+def _precio_modo(request):
+    """Devuelve (modo, columna) validados contra la lista blanca PRECIO_MODOS."""
+    modo = request.GET.get("precio", PRECIO_MODO_DEFAULT)
+    if modo not in PRECIO_MODOS:
+        modo = PRECIO_MODO_DEFAULT
+    return modo, PRECIO_MODOS[modo][0]
+
+
 SQL_MOON_OBS_RESUMEN = """
     SELECT
         ig.id   AS group_id,
         ig.name AS tier,
         SUM(mo.quantity)                                               AS unidades,
         ROUND(SUM(mo.quantity * it.volume), 2)                         AS m3_total,
-        ROUND(SUM(mo.quantity * COALESCE(omp.price_raw, 0)), 2)    AS isk_estimado
+        ROUND(SUM(mo.quantity * COALESCE(omp.{px}, 0)), 2)    AS isk_estimado
     FROM moons_miningobservation mo
     JOIN eve_sde_itemtype              it  ON it.id           = mo.type_id
     JOIN eve_sde_itemgroup             ig  ON ig.id           = it.group_id
@@ -1649,7 +1706,7 @@ SQL_MOON_OBS_POR_PILOTO = """
         ig.name                                          AS tier,
         SUM(mo.quantity)                                 AS unidades,
         ROUND(SUM(mo.quantity * it.volume), 2)           AS m3_total,
-        ROUND(SUM(mo.quantity * COALESCE(omp.price_raw, 0)), 2) AS isk_estimado
+        ROUND(SUM(mo.quantity * COALESCE(omp.{px}, 0)), 2) AS isk_estimado
     FROM moons_miningobservation mo
     JOIN eve_sde_itemtype                it      ON it.id           = mo.type_id
     JOIN eve_sde_itemgroup               ig      ON ig.id           = it.group_id
@@ -1679,7 +1736,7 @@ SQL_MOON_OBS_DETALLE_ORE = """
         ig.name                                                            AS tier,
         SUM(mo.quantity)                                                   AS unidades,
         ROUND(SUM(mo.quantity * it.volume), 2)                             AS m3_total,
-        ROUND(SUM(mo.quantity * COALESCE(omp.price_raw, 0)), 2)        AS isk_estimado
+        ROUND(SUM(mo.quantity * COALESCE(omp.{px}, 0)), 2)        AS isk_estimado
     FROM moons_miningobservation mo
     JOIN eve_sde_itemtype              it       ON it.id           = mo.type_id
     JOIN eve_sde_itemgroup             ig       ON ig.id           = it.group_id
@@ -1747,19 +1804,22 @@ def moon_dashboard_v2(request):
     tax_config = MoonTaxConfig.objects.filter(is_active=True).first()
     rates = tax_config.rates_by_group if tax_config else {g: 0 for g in MOON_ORE_GROUPS}
 
+    # Modo de valoración del ISK mostrado (solo informativo; el tax va por unidades)
+    precio_modo, px_col = _precio_modo(request)
+
     resumen_tier, datos_piloto, detalle_ore, por_luna = [], [], [], []
     error = False
 
     try:
         with connection.cursor() as cursor:
-            cursor.execute(SQL_MOON_OBS_POR_LUNA, [inicio, fin])
+            cursor.execute(SQL_MOON_OBS_POR_LUNA.format(px=px_col), [inicio, fin])
             por_luna = _fetchall(cursor)
     except Exception as e:
         logger.error("koru_stats moon_obs_por_luna: %s", e)
 
     try:
         with connection.cursor() as cursor:
-            cursor.execute(SQL_MOON_OBS_RESUMEN, [inicio, fin])
+            cursor.execute(SQL_MOON_OBS_RESUMEN.format(px=px_col), [inicio, fin])
             resumen_tier = _fetchall(cursor)
     except Exception as e:
         logger.error("koru_stats moon_obs_resumen: %s", e)
@@ -1767,7 +1827,7 @@ def moon_dashboard_v2(request):
 
     try:
         with connection.cursor() as cursor:
-            cursor.execute(SQL_MOON_OBS_POR_PILOTO, [rekium_corp_id, inicio, fin])
+            cursor.execute(SQL_MOON_OBS_POR_PILOTO.format(px=px_col), [rekium_corp_id, inicio, fin])
             datos_piloto = _fetchall(cursor)
     except Exception as e:
         logger.error("koru_stats moon_obs_piloto: %s", e)
@@ -1775,7 +1835,7 @@ def moon_dashboard_v2(request):
 
     try:
         with connection.cursor() as cursor:
-            cursor.execute(SQL_MOON_OBS_DETALLE_ORE, [rekium_corp_id, inicio, fin])
+            cursor.execute(SQL_MOON_OBS_DETALLE_ORE.format(px=px_col), [rekium_corp_id, inicio, fin])
             detalle_ore = _fetchall(cursor)
     except Exception as e:
         logger.error("koru_stats moon_obs_detalle: %s", e)
@@ -1930,6 +1990,12 @@ def moon_dashboard_v2(request):
         "moon_ore_groups":   MOON_ORE_GROUPS,
         "moon_ore_colors":   MOON_ORE_COLORS,
         "can_manage_tax":    request.user.has_perm("koru_stats.moon_tax_admin"),
+        "precio_modo":       precio_modo,
+        "precio_label":      PRECIO_MODOS[precio_modo][1],
+        "precio_modos":      [
+            {"clave": k, "label": v[1], "help": v[2], "activo": k == precio_modo}
+            for k, v in PRECIO_MODOS.items()
+        ],
         "chart_tier": _to_json({
             "labels": [MOON_ORE_GROUPS[int(r["group_id"])] for r in resumen_tier],
             "data":   [float(r["isk_estimado"] or 0) for r in resumen_tier],
@@ -1950,7 +2016,7 @@ SQL_MOON_OBS_POR_LUNA = """
         COUNT(DISTINCT mo.character_id)                                    AS mineros,
         SUM(mo.quantity)                                                   AS unidades,
         ROUND(SUM(mo.quantity * it.volume), 2)                             AS m3_total,
-        ROUND(SUM(mo.quantity * COALESCE(omp.price_raw, 0)), 2)        AS isk_estimado
+        ROUND(SUM(mo.quantity * COALESCE(omp.{px}, 0)), 2)        AS isk_estimado
     FROM moons_miningobservation mo
     LEFT JOIN corptools_mapsystemmoon    mn  ON mn.moon_id      = mo.moon_id
     LEFT JOIN corptools_evelocation      el  ON el.location_id  = mo.structure_id

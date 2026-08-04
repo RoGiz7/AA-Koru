@@ -61,6 +61,31 @@ details > summary { cursor: pointer; user-select: none; }
                     <strong>Período:</strong>
                     {% include "koru_stats/includes/periodo_selector.html" %}
                     <span class="text-muted small">Mostrando <strong>{{ mes }}</strong></span>
+
+                    {# Modo de valoracion del ISK. SOLO informativo: el tax se
+                       calcula sobre unidades de mineral, no sobre ISK. #}
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="text-muted small"><i class="fas fa-coins me-1"></i>Valorar ISK:</span>
+                        <div class="btn-group btn-group-sm" role="group">
+                            {% for m in precio_modos %}
+                            <a href="?periodo={{ periodo_sel }}&amp;precio={{ m.clave }}"
+                               class="btn {% if m.activo %}btn-warning active{% else %}btn-outline-warning{% endif %}"
+                               title="{{ m.help }}">{{ m.label }}</a>
+                            {% endfor %}
+                        </div>
+                        <span class="text-muted" style="font-size:.7rem">
+                            <i class="fas fa-info-circle me-1"></i>el tax se calcula por unidades, no por ISK
+                        </span>
+                    </div>
+                    <script>
+                    (function(){
+                        var f = document.getElementById('formPeriodo');
+                        if (!f) return;
+                        var i = document.createElement('input');
+                        i.type = 'hidden'; i.name = 'precio'; i.value = '{{ precio_modo }}';
+                        f.appendChild(i);
+                    })();
+                    </script>
                     {% if tax_config %}
                     <span class="ms-auto text-muted small">
                         <i class="fas fa-cog me-1"></i>
@@ -255,8 +280,8 @@ details > summary { cursor: pointer; user-select: none; }
                             <tr>
                                 <th style="width:40px"></th>
                                 <th>Piloto</th>
-                                <th class="text-end">ISK minado</th>
-                                <th class="text-end">Tax adeudado</th>
+                                <th class="text-end">ISK minado <span class="badge bg-secondary" style="font-size:.6rem">{{ precio_label }}</span></th>
+                                <th class="text-end">Tax adeudado <span class="badge bg-secondary" style="font-size:.6rem">{{ precio_label }}</span></th>
                                 <th class="text-center">Tiers</th>
                                 <th class="text-center">Estado</th>
                                 {% if can_manage_tax %}<th class="text-center">Acción</th>{% endif %}
@@ -320,6 +345,7 @@ details > summary { cursor: pointer; user-select: none; }
                                                 <div class="d-flex align-items-center gap-2 mb-1">
                                                     <i class="fas fa-file-contract text-info"></i>
                                                     <strong class="small">Contrato EVE — Comprimidos:</strong>
+                                                    <span class="badge bg-dark text-info" style="font-size:.65rem">{{ p.contrato.total_comp }} comp · {{ p.contrato.unidades_tax|rknum }} u · {{ p.contrato.m3 }} m³</span>
                                                 </div>
                                                 <div class="mb-2">
                                                     {% for ore, cantidad in p.contrato.comprimidos.items %}
