@@ -246,7 +246,7 @@ details > summary { cursor: pointer; user-select: none; }
                                 <th class="text-end">Unidades</th>
                                 <th class="text-end">m³</th>
                                 <th class="text-center">Fractura</th>
-                                <th class="text-end">Aprovechado</th>
+                                <th class="text-end">Aprovechado <small class="text-muted fw-normal">(fractura)</small></th>
                                 <th class="text-end">ISK est.</th>
                             </tr>
                         </thead>
@@ -281,7 +281,9 @@ details > summary { cursor: pointer; user-select: none; }
                             <tr class="luna-detalle d-none" id="luna{{ r.structure_id }}">
                                 <td colspan="7" class="bg-black bg-opacity-25">
                                     <div class="small text-muted mb-2">
-                                        <i class="fas fa-gem me-1"></i>Rendimiento de las fracturas — cuánto traía la luna y cuánto se sacó
+                                        <i class="fas fa-gem me-1"></i>Rendimiento de las fracturas — cuánto traía la luna y cuánto se sacó.
+                                        <span class="text-warning">El porcentaje es de la fractura completa, no del mes:
+                                        una fractura puede abarcar varios meses y entonces se repite en todos ellos.</span>
                                     </div>
                                     {% for f in fr.lista %}
                                     <div class="mb-3">
@@ -295,6 +297,7 @@ details > summary { cursor: pointer; user-select: none; }
                                                 {% else %}<strong>{{ f.hasta|date:"d/m/Y H:i" }}</strong>{% endif %}
                                             </span>
                                             <span class="small text-muted">· minado imputado a esta ventana</span>
+                                            {% if f.desborda %}<span class="badge bg-warning text-dark">se sale del mes</span>{% endif %}
                                             <span class="ms-auto small">
                                                 <span class="text-muted">aprovechado</span>
                                                 <strong class="{% if f.pct >= 80 %}text-success{% elif f.pct >= 50 %}text-warning{% else %}text-danger{% endif %}">{{ f.pct }}%</strong>
@@ -332,6 +335,8 @@ details > summary { cursor: pointer; user-select: none; }
                                     <div class="text-muted" style="font-size:.68rem">
                                         <i class="fas fa-info-circle me-1"></i>El disponible es la estimación de la notificación por mineral base;
                                         las variantes (Brimful, Lavish) se suman a su base, así que un mineral puede pasar del 100%.
+                                        El minado se imputa por día (los registros de la ESI van sellados a las 00:00), así que el día
+                                        de la fractura cuenta entero para la nueva.
                                     </div>
                                 </td>
                             </tr>

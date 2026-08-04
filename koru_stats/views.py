@@ -1800,6 +1800,20 @@ def _aware(valor):
     return valor
 
 
+def _dia(valor):
+    """
+    Trunca a medianoche.
+
+    `moons_miningobservation.last_updated` tiene granularidad de DIA (todos los
+    registros van a las 00:00). Comparar ese sello contra la hora exacta de
+    llegada de la fractura (p.ej. 21:01) descarta el dia entero en silencio: en
+    agosto-2026 se perdian 8.214.060 m3, justo el registro del 31 de julio.
+    """
+    if valor is None:
+        return None
+    return valor.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
 def _naive(valor):
     """Vuelta a naive local: los parametros de las SQL crudas van sin tz."""
     from django.utils import timezone
@@ -1888,8 +1902,10 @@ def _fracturas_por_estructura(structure_ids, inicio_periodo, fin_periodo):
         for i, f in enumerate(lista):
             if f["arrival"] > tope:
                 continue                       # todavia no ha llegado
-            desde = f["arrival"]
-            hasta = lista[i - 1]["arrival"] if i > 0 else ahora
+            # Por DIA, no por hora: ver _dia(). El dia de la llegada se imputa
+            # entero a la fractura nueva; con sellos diarios no se puede afinar mas.
+            desde = _dia(f["arrival"])
+            hasta = _dia(lista[i - 1]["arrival"]) if i > 0 else ahora
 
             with connection.cursor() as cursor:
                 cursor.execute(SQL_MINADO_VENTANA, [sid, _naive(desde), _naive(hasta)])
@@ -1914,6 +1930,7 @@ def _fracturas_por_estructura(structure_ids, inicio_periodo, fin_periodo):
 
             # ¿su ventana de minado solapa el periodo seleccionado?
             en_periodo = bool(inicio and tope and desde < tope and hasta > inicio)
+            desborda   = bool(inicio and tope and (desde < inicio or hasta > tope))
 
             out.append({
                 "id": f["id"], "arrival": f["arrival"], "hasta": hasta,
@@ -1922,6 +1939,7 @@ def _fracturas_por_estructura(structure_ids, inicio_periodo, fin_periodo):
                 "pct": round(100 * tm / td, 1) if td else 0,
                 "abierta": i == 0,
                 "en_periodo": en_periodo,
+                "desborda": desborda,
             })
             if len(out) >= 4:
                 break
