@@ -3891,3 +3891,107 @@ def moon_tax_validar(request, main_char_id):
                                   "validado_at", "notes"])
 
     return redirect(f"{reverse('koru_stats:moon_tax_gestion')}?periodo={period}")
+
+
+# ---------------------------------------------------------------------------
+# Tax lunar — F3: Mi Tax Lunar (piloto)
+#
+# Que el piloto vea que debe, que ha entregado y su saldo SIN tener que
+# preguntarle a un director. Agrega sus alts bajo el main, igual que el resto
+# del modulo.
+# ---------------------------------------------------------------------------
+
+@login_required
+@permission_required("koru_stats.basic_access")
+def moon_tax_mi(request):
+    from .models import MoonTaxConfig, MoonTaxContract, MoonTaxLedger
+
+    try:
+        main = request.user.profile.main_character
+    except Exception:
+        main = None
+    if not main:
+        return render(request, "koru_stats/moon_tax_mi.html", {"sin_main": True})
+
+    main_id = main.character_id
+    filas = MoonTaxLedger.objects.filter(main_char_id=main_id)
+
+    periodos = sorted({l.period for l in filas}, reverse=True)
+    period = request.GET.get("periodo") or (periodos[0] if periodos else None)
+
+    minerales, debe, entregado, pendiente = [], 0, 0, 0
+    validado, notes, validado_at = bool(period), "", None
+    for l in filas:
+        if l.period != period:
+            continue
+        pend = l.pendiente
+        minerales.append({
+            "ore": l.base_name, "group_id": l.group_id, "tasa": l.tasa,
+            "unidades": l.unidades_minadas, "debe": l.debe,
+            "entregado": l.entregado, "pendiente": pend,
+        })
+        debe += l.debe
+        entregado += l.entregado
+        pendiente += pend
+        if not l.validado:
+            validado = False
+        if l.notes:
+            notes = l.notes
+        if l.validado_at:
+            validado_at = l.validado_at
+    minerales.sort(key=lambda x: -x["debe"])
+
+    # Texto listo para pegar en el contrato de EVE, solo con lo que falta
+    lineas = []
+    if pendiente:
+        lineas.append(f"=== Tax Lunar Rekium \u2014 {main.character_name} \u2014 {period} ===")
+        for m in sorted(minerales, key=lambda x: x["ore"]):
+            if m["pendiente"] > 0:
+                lineas.append("Compressed {}: {:,}".format(m["ore"], m["pendiente"]))
+        lineas.append("--- {:,} comprimidos \u2014 {:,.1f} m3 ---".format(
+            pendiente, pendiente * VOLUMEN_COMPRIMIDO_M3))
+
+    # Saldo historico de todos los periodos
+    historico = {}
+    for l in filas:
+        h = historico.setdefault(l.period, {"period": l.period, "debe": 0,
+                                            "entregado": 0, "pendiente": 0,
+                                            "validado": True})
+        h["debe"] += l.debe
+        h["entregado"] += l.entregado
+        h["pendiente"] += l.pendiente
+        if not l.validado:
+            h["validado"] = False
+    historico = sorted(historico.values(), key=lambda x: x["period"], reverse=True)
+
+    cfg = MoonTaxConfig.objects.filter(is_active=True).first()
+    destino = None
+    try:
+        from .models import MoonTaxRecipient
+        destino = MoonTaxRecipient.objects.filter(is_active=True).first()
+    except Exception:
+        pass
+
+    context = {
+        "main":        main,
+        "periodos":    periodos,
+        "period":      period,
+        "minerales":   minerales,
+        "debe":        debe,
+        "entregado":   entregado,
+        "pendiente":   pendiente,
+        "pct":         round(100 * entregado / debe, 1) if debe else 0,
+        "validado":    validado,
+        "validado_at": validado_at,
+        "notes":       notes,
+        "m3":          round(pendiente * VOLUMEN_COMPRIMIDO_M3, 1),
+        "contrato":    "\n".join(lineas) if lineas else "",
+        "contratos":   (MoonTaxContract.objects.filter(main_char_id=main_id)
+                        .prefetch_related("items").order_by("-date_issued")),
+        "historico":   historico,
+        "total_pendiente": sum(h["pendiente"] for h in historico),
+        "tax_config":  cfg,
+        "destino":     destino,
+        "moon_ore_groups": MOON_ORE_GROUPS,
+    }
+    return render(request, "koru_stats/moon_tax_mi.html", context)

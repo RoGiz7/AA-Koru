@@ -65,6 +65,9 @@ details > summary { cursor: pointer; user-select: none; }
                     <strong>Período:</strong>
                     {% include "koru_stats/includes/periodo_selector.html" %}
                     <span class="text-muted small">Mostrando <strong>{{ mes }}</strong></span>
+                    <a href="{% url 'koru_stats:moon_tax_mi' %}" class="btn btn-sm btn-outline-info">
+                        <i class="fas fa-user me-1"></i>Mi tax
+                    </a>
                     {% if can_manage_tax %}
                     <a href="{% url 'koru_stats:moon_tax_gestion' %}?periodo={{ periodo_sel }}"
                        class="btn btn-sm btn-outline-warning">
