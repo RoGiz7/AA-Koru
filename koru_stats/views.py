@@ -1966,8 +1966,28 @@ def moon_dashboard_v2(request):
             p["nombre"], todos_ores, rates, period_str
         )
 
-    # KPIs
-    total_isk_moon  = sum(float(r["isk_estimado"] or 0) for r in resumen_tier)
+    # KPIs. El tax va por UNIDADES de mineral: los comprimidos mandan y el ISK
+    # es el complemento. (El mineral lunar comprime 1:1, ver COMPRESION_LUNAR.)
+    total_unidades_moon = sum(int(r["unidades"] or 0) for r in resumen_tier)
+    total_m3_moon       = sum(float(r["m3_total"] or 0) for r in resumen_tier)
+    total_isk_moon      = sum(float(r["isk_estimado"] or 0) for r in resumen_tier)
+
+    # Comprimidos adeudados por tier, para la tabla y el donut
+    for r in resumen_tier:
+        tasa = rates.get(int(r["group_id"]), 0)
+        r["tasa_pct"]    = round(tasa * 100, 2)
+        r["comprimidos"] = int(round(int(r["unidades"] or 0) * tasa / COMPRESION_LUNAR))
+
+    def _comp(p):
+        return (p.get("contrato") or {}).get("total_comp", 0)
+
+    # Reordenar por comprimidos: es el criterio real del tax, no el ISK
+    rekium_list.sort(key=lambda p: (-_comp(p), -p["total_tax"]))
+
+    total_comp_mes       = sum(_comp(p) for p in rekium_list)
+    total_comp_pagado    = sum(_comp(p) for p in rekium_list if p["is_paid"])
+    total_comp_pendiente = total_comp_mes - total_comp_pagado
+
     total_tax_mes   = sum(p["total_tax"] for p in rekium_list)
     total_pagado    = sum(p["total_tax"] for p in rekium_list if p["is_paid"])
     total_pendiente = total_tax_mes - total_pagado
@@ -1982,6 +2002,11 @@ def moon_dashboard_v2(request):
         "externos_list":     externos_list,
         "detalle_por_piloto": detalle_por_piloto,
         "total_isk_moon":    total_isk_moon,
+        "total_unidades_moon":  total_unidades_moon,
+        "total_m3_moon":        total_m3_moon,
+        "total_comp_mes":       total_comp_mes,
+        "total_comp_pagado":    total_comp_pagado,
+        "total_comp_pendiente": total_comp_pendiente,
         "total_tax_mes":     total_tax_mes,
         "total_pagado":      total_pagado,
         "total_pendiente":   total_pendiente,
@@ -1998,12 +2023,14 @@ def moon_dashboard_v2(request):
         ],
         "chart_tier": _to_json({
             "labels": [MOON_ORE_GROUPS[int(r["group_id"])] for r in resumen_tier],
-            "data":   [float(r["isk_estimado"] or 0) for r in resumen_tier],
+            "data":   [int(r["unidades"] or 0) for r in resumen_tier],
+            "isk":    [float(r["isk_estimado"] or 0) for r in resumen_tier],
             "colors": [MOON_ORE_COLORS[int(r["group_id"])] for r in resumen_tier],
         }),
         "chart_rekium": _to_json({
             "labels": [p["nombre"] for p in rekium_list[:10]],
-            "data":   [round(p["total_tax"], 2) for p in rekium_list[:10]],
+            "data":   [_comp(p) for p in rekium_list[:10]],
+            "isk":    [round(p["total_tax"], 2) for p in rekium_list[:10]],
         }),
     }
     return render(request, "koru_stats/moon_dashboard_v2.html", context)

@@ -109,9 +109,9 @@ details > summary { cursor: pointer; user-select: none; }
         <div class="col-6 col-md-2">
             <div class="card kpi-card blue h-100">
                 <div class="card-body">
-                    <div class="stat-label mb-1">ISK minado total</div>
-                    <div class="stat-big text-info" id="kpiIskMoon">—</div>
-                    <small class="text-muted">valor mercado</small>
+                    <div class="stat-label mb-1">Mineral extraído</div>
+                    <div class="stat-big text-info">{{ total_unidades_moon|rknum }}</div>
+                    <small class="text-muted">u · {{ total_m3_moon|rknum }} m³ · <span id="kpiIskMoon">—</span></small>
                 </div>
             </div>
         </div>
@@ -119,8 +119,8 @@ details > summary { cursor: pointer; user-select: none; }
             <div class="card kpi-card yellow h-100">
                 <div class="card-body">
                     <div class="stat-label mb-1">Tax total</div>
-                    <div class="stat-big text-warning" id="kpiTaxTotal">—</div>
-                    <small class="text-muted">adeudado</small>
+                    <div class="stat-big text-warning">{{ total_comp_mes|rknum }}</div>
+                    <small class="text-muted">comprimidos · <span id="kpiTaxTotal">—</span></small>
                 </div>
             </div>
         </div>
@@ -128,8 +128,8 @@ details > summary { cursor: pointer; user-select: none; }
             <div class="card kpi-card green h-100">
                 <div class="card-body">
                     <div class="stat-label mb-1">Tax cobrado</div>
-                    <div class="stat-big text-success" id="kpiPagado">—</div>
-                    <small class="text-muted">ISK</small>
+                    <div class="stat-big text-success">{{ total_comp_pagado|rknum }}</div>
+                    <small class="text-muted">comprimidos · <span id="kpiPagado">—</span></small>
                 </div>
             </div>
         </div>
@@ -137,8 +137,8 @@ details > summary { cursor: pointer; user-select: none; }
             <div class="card kpi-card red h-100">
                 <div class="card-body">
                     <div class="stat-label mb-1">Tax pendiente</div>
-                    <div class="stat-big text-danger" id="kpiPendiente">—</div>
-                    <small class="text-muted">ISK</small>
+                    <div class="stat-big text-danger">{{ total_comp_pendiente|rknum }}</div>
+                    <small class="text-muted">comprimidos · <span id="kpiPendiente">—</span></small>
                 </div>
             </div>
         </div>
@@ -167,21 +167,20 @@ details > summary { cursor: pointer; user-select: none; }
         <div class="col-12 col-md-4">
             <div class="card h-100">
                 <div class="card-header d-flex align-items-center gap-2">
-                    <i class="fas fa-moon text-warning"></i><strong>ISK por tier</strong>
+                    <i class="fas fa-moon text-warning"></i><strong>Unidades por tier</strong>
                 </div>
                 <div class="card-body">
                     {% if resumen_tier %}
                     <div class="chart-container"><canvas id="chartTier"></canvas></div>
                     <table class="table table-sm mt-3 mb-0">
                         <thead class="table-dark">
-                            <tr><th>Tier</th><th class="text-end">Unidades</th><th class="text-end">ISK est.</th><th class="text-end">Tasa</th><th class="text-end">Tax</th></tr>
+                            <tr><th>Tier</th><th class="text-end">Unidades</th><th class="text-end">Tasa</th><th class="text-end">Comprimidos</th><th class="text-end">ISK est.</th></tr>
                         </thead>
                         <tbody>
                             {% for r in resumen_tier %}
                             <tr>
                                 <td><span class="tier-badge tier-{{ r.group_id }}">{{ r.tier }}</span></td>
                                 <td class="text-end font-monospace small">{{ r.unidades|rknum }}</td>
-                                <td class="text-end font-monospace small text-warning">{{ r.isk_estimado|rkisk }}</td>
                                 <td class="text-end small">
                                     {% if tax_config %}
                                         {% if r.group_id == 1884 %}{{ tax_config.ubiquitous_rate }}%
@@ -192,7 +191,8 @@ details > summary { cursor: pointer; user-select: none; }
                                         {% endif %}
                                     {% else %}—{% endif %}
                                 </td>
-                                <td class="text-end font-monospace small text-danger" id="taxTier{{ r.group_id }}">—</td>
+                                <td class="text-end font-monospace small text-danger fw-bold">{{ r.comprimidos|rknum }}</td>
+                                <td class="text-end font-monospace small text-warning">{{ r.isk_estimado|rkisk }}</td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -206,7 +206,7 @@ details > summary { cursor: pointer; user-select: none; }
         <div class="col-12 col-md-8">
             <div class="card h-100">
                 <div class="card-header d-flex align-items-center gap-2">
-                    <i class="fas fa-trophy text-warning"></i><strong>Top tax Rekium</strong>
+                    <i class="fas fa-trophy text-warning"></i><strong>Top tax Rekium</strong><span class="badge bg-secondary ms-1" style="font-size:.6rem">comprimidos</span>
                 </div>
                 <div class="card-body">
                     {% if rekium_list %}
@@ -557,15 +557,7 @@ details > summary { cursor: pointer; user-select: none; }
     if (el('kpiPendiente')) el('kpiPendiente').textContent = fmtISK(kpiPendiente) + ' ISK';
     if (el('kpiIskExt'))    el('kpiIskExt').textContent    = fmtISK(kpiIskExt) + ' ISK';
 
-    // Tax por tier
-    {% if tax_config %}{% for r in resumen_tier %}
-    (function() {
-        const isk  = parseNum("{{ r.isk_estimado|floatformat:2 }}");
-        const tasa = parseNum("{% if r.group_id == 1884 %}{{ tax_config.ubiquitous_rate }}{% elif r.group_id == 1920 %}{{ tax_config.common_rate }}{% elif r.group_id == 1921 %}{{ tax_config.uncommon_rate }}{% elif r.group_id == 1922 %}{{ tax_config.rare_rate }}{% elif r.group_id == 1923 %}{{ tax_config.exceptional_rate }}{% else %}0{% endif %}");
-        const t = el('taxTier{{ r.group_id }}');
-        if (t) t.textContent = fmtISK(isk * tasa / 100) + ' ISK';
-    })();
-    {% endfor %}{% endif %}
+    const fmtNum = v => (v || 0).toLocaleString('en-US');
 
     // Donut tier
     const dataTier = {{ chart_tier|safe }};
@@ -575,7 +567,10 @@ details > summary { cursor: pointer; user-select: none; }
             data: { labels: dataTier.labels, datasets: [{ data: dataTier.data, backgroundColor: dataTier.colors, hoverOffset: 8 }] },
             options: { responsive: true, maintainAspectRatio: false, cutout: '55%',
                 plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } },
-                    tooltip: { callbacks: { label: ctx => ' ' + fmtISK(ctx.raw) + ' ISK' } } } }
+                    tooltip: { callbacks: { label: ctx => {
+                        const isk = (dataTier.isk || [])[ctx.dataIndex];
+                        return ' ' + fmtNum(ctx.raw) + ' u' + (isk ? '  ·  ' + fmtISK(isk) + ' ISK' : '');
+                    } } } } }
         });
     }
 
@@ -586,8 +581,11 @@ details > summary { cursor: pointer; user-select: none; }
         new Chart(ctxRek, { type: 'bar',
             data: { labels: dataRek.labels, datasets: [{ data: dataRek.data, backgroundColor: 'rgba(239,68,68,0.8)', borderRadius: 5 }] },
             options: { responsive: true, maintainAspectRatio: false,
-                plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ' ' + fmtISK(ctx.raw) + ' ISK' } } },
-                scales: { y: { beginAtZero: true, ticks: { callback: fmtISK } } } }
+                plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => {
+                    const isk = (dataRek.isk || [])[ctx.dataIndex];
+                    return ' ' + fmtNum(ctx.raw) + ' comprimidos' + (isk ? '  ·  ' + fmtISK(isk) + ' ISK' : '');
+                } } } },
+                scales: { y: { beginAtZero: true, ticks: { callback: fmtNum } } } }
         });
     }
 
