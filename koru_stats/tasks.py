@@ -53,9 +53,6 @@ logger = logging.getLogger(__name__)
 
 # IDs de minerales basicos en EVE Online
 MINERAL_IDS = [34, 35, 36, 37, 38, 39, 40, 11399]
-# Grupos de mineral lunar (Ubiquitous..Exceptional). Se anaden al descubrimiento
-# porque NO rinden ninguno de los 8 minerales clasicos y se caian de la lista.
-MOON_ORE_GROUPS_STR = "1884,1920,1921,1922,1923"
 # groupID de ice en el SDE de EVE
 ICE_GROUP_ID = 465
 # Region The Forge (Jita) para precios de referencia
@@ -263,11 +260,10 @@ def _get_ore_data():
             cursor.execute(
                 "SELECT DISTINCT it.id, it.name, COALESCE(it.portionSize, 100) "
                 "FROM eve_sde_itemtype it "
-                "WHERE it.published = 1 AND ("
-                "  it.group_id IN (" + MOON_ORE_GROUPS_STR + ") OR "
-                "  it.id IN (SELECT itm.item_type_id FROM eve_sde_itemtypematerials itm "
-                "            WHERE itm.material_item_type_id IN (" + mineral_ids_str + "))"
-                ") ORDER BY it.name"
+                "JOIN eve_sde_itemtypematerials itm ON itm.item_type_id = it.id "
+                "WHERE itm.material_item_type_id IN (" + mineral_ids_str + ") "
+                "AND it.published = 1 "
+                "ORDER BY it.name"
             )
             rows = cursor.fetchall()
     except Exception:
@@ -276,11 +272,10 @@ def _get_ore_data():
                 cursor.execute(
                     "SELECT DISTINCT it.id, it.name "
                     "FROM eve_sde_itemtype it "
-                    "WHERE it.published = 1 AND ("
-                    "  it.group_id IN (" + MOON_ORE_GROUPS_STR + ") OR "
-                    "  it.id IN (SELECT itm.item_type_id FROM eve_sde_itemtypematerials itm "
-                    "            WHERE itm.material_item_type_id IN (" + mineral_ids_str + "))"
-                    ") ORDER BY it.name"
+                    "JOIN eve_sde_itemtypematerials itm ON itm.item_type_id = it.id "
+                    "WHERE itm.material_item_type_id IN (" + mineral_ids_str + ") "
+                    "AND it.published = 1 "
+                    "ORDER BY it.name"
                 )
                 rows = [(r[0], r[1], 100) for r in cursor.fetchall()]
         except Exception as exc2:
@@ -648,11 +643,25 @@ def update_ore_prices():
                 + list({mat_id for mats in moon_materials.values() for mat_id, _ in mats})
             )
             moon_prices = _fetch_fuzzwork_prices(list(set(all_moon_ids)))
+            def _px(d, tid):
+                # El mineral lunar apenas se opera en crudo ni comprimido: lo
+                # normal es reprocesar y vender el material. Cuando no hay
+                # ordenes de venta (Lavish Chromite, sell=0) se cae al `buy`.
+                v = d.get(tid, {})
+                return v.get("sell", 0) or v.get("buy", 0) or 0
+
             for m_id, m_name, portion_size in moon_types:
-                price_raw = moon_prices.get(m_id, {}).get("sell", 0)
+                price_raw = _px(moon_prices, m_id)
                 comp_id = moon_compressed_map.get(m_id)
                 if comp_id and comp_id in moon_prices:
-                    price_compressed = moon_prices[comp_id].get("sell", 0) / max(portion_size, 1)
+                    # SIN dividir entre portion_size: el mineral lunar comprime
+                    # 1:1. `portion_size` es la tanda de REPROCESADO, no el ratio
+                    # de compresion. Verificado por seis vias (2026-08-04), la
+                    # mas directa: Coesite 10 m3 -> Compressed Coesite 0,1 m3, y
+                    # los dos rinden 35:2000,36:400,16636:65 identicos.
+                    # Con la division este valor salia 100 veces por debajo del
+                    # reprocesado, o sea arbitraje imposible.
+                    price_compressed = _px(moon_prices, comp_id)
                 else:
                     price_compressed = 0.0
                 price_reprocessed = sum(
