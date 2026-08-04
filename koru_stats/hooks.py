@@ -62,24 +62,6 @@ def register_menu_lunas():
     )
 
 
-class MiTaxMenuHook(MenuItemHook):
-    def render(self, request):
-        if _tiene_acceso(request):
-            return super().render(request)
-        return ""
-
-
-@hooks.register("menu_item_hook")
-def register_menu_mi_tax():
-    return MiTaxMenuHook(
-        "\U0001f300 Koru \u2014 Mi Tax Lunar",
-        "fas fa-hand-holding-usd fa-fw",
-        "koru_stats:moon_tax_mi",
-        navactive=["koru_stats:moon_tax_mi"],
-        order=1202.5,
-    )
-
-
 class PvpMenuHook(MenuItemHook):
     def render(self, request):
         if _tiene_acceso(request):

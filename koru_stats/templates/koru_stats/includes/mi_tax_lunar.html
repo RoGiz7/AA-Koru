@@ -1,0 +1,202 @@
+{% load i18n koru_stats_tags %}
+{# Requiere `mt` en contexto (ver _moon_tax_mi_ctx). Compartido por la pantalla
+   propia /koru/lunas/mi/ y la pestaña del dashboard personal. #}
+
+{% if not mt %}
+    <div class="alert alert-warning">
+        <i class="fas fa-user-slash me-2"></i>No tienes un personaje principal configurado en el Auth.
+    </div>
+{% elif not mt.periodos %}
+    <div class="alert alert-info">
+        <i class="fas fa-info-circle me-2"></i>No tienes minado lunar registrado. Nada que pagar.
+    </div>
+{% else %}
+
+    <div class="d-flex align-items-center gap-3 mb-3 flex-wrap">
+        <form method="get" class="d-flex align-items-center gap-2 mb-0">
+            <span class="text-muted small">Período:</span>
+            <select name="periodo" class="form-select form-select-sm w-auto" onchange="this.form.submit()">
+                {% for p in mt.periodos %}
+                <option value="{{ p }}" {% if p == mt.period %}selected{% endif %}>{{ p }}</option>
+                {% endfor %}
+            </select>
+        </form>
+        {% if mt.tax_config %}
+        <span class="ms-auto text-muted small">
+            <i class="fas fa-cog me-1"></i>
+            U:{{ mt.tax_config.ubiquitous_rate }}% C:{{ mt.tax_config.common_rate }}%
+            UC:{{ mt.tax_config.uncommon_rate }}% R:{{ mt.tax_config.rare_rate }}%
+            E:{{ mt.tax_config.exceptional_rate }}%
+        </span>
+        {% endif %}
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-3">
+            <div class="card mt-kpi yellow h-100"><div class="card-body">
+                <div class="mt-label mb-1">Debes este período</div>
+                <div class="mt-big text-warning">{{ mt.debe|rknum }}</div>
+                <small class="text-muted">comprimidos</small>
+            </div></div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card mt-kpi green h-100"><div class="card-body">
+                <div class="mt-label mb-1">Has entregado</div>
+                <div class="mt-big text-success">{{ mt.entregado|rknum }}</div>
+                <small class="text-muted">{{ mt.pct }}% cubierto</small>
+            </div></div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card mt-kpi red h-100"><div class="card-body">
+                <div class="mt-label mb-1">Te queda</div>
+                <div class="mt-big {% if mt.pendiente %}text-danger{% else %}text-success{% endif %}">{{ mt.pendiente|rknum }}</div>
+                <small class="text-muted">comprimidos · {{ mt.m3 }} m³</small>
+            </div></div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card mt-kpi h-100"><div class="card-body">
+                <div class="mt-label mb-1">Saldo total</div>
+                <div class="mt-big {% if mt.total_pendiente %}text-danger{% else %}text-success{% endif %}">{{ mt.total_pendiente|rknum }}</div>
+                <small class="text-muted">todos los períodos</small>
+            </div></div>
+        </div>
+    </div>
+
+    {% if mt.validado %}
+    <div class="alert alert-success py-2">
+        <i class="fas fa-lock me-2"></i>Un director ha validado este período{% if mt.validado_at %} el {{ mt.validado_at|date:"d/m/Y" }}{% endif %}.
+        {% if mt.notes %}<div class="small mt-1"><i class="fas fa-sticky-note me-1"></i>{{ mt.notes }}</div>{% endif %}
+    </div>
+    {% endif %}
+
+    <div class="row g-4">
+        <div class="col-12 col-lg-6">
+            <div class="card h-100">
+                <div class="card-header"><i class="fas fa-gem text-info me-2"></i><strong>Qué has minado y qué debes</strong></div>
+                <div class="card-body p-0">
+                    <table class="table table-sm mb-0">
+                        <thead class="table-dark"><tr>
+                            <th>Mineral</th><th class="text-end">Minado</th><th class="text-end">Tasa</th>
+                            <th class="text-end">Debes</th><th class="text-end">Entregado</th><th class="text-end">Falta</th>
+                        </tr></thead>
+                        <tbody>
+                            {% for m in mt.minerales %}
+                            <tr>
+                                <td class="small">{{ m.ore }}</td>
+                                <td class="text-end font-monospace small">{{ m.unidades|rknum }}</td>
+                                <td class="text-end small">{{ m.tasa }}%</td>
+                                <td class="text-end font-monospace small">{{ m.debe|rknum }}</td>
+                                <td class="text-end font-monospace small text-success">{{ m.entregado|rknum }}</td>
+                                <td class="text-end font-monospace small {% if m.pendiente %}text-danger{% else %}text-muted{% endif %}">{{ m.pendiente|rknum }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-lg-6">
+            <div class="card h-100">
+                <div class="card-header"><i class="fas fa-file-contract text-warning me-2"></i><strong>Tu contrato</strong></div>
+                <div class="card-body">
+                    {% if mt.contrato %}
+                        <div class="small text-muted mb-2">
+                            Contrato de <strong>intercambio de ítems</strong> a
+                            <strong>{{ mt.destino.entity_name|default:"la corp" }}</strong>,
+                            {% if mt.destino.expected_location_name %}en <strong>{{ mt.destino.expected_location_name }}</strong>,{% endif %}
+                            precio <strong>0 ISK</strong>. Solo mineral <strong>comprimido</strong>.
+                        </div>
+                        <div class="mt-box" id="miContratoBox">{{ mt.contrato }}</div>
+                        <button class="btn btn-sm btn-outline-secondary mt-2" onclick="copiarMiContrato(this)">
+                            <i class="fas fa-copy me-1"></i>Copiar
+                        </button>
+                    {% else %}
+                        <div class="text-center text-success py-4">
+                            <i class="fas fa-check-circle fa-2x mb-2 d-block"></i>
+                            No debes nada de este período.
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if mt.contratos %}
+    <div class="card mt-4">
+        <div class="card-header"><i class="fas fa-clipboard-check text-success me-2"></i><strong>Contratos detectados</strong></div>
+        <div class="card-body">
+            {% for c in mt.contratos %}
+            <div class="mt-box mb-2" style="font-size:.72rem">
+                <div class="d-flex gap-2 flex-wrap align-items-center mb-1">
+                    <span class="badge bg-secondary">#{{ c.contract_id }}</span>
+                    <span>{{ c.issuer_name }}</span>
+                    <span class="badge {% if c.esi_status == 'finished' %}bg-success{% elif c.esi_status == 'outstanding' %}bg-warning text-dark{% else %}bg-dark{% endif %}">{{ c.esi_status }}</span>
+                    <span class="text-muted">{{ c.date_issued|date:"d/m/Y H:i" }}</span>
+                    {% if c.acceptor_name %}
+                    <span class="text-success"><i class="fas fa-handshake me-1"></i>{{ c.acceptor_name }} · {{ c.date_accepted|date:"d/m/Y H:i" }}</span>
+                    {% endif %}
+                    {% if c.aviso %}<span class="text-warning">⚠ {{ c.aviso }}</span>{% endif %}
+                </div>
+                {% for i in c.items.all %}
+                <div>{{ i.type_name }}: {{ i.quantity|rknum }}{% if not i.is_compressed %} <span class="text-danger">(sin comprimir, no cuenta)</span>{% endif %}</div>
+                {% endfor %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if mt.historico %}
+    <div class="card mt-4">
+        <div class="card-header"><i class="fas fa-history me-2"></i><strong>Mi saldo por período</strong></div>
+        <div class="card-body p-0">
+            <table class="table table-sm mb-0">
+                <thead class="table-dark"><tr>
+                    <th>Período</th><th class="text-end">Debes</th>
+                    <th class="text-end">Entregado</th><th class="text-end">Pendiente</th>
+                    <th class="text-center">Estado</th>
+                </tr></thead>
+                <tbody>
+                    {% for h in mt.historico %}
+                    <tr {% if h.period == mt.period %}class="table-active"{% endif %}>
+                        <td class="font-monospace small">{{ h.period }}</td>
+                        <td class="text-end font-monospace small">{{ h.debe|rknum }}</td>
+                        <td class="text-end font-monospace small text-success">{{ h.entregado|rknum }}</td>
+                        <td class="text-end font-monospace small {% if h.pendiente %}text-danger{% else %}text-muted{% endif %}">{{ h.pendiente|rknum }}</td>
+                        <td class="text-center">
+                            {% if h.validado %}<span class="badge bg-success"><i class="fas fa-lock me-1"></i>Cerrado</span>
+                            {% elif h.pendiente %}<span class="badge bg-danger">Pendiente</span>
+                            {% else %}<span class="badge bg-warning text-dark">Sin validar</span>{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+{% endif %}
+
+<style>
+.mt-kpi { border-left: 4px solid #6c757d; }
+.mt-kpi.green  { border-left-color: #22c55e; }
+.mt-kpi.red    { border-left-color: #ef4444; }
+.mt-kpi.yellow { border-left-color: #f59e0b; }
+.mt-big   { font-size: 1.7rem; font-weight: 700; line-height: 1.1; }
+.mt-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: #6c757d; }
+.mt-box   { background:#0b0b0b; border:1px solid #333; border-radius:6px;
+            padding:.75rem 1rem; font-family:monospace; font-size:.8rem; white-space:pre-wrap; }
+</style>
+<script>
+function copiarMiContrato(btn) {
+    const box = document.getElementById('miContratoBox');
+    if (!box) return;
+    navigator.clipboard.writeText(box.textContent).then(() => {
+        const t = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-check me-1"></i>Copiado';
+        setTimeout(() => { btn.innerHTML = t; }, 2000);
+    });
+}
+</script>

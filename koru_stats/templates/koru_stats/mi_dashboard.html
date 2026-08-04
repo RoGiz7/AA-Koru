@@ -103,6 +103,13 @@
                         {% if pvp_personal %}<span class="badge bg-danger ms-1">{{ pvp_personal.ships_destroyed }}/{{ pvp_personal.ships_lost }}</span>{% endif %}
                     </button>
                 </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabTaxLunar" type="button">
+                        <i class="fas fa-moon me-1 text-warning"></i>Tax Lunar
+                        {% if mt.total_pendiente %}<span class="badge bg-danger ms-1">{{ mt.total_pendiente|rknum }}</span>
+                        {% elif mt.periodos %}<span class="badge bg-success ms-1"><i class="fas fa-check"></i></span>{% endif %}
+                    </button>
+                </li>
                 <li class="ms-auto d-flex align-items-center px-3">
                     <span class="small text-muted me-2">Balance del mes:</span>
                     <span class="fw-bold" id="balancePersonalBadge">—</span>
@@ -703,6 +710,11 @@
           </table>
         </div>
       </div>
+    </div>
+
+    {# Pestaña Tax Lunar — mismo bloque que /koru/lunas/mi/ #}
+    <div class="tab-pane fade" id="tabTaxLunar" role="tabpanel">
+        {% include "koru_stats/includes/mi_tax_lunar.html" %}
     </div>
 
 {% endif %}

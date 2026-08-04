@@ -943,6 +943,8 @@ def mi_dashboard(request):
         .values("tipo", "numero", "estado", "tipo_detalle", "asunto", "fecha", "discord_ticket")[:100]
     )
 
+    context["mt"] = _moon_tax_mi_ctx(request)
+
     return render(request, "koru_stats/mi_dashboard.html", context)
 
 
@@ -3901,9 +3903,12 @@ def moon_tax_validar(request, main_char_id):
 # del modulo.
 # ---------------------------------------------------------------------------
 
-@login_required
-@permission_required("koru_stats.basic_access")
-def moon_tax_mi(request):
+def _moon_tax_mi_ctx(request):
+    """
+    Contexto de «Mi Tax Lunar». Lo usan la pantalla propia y la pestaña del
+    dashboard personal, para no duplicar la logica en dos sitios.
+    Devuelve None si el usuario no tiene main.
+    """
     from .models import MoonTaxConfig, MoonTaxContract, MoonTaxLedger
 
     try:
@@ -3911,7 +3916,7 @@ def moon_tax_mi(request):
     except Exception:
         main = None
     if not main:
-        return render(request, "koru_stats/moon_tax_mi.html", {"sin_main": True})
+        return None
 
     main_id = main.character_id
     filas = MoonTaxLedger.objects.filter(main_char_id=main_id)
@@ -3972,7 +3977,7 @@ def moon_tax_mi(request):
     except Exception:
         pass
 
-    context = {
+    return {
         "main":        main,
         "periodos":    periodos,
         "period":      period,
@@ -3994,4 +3999,11 @@ def moon_tax_mi(request):
         "destino":     destino,
         "moon_ore_groups": MOON_ORE_GROUPS,
     }
-    return render(request, "koru_stats/moon_tax_mi.html", context)
+
+
+@login_required
+@permission_required("koru_stats.basic_access")
+def moon_tax_mi(request):
+    mt = _moon_tax_mi_ctx(request)
+    return render(request, "koru_stats/moon_tax_mi.html",
+                  {"mt": mt, "sin_main": mt is None})
