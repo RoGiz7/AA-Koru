@@ -1393,6 +1393,14 @@ SQL_MOON_DETALLE_ORE = """
 #   3. La calculadora de la alianza (evehaklabs.cloud) hace 1:1 explicito.
 #   4. Cordura: 426 comprimidos valian 0,3 M ISK para un tax de decenas de M.
 COMPRESION_LUNAR = 1
+
+# Paleta para las barras apiladas por mineral. Se asigna por orden alfabetico
+# para que un mismo mineral tenga siempre el mismo color entre periodos.
+ORE_PALETTE = [
+    "#22c55e", "#8b5cf6", "#f59e0b", "#06b6d4", "#ef4444",
+    "#ec4899", "#84cc16", "#3b82f6", "#f97316", "#14b8a6",
+    "#a855f7", "#eab308", "#10b981", "#6366f1", "#fb7185",
+]
 VOLUMEN_COMPRIMIDO_M3 = 0.1
 
 
@@ -1430,6 +1438,7 @@ def _generar_contrato_comprimidos(nombre, detalle_ores, rates, period_str):
         por_tier.setdefault(acc["group_id"], {})[ore] = acc
 
     comprimidos     = {}
+    detalle         = {}     # por mineral: unidades minadas y comprimidos adeudados
     total_isk       = 0.0   # tax teorico en ISK (informativo)
     valor_entregado = 0.0
 
@@ -1459,6 +1468,12 @@ def _generar_contrato_comprimidos(nombre, detalle_ores, rates, period_str):
             valor_entregado += n * COMPRESION_LUNAR * precio_unit
             comp_name = "Compressed {}".format(ore)
             comprimidos[comp_name] = comprimidos.get(comp_name, 0) + n
+            detalle[ore] = {
+                "group_id": gid,
+                "unidades": acc["unidades"],
+                "comp":     n,
+                "isk":      acc["isk"],
+            }
 
     if not comprimidos:
         return None
@@ -1475,6 +1490,7 @@ def _generar_contrato_comprimidos(nombre, detalle_ores, rates, period_str):
     return {
         "texto":           "\n".join(lineas),
         "comprimidos":     comprimidos,
+        "detalle":         detalle,
         "total_comp":      total_comp,
         "unidades_tax":    total_comp * COMPRESION_LUNAR,
         "m3":              round(total_comp * VOLUMEN_COMPRIMIDO_M3, 2),
@@ -1759,6 +1775,35 @@ SQL_MOON_OBS_PERIODOS = """
 """
 
 
+def _build_chart_rekium(pilotos):
+    """
+    Barras apiladas: una barra por piloto, un segmento por mineral.
+
+    Devuelve dos series con la MISMA estructura para poder alternar en el
+    cliente sin recargar: `comp` (comprimidos adeudados, el criterio real del
+    tax) y `unidades` (mineral extraido).
+    """
+    ores = sorted({o for p in pilotos for o in (p.get("contrato") or {}).get("detalle", {})})
+    colores = {o: ORE_PALETTE[i % len(ORE_PALETTE)] for i, o in enumerate(ores)}
+
+    series = {"comp": {}, "unidades": {}}
+    for o in ores:
+        for clave in series:
+            series[clave][o] = []
+        for p in pilotos:
+            det = (p.get("contrato") or {}).get("detalle", {}).get(o, {})
+            series["comp"][o].append(det.get("comp", 0))
+            series["unidades"][o].append(det.get("unidades", 0))
+
+    return {
+        "labels":   [p["nombre"] for p in pilotos],
+        "ores":     ores,
+        "colors":   [colores[o] for o in ores],
+        "comp":     [series["comp"][o] for o in ores],
+        "unidades": [series["unidades"][o] for o in ores],
+    }
+
+
 @permission_required("koru_stats.moon_tax_access")
 def moon_dashboard_v2(request):
     from .models import MoonTaxConfig, MoonTaxPayment
@@ -2027,11 +2072,7 @@ def moon_dashboard_v2(request):
             "isk":    [float(r["isk_estimado"] or 0) for r in resumen_tier],
             "colors": [MOON_ORE_COLORS[int(r["group_id"])] for r in resumen_tier],
         }),
-        "chart_rekium": _to_json({
-            "labels": [p["nombre"] for p in rekium_list[:10]],
-            "data":   [_comp(p) for p in rekium_list[:10]],
-            "isk":    [round(p["total_tax"], 2) for p in rekium_list[:10]],
-        }),
+        "chart_rekium": _to_json(_build_chart_rekium(rekium_list[:10])),
     }
     return render(request, "koru_stats/moon_dashboard_v2.html", context)
 

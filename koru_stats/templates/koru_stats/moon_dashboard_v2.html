@@ -206,7 +206,12 @@ details > summary { cursor: pointer; user-select: none; }
         <div class="col-12 col-md-8">
             <div class="card h-100">
                 <div class="card-header d-flex align-items-center gap-2">
-                    <i class="fas fa-trophy text-warning"></i><strong>Top tax Rekium</strong><span class="badge bg-secondary ms-1" style="font-size:.6rem">comprimidos</span>
+                    <i class="fas fa-trophy text-warning"></i><strong>Top tax Rekium</strong>
+                    <span class="text-muted small ms-1">por mineral</span>
+                    <div class="btn-group btn-group-sm ms-auto" role="group" id="rekModo">
+                        <button type="button" class="btn btn-danger active" data-rmode="comp">Tax (comprimidos)</button>
+                        <button type="button" class="btn btn-outline-danger" data-rmode="unidades">Minado (unidades)</button>
+                    </div>
                 </div>
                 <div class="card-body">
                     {% if rekium_list %}
@@ -574,20 +579,86 @@ details > summary { cursor: pointer; user-select: none; }
         });
     }
 
-    // Barras rekium
+    // Barras rekium — apiladas por mineral
     const dataRek = {{ chart_rekium|safe }};
     const ctxRek  = el('chartRekium');
-    if (ctxRek && dataRek.data && dataRek.data.length) {
-        new Chart(ctxRek, { type: 'bar',
-            data: { labels: dataRek.labels, datasets: [{ data: dataRek.data, backgroundColor: 'rgba(239,68,68,0.8)', borderRadius: 5 }] },
-            options: { responsive: true, maintainAspectRatio: false,
-                plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => {
-                    const isk = (dataRek.isk || [])[ctx.dataIndex];
-                    return ' ' + fmtNum(ctx.raw) + ' comprimidos' + (isk ? '  ·  ' + fmtISK(isk) + ' ISK' : '');
-                } } } },
-                scales: { y: { beginAtZero: true, ticks: { callback: fmtNum } } } }
+    let chartRek  = null;
+
+    // Pinta la cifra dentro de cada segmento si cabe
+    const etiquetasDentro = {
+        id: 'etiquetasDentro',
+        afterDatasetsDraw(chart) {
+            const {ctx} = chart;
+            ctx.save();
+            ctx.font = '600 10px sans-serif';
+            ctx.fillStyle = 'rgba(255,255,255,.95)';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            chart.data.datasets.forEach((ds, di) => {
+                const meta = chart.getDatasetMeta(di);
+                if (meta.hidden) return;
+                meta.data.forEach((bar, i) => {
+                    const v = ds.data[i];
+                    if (!v) return;
+                    const alto = Math.abs(bar.base - bar.y);
+                    if (alto < 14) return;            // no cabe, lo deja al tooltip
+                    ctx.fillText(fmtNum(v), bar.x, (bar.base + bar.y) / 2);
+                });
+            });
+            ctx.restore();
+        }
+    };
+
+    const unidadRek = m => (m === 'comp' ? ' comprimidos' : ' u');
+
+    function pintaRek(modo) {
+        if (!ctxRek || !dataRek.ores || !dataRek.ores.length) return;
+        const datasets = dataRek.ores.map((ore, i) => ({
+            label: ore,
+            data: dataRek[modo][i],
+            backgroundColor: dataRek.colors[i],
+            borderRadius: 3,
+            stack: 'tax'
+        }));
+        if (chartRek) chartRek.destroy();
+        chartRek = new Chart(ctxRek, {
+            type: 'bar',
+            data: { labels: dataRek.labels, datasets },
+            plugins: [etiquetasDentro],
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 10 } } },
+                    tooltip: {
+                        callbacks: {
+                            label: ctx => ' ' + ctx.dataset.label + ': ' + fmtNum(ctx.raw) + unidadRek(modo),
+                            footer: items => {
+                                const t = items.reduce((a, b) => a + (b.raw || 0), 0);
+                                return 'Total: ' + fmtNum(t) + unidadRek(modo);
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: { stacked: true },
+                    y: { stacked: true, beginAtZero: true, ticks: { callback: fmtNum } }
+                }
+            }
         });
     }
+    pintaRek('comp');
+
+    document.querySelectorAll('#rekModo [data-rmode]').forEach(b => {
+        b.addEventListener('click', () => {
+            document.querySelectorAll('#rekModo [data-rmode]').forEach(x => {
+                x.classList.remove('btn-danger', 'active');
+                x.classList.add('btn-outline-danger');
+            });
+            b.classList.remove('btn-outline-danger');
+            b.classList.add('btn-danger', 'active');
+            pintaRek(b.dataset.rmode);
+        });
+    });
 
     // Modal pago
     const modalEl = el('modalPago');
