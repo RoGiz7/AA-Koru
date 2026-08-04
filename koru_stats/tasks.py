@@ -2256,6 +2256,13 @@ def build_social_graph(ventana_dias=90, peso_min=2):
 MOON_ORE_GROUP_IDS = (1884, 1920, 1921, 1922, 1923)
 
 
+def _aware(valor):
+    """El cursor crudo devuelve datetimes naive aunque USE_TZ=True."""
+    if valor is None:
+        return None
+    return timezone.make_aware(valor) if timezone.is_naive(valor) else valor
+
+
 def _resolve_mains(char_ids):
     """{character_id: (main_char_id, main_name)}. El emisor suele ser un alt."""
     if not char_ids:
@@ -2437,9 +2444,9 @@ def sync_moon_tax_contracts(dias=120):
                 "esi_status":     c["status"] or "",
                 "start_location_id":   c["start_location_id"],
                 "start_location_name": (destino.expected_location_name if destino else ""),
-                "date_issued":    c["date_issued"],
-                "date_accepted":  c["date_accepted"],
-                "date_completed": c["date_completed"],
+                "date_issued":    _aware(c["date_issued"]),
+                "date_accepted":  _aware(c["date_accepted"]),
+                "date_completed": _aware(c["date_completed"]),
                 "estado":         (MoonTaxContract.ESTADO_REVISAR if anomalia
                                    else MoonTaxContract.ESTADO_DETECTADO),
                 "tiene_bruto":    tiene_bruto,

@@ -1775,6 +1775,39 @@ SQL_MOON_OBS_PERIODOS = """
 """
 
 
+def _aware(valor):
+    """
+    Normaliza a datetime *aware*.
+
+    Dos fuentes de naive en este modulo, y mezclarlas con `timezone.now()`
+    lanza TypeError:
+      - el cursor crudo devuelve datetimes naive aunque USE_TZ=True
+      - `_rango_mes()` devuelve CADENAS ('2026-08-01'), no fechas
+    """
+    from django.utils import timezone
+
+    if valor is None:
+        return None
+    if isinstance(valor, str):
+        try:
+            valor = datetime.fromisoformat(valor)
+        except ValueError:
+            return None
+    elif isinstance(valor, date) and not isinstance(valor, datetime):
+        valor = datetime(valor.year, valor.month, valor.day)
+    if timezone.is_naive(valor):
+        valor = timezone.make_aware(valor, timezone.get_default_timezone())
+    return valor
+
+
+def _naive(valor):
+    """Vuelta a naive local: los parametros de las SQL crudas van sin tz."""
+    from django.utils import timezone
+    if valor is None:
+        return None
+    return timezone.make_naive(valor) if timezone.is_aware(valor) else valor
+
+
 SQL_FRACTURAS = """
     SELECT f.id, f.structure_id, f.arrival_time, it.name AS ore, fo.total_m3
     FROM moons_moonfrack f
@@ -1834,7 +1867,7 @@ def _fracturas_por_estructura(structure_ids, inicio_periodo, fin_periodo):
     for r in filas:
         f = fracks.setdefault(int(r["id"]), {
             "id": int(r["id"]), "structure_id": int(r["structure_id"]),
-            "arrival": r["arrival_time"], "ores": {},
+            "arrival": _aware(r["arrival_time"]), "ores": {},
         })
         if r["ore"]:
             f["ores"][r["ore"]] = float(r["total_m3"] or 0)
@@ -1843,8 +1876,9 @@ def _fracturas_por_estructura(structure_ids, inicio_periodo, fin_periodo):
     for f in fracks.values():
         por_str.setdefault(f["structure_id"], []).append(f)
 
-    ahora = timezone.now()
-    tope  = fin_periodo or ahora
+    ahora  = timezone.now()
+    inicio = _aware(inicio_periodo)
+    tope   = _aware(fin_periodo) or ahora
     salida = {}
 
     for sid, lista in por_str.items():
@@ -1858,7 +1892,7 @@ def _fracturas_por_estructura(structure_ids, inicio_periodo, fin_periodo):
             hasta = lista[i - 1]["arrival"] if i > 0 else ahora
 
             with connection.cursor() as cursor:
-                cursor.execute(SQL_MINADO_VENTANA, [sid, desde, hasta])
+                cursor.execute(SQL_MINADO_VENTANA, [sid, _naive(desde), _naive(hasta)])
                 minado_raw = {r["ore"]: float(r["m3"] or 0) for r in _fetchall(cursor)}
 
             bases = set(f["ores"].keys())
@@ -1879,10 +1913,7 @@ def _fracturas_por_estructura(structure_ids, inicio_periodo, fin_periodo):
                 })
 
             # ¿su ventana de minado solapa el periodo seleccionado?
-            en_periodo = bool(
-                inicio_periodo and fin_periodo
-                and desde < fin_periodo and hasta > inicio_periodo
-            )
+            en_periodo = bool(inicio and tope and desde < tope and hasta > inicio)
 
             out.append({
                 "id": f["id"], "arrival": f["arrival"], "hasta": hasta,
