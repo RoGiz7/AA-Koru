@@ -3,6 +3,17 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.9.1] — 2026-10-19
+
+### Corregido
+
+- **Lo que está sin valorar ya no parece no haber aportado nada.** Un BPC o algo
+  sin mercado vale 0 hasta que un director lo valora, así que el total salía corto
+  y el piloto leía un rango más bajo del que le toca — y si era su única
+  aportación, la tarjeta llegaba a decirle «todavía no has aportado nada a la
+  fiesta». Ahora tanto la tarjeta como «Mi aportación» dicen cuántas cosas están
+  esperando valoración y que el rango puede subir.
+
 ## [0.9.0] — 2026-10-19
 
 Regalos, R6: pegado desde el juego y armador de lotes. Módulo `lotes.py`, con el

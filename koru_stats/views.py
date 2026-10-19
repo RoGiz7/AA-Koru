@@ -4289,6 +4289,14 @@ def _gift_mi_ctx(request):
     total = sum((a.valor_final or 0) for a in aportaciones)
     marcadas = sum(1 for a in aportaciones if a.estado == GiftContribution.ESTADO_REVISAR)
 
+    # ★ Un BPC o algo sin mercado vale 0 HASTA que un director lo valore, asi que
+    # el total sale corto y el rango puede parecer mas bajo del que toca. Decirlo
+    # importa: sin esto, alguien que aporto un blueprint lee "Sin clasificar" y
+    # entiende que se ha quedado fuera, cuando lo que pasa es que aun no se ha
+    # contado lo suyo.
+    pendiente_valorar = sum(
+        1 for a in aportaciones for i in a.items.all() if i.requiere_valoracion)
+
     # Rango actual = el ultimo cuyo umbral se alcanza; siguiente = el primero que no
     rango = siguiente = None
     for t in campaign.tiers.order_by("orden"):
@@ -4308,6 +4316,7 @@ def _gift_mi_ctx(request):
         "main": main, "campaign": campaign,
         "aportaciones": aportaciones, "num": len(aportaciones),
         "total": total, "marcadas": marcadas,
+        "pendiente_valorar": pendiente_valorar,
         "rango": rango, "siguiente": siguiente, "falta": falta, "progreso": progreso,
         "destinos": list(campaign.recipients.filter(is_active=True)),
     }

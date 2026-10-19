@@ -8,12 +8,14 @@
                 <div style="font-size:2rem;line-height:1">🎁</div>
                 <div class="flex-grow-1">
                     <div class="stat-label">{{ g.campaign.nombre }}</div>
-                    {% if g.total %}
+                    {# total 0 con cosas sin valorar NO es "no has aportado nada" #}
+                    {% if g.total or g.pendiente_valorar %}
                         <div class="stat-big">{{ g.total|rkisk }}</div>
                         <div class="small text-muted">
                             aportado en {{ g.num }} entrega{{ g.num|pluralize }}
                             {% if g.rango %}· rango <strong>{{ g.rango.nombre }}</strong>{% endif %}
                             {% if g.falta %}· te faltan {{ g.falta|rkisk }} para {{ g.siguiente.nombre }}{% endif %}
+                            {% if g.pendiente_valorar %}· {{ g.pendiente_valorar }} sin valorar todavía{% endif %}
                         </div>
                     {% else %}
                         <div class="small text-muted">Todavía no has aportado nada a la fiesta.</div>
