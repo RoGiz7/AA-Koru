@@ -3,6 +3,29 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.16.1] — 2026-10-19
+
+### Corregido
+
+- **Las ruedas se salían de una ventana baja**, comiéndose hasta el botón de
+  girar: estaban dimensionadas solo por ancho. Ahora el alto manda igual que el
+  ancho (`min(42vw, 560px, 52vh)`), y la cabecera, el pie, el retrato y los
+  rótulos se encogen con la altura disponible.
+- **La demo no enseñaba ni retratos ni naves**, que era justo lo que había que
+  ver: inventaba `character_id` —así que EVE devolvía el avatar por defecto— y
+  creaba los premios sin pasar por el adivinador de `type_id`. Ahora coge
+  **pilotos reales del Auth** cuando los hay y resuelve los nombres de los
+  premios **contra el SDE**, así que enseña renders de verdad y de paso ejercita
+  el adivinador con los mismos datos que usa la web. Al terminar dice cuántos
+  premios salieron con imagen y cuántos pilotos eran reales.
+
+### Nota de historial
+
+Las versiones 0.15.0 y 0.16.0 viajaron en el mismo commit (`3db4969`): se editaron
+ficheros mientras el bloque de la 0.15.0 estaba pendiente de lanzar, así que su
+`git add` se llevó también lo de la 0.16.0. Los dos tags apuntan ahí. El código es
+correcto; lo que no cuadra es el relato.
+
 ## [0.16.0] — 2026-10-19
 
 ### Añadido

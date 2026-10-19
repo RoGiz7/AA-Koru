@@ -16,18 +16,21 @@
     font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
     display: flex; flex-direction: column; overflow: hidden;
   }
-  header { padding: 1rem 2rem; display: flex; align-items: baseline; gap: 1rem;
+  header { padding: clamp(.4rem, 1.4vh, 1rem) 2rem; display: flex; align-items: baseline; gap: 1rem;
            border-bottom: 1px solid var(--borde); flex-wrap: wrap; }
   .campana { font-size: .95rem; letter-spacing: .22em; text-transform: uppercase; color: var(--suave); }
-  .sorteo  { font-size: 1.9rem; font-weight: 800; }
+  .sorteo  { font-size: clamp(1.1rem, 3vh, 1.9rem); font-weight: 800; }
   .contador { margin-left: auto; color: var(--suave); }
 
   main { flex: 1; display: flex; align-items: center; justify-content: center; gap: 3rem;
          padding: 1rem 2rem; flex-wrap: wrap; }
   .rueda-caja { text-align: center; }
-  .rueda-rotulo { font-size: .9rem; letter-spacing: .22em; text-transform: uppercase;
+  .rueda-rotulo { font-size: clamp(.7rem, 1.6vh, .9rem); letter-spacing: .22em; text-transform: uppercase;
                   color: var(--suave); margin-bottom: .6rem; }
-  .rueda-wrap { position: relative; width: min(44vw, 560px); aspect-ratio: 1; }
+  /* ⚠ Dimensionar solo por ANCHO dejaba las ruedas saliendose por abajo en
+     una ventana baja, comiendose hasta el boton. El alto manda igual que el
+     ancho: `vh` en el min() es lo que lo arregla. */
+  .rueda-wrap { position: relative; width: min(42vw, 560px, 52vh); aspect-ratio: 1; }
   .rueda-wrap svg { width: 100%; height: 100%; display: block; }
   /* ★ En SVG, `transform-origin: 50% 50%` NO se resuelve contra el propio
      elemento si no se dice con `transform-box` respecto a que caja. Sin esto
@@ -44,17 +47,17 @@
   .centro span { background: var(--fondo); border: 2px solid var(--borde); border-radius: 50%;
                  width: 15%; height: 15%; display: flex; align-items: center;
                  justify-content: center; font-size: 1.2rem; }
-  .resultado { margin-top: .8rem; font-size: clamp(1.2rem, 2.4vw, 2rem); font-weight: 800;
-               min-height: 2.4rem; }
+  .resultado { margin-top: .6rem; font-size: clamp(1.1rem, 2.2vw, 2rem); font-weight: 800;
+               min-height: 2.2rem; }
   .resultado.premio { color: var(--oro); }
   .mini-render { width: 52px; height: 52px; border-radius: 10px; vertical-align: middle; margin-right: .5rem; }
   .insignia { display: inline-block; font-size: .75rem; padding: .15rem .6rem; border-radius: 999px;
               background: var(--acento); vertical-align: middle; margin-left: .5rem; }
-  .retrato { width: 72px; height: 72px; border-radius: 50%; border: 3px solid var(--oro);
-             margin-top: .4rem; }
+  .retrato { width: clamp(44px, 7vh, 72px); height: clamp(44px, 7vh, 72px); border-radius: 50%;
+             border: 3px solid var(--oro); margin-top: .3rem; }
 
   /* Fallback: con demasiados nombres una rueda es ilegible y se usa la tira */
-  .ventana { position: relative; height: 200px; width: min(44vw, 560px); overflow: hidden;
+  .ventana { position: relative; height: min(200px, 24vh); width: min(42vw, 560px); overflow: hidden;
              background: var(--panel); border: 1px solid var(--borde); border-radius: 14px; }
   .marca { position: absolute; top: 50%; left: 0; right: 0; height: 60px; margin-top: -30px;
            border-top: 2px solid var(--acento); border-bottom: 2px solid var(--acento); z-index: 3; }
@@ -62,7 +65,7 @@
   .tira div { height: 60px; line-height: 60px; font-size: 1.7rem; font-weight: 700;
               white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 1rem; }
 
-  footer { padding: .9rem 2rem; border-top: 1px solid var(--borde); display: flex; gap: 1rem;
+  footer { padding: clamp(.4rem, 1.2vh, .9rem) 2rem; border-top: 1px solid var(--borde); display: flex; gap: 1rem;
            align-items: center; flex-wrap: wrap; }
   button { background: var(--acento); color: #fff; border: 0; border-radius: 10px;
            padding: .85rem 2rem; font-size: 1.05rem; font-weight: 700; cursor: pointer; }

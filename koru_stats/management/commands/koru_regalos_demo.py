@@ -25,11 +25,32 @@ PILOTOS = [
     "Amere Ekanon", "Iam Neutral", "Oniashi Lefour", "Ekanon A Devil",
 ]
 
+# Nombres REALES de EVE: el type_id se resuelve contra el SDE del propio Auth
+# en vez de llevarlo escrito aqui, asi la demo enseña los renders de verdad y
+# de paso ejercita el adivinador con los mismos datos que usa la web.
 PREMIOS = [
     ("Orca", 2_500_000_000), ("Gila", 480_000_000), ("Vexor Navy Issue", 320_000_000),
-    ("Lote: Nanite Paste ×1.200 + 300 M ISK", 336_000_000), ("PLEX ×500", 2_100_000_000),
-    ("Rifter con fit completo", 45_000_000),
+    ("Nanite Repair Paste", 336_000_000), ("PLEX", 2_100_000_000),
+    ("Rifter", 45_000_000),
 ]
+
+
+def _mains_reales(cuantos):
+    """[(character_id, nombre)] de mains de verdad del Auth, para que los
+    retratos de la ruleta sean retratos y no el avatar generico."""
+    from django.db import connection
+
+    try:
+        with connection.cursor() as c:
+            c.execute("""
+                SELECT DISTINCT ec.character_id, ec.character_name
+                FROM authentication_userprofile up
+                JOIN eveonline_evecharacter ec ON ec.id = up.main_character_id
+                ORDER BY ec.character_name LIMIT %s
+            """, [int(cuantos)])
+            return [(int(a), b or str(a)) for a, b in c.fetchall()]
+    except Exception:
+        return []
 
 
 class Command(BaseCommand):
@@ -70,18 +91,28 @@ class Command(BaseCommand):
             orden=99, ponderar_por_rango=False, excluir_propio_regalo=False)
 
         gente = max(2, opciones["gente"])
+        # ★ Pilotos REALES del Auth si los hay: con ids inventados, EVE devuelve
+        # el avatar por defecto y la demo no enseña lo que tiene que enseñar.
+        reales = _mains_reales(gente)
         for i in range(gente):
-            base = PILOTOS[i % len(PILOTOS)]
-            nombre = base if i < len(PILOTOS) else f"{base} {i // len(PILOTOS) + 1}"
+            if i < len(reales):
+                char_id, nombre = reales[i]
+            else:
+                base = PILOTOS[i % len(PILOTOS)]
+                nombre = base if i < len(PILOTOS) else f"{base} {i // len(PILOTOS) + 1}"
+                char_id = 900000000 + i
             RaffleEntrant.objects.create(
-                raffle=r, main_char_id=900000000 + i, main_name=nombre,
+                raffle=r, main_char_id=char_id, main_name=nombre,
                 papeletas=1, rango_nombre="Pruebas")
 
+        from koru_stats.lotes import tipo_desde_texto
         for i in range(max(1, opciones["premios"])):
             etiqueta, valor = PREMIOS[i % len(PREMIOS)]
+            tid, _ = tipo_desde_texto(etiqueta)      # contra el SDE de verdad
             RafflePrize.objects.create(
                 raffle=r, origen=RafflePrize.ORIGEN_EXCLUSIVO,
-                descripcion=f"{etiqueta} (prueba)", valor=Decimal(valor), orden=i)
+                descripcion=f"{etiqueta} (prueba)", valor=Decimal(valor),
+                type_id=tid, orden=i)
 
         if opciones["sortear"]:
             raffles.cerrar(r)
@@ -90,5 +121,8 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS(
             f"Sorteo «{NOMBRE_SORTEO}» listo en «{campaign.nombre}»: "
             f"{gente} participantes, {r.prizes.count()} premios, estado {r.estado}."))
+        con_render = r.prizes.exclude(type_id=None).count()
+        self.stdout.write(f"  Premios con imagen: {con_render} de {r.prizes.count()}")
+        self.stdout.write(f"  Pilotos reales en el roster: {len(_mains_reales(gente))}")
         self.stdout.write(f"  Ruleta: /koru/regalos/sorteos/{r.pk}/ruleta/")
         self.stdout.write("  Para quitarlo: python manage.py koru_regalos_demo --borrar")
