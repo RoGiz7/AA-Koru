@@ -4895,10 +4895,26 @@ def gift_ruleta(request, pk):
     destino = r.campaign.recipients.filter(is_active=True).first()
     corp_id = destino.entity_id if destino else None
 
+    # ★ El CEO sale de `EveCorporationInfo.ceo_id`, que el propio Auth mantiene
+    # al refrescar la corp: ni un ajuste nuevo que nadie se acuerda de poner ni
+    # una llamada a ESI en mitad de la gala.
+    # ⚠ ESI devuelve `ceo_id = 1` en las corps cerradas: eso no es un piloto, es
+    # un hueco, y pedirle el retrato saldria en blanco.
+    ceo_id = None
+    if corp_id:
+        from allianceauth.eveonline.models import EveCorporationInfo
+        ceo_id = (EveCorporationInfo.objects
+                  .filter(corporation_id=corp_id)
+                  .values_list("ceo_id", flat=True)
+                  .first())
+        if ceo_id in (None, 1):
+            ceo_id = None
+
     return render(request, "koru_stats/gift_ruleta.html", {
         "r": r,
         "campaign": r.campaign,
         "corp_id": corp_id,
+        "ceo_id": ceo_id,
         "premios": premios,
         "nombres": nombres,
         "tiradas": tiradas,

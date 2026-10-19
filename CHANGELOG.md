@@ -3,6 +3,39 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.17.0] — 2026-10-19
+
+### Añadido
+
+- **El fondo es ahora la fiesta, no un catálogo de naves**: cruzan el logo de la
+  corp, el retrato del CEO, la cara de **cada participante** y el render de
+  **cada premio**. Las caras salen redondas y con aro dorado; el logo, con un
+  halo en rojo de corp. El pozo se baraja (en orden saldrían todos los retratos
+  seguidos y se notaría el truco) y pasa uno cada 7 s, porque con uno cada 18 s
+  la mayoría no llegaría a salir en toda la gala.
+  - El CEO sale de `EveCorporationInfo.ceo_id`, que el Auth ya mantiene: ni un
+    ajuste nuevo que nadie recuerda poner ni una llamada a ESI en plena gala. Si
+    la corp es cerrada ESI devuelve `ceo_id = 1`, que no es nadie, y se descarta.
+- **Aire de Yoiul**: nieve cayendo con vaivén —reciclando los copos al salir por
+  abajo, así que no se crea ni se destruye nada en todo el sorteo— y dos
+  cortinas de aurora verde y morada que respiran muy despacio. Todo pintado, sin
+  imágenes que haya que distribuir con el plugin.
+- **Hueco para un fondo propio**: si se deja una imagen en
+  `koru_stats/static/koru_stats/ruleta/fondo.jpg`, manda esa y lo demás queda
+  por debajo. A propósito **no** se usa el tag `static`: con el almacenamiento
+  por manifiesto del Auth, pedir un fichero que no está no da un 404, revienta
+  la plantilla con `ValueError`.
+
+### Corregido
+
+- **Un comentario de Django de los cortos, escrito en dos líneas**, se imprimía
+  tal cual en la cabecera de la proyección. El de varias líneas es
+  `{% comment %}`.
+- **La ventana pequeña se comía el botón de girar** y no había forma de llegar a
+  él: la página tenía `overflow: hidden`. Ahora las ruedas tienen suelo de
+  tamaño (240 px) y lo que no cabe se baja con la rueda del ratón. En el
+  proyector no sobra nada, así que la barra no llega a aparecer.
+
 ## [0.16.2] — 2026-10-19
 
 ### Añadido

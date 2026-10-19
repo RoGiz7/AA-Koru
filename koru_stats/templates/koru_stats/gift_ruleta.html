@@ -14,7 +14,13 @@
   body {
     margin: 0; min-height: 100vh; background: var(--fondo); color: var(--texto);
     font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-    display: flex; flex-direction: column; overflow: hidden;
+    display: flex; flex-direction: column;
+    /* ⚠ Antes era `overflow: hidden` para que la proyeccion no tuviera barras.
+       El precio era que en una ventana pequeña el boton de girar se perdia por
+       abajo y no habia forma de llegar a el. Ahora las ruedas tienen suelo de
+       tamaño y lo que no cabe se baja con la rueda del raton: en el proyector
+       no sobra nada, asi que la barra no llega a aparecer. */
+    overflow-x: hidden; overflow-y: auto;
   }
   header { padding: clamp(.4rem, 1.4vh, 1rem) 2rem; display: flex; align-items: baseline; gap: 1rem;
            border-bottom: 1px solid var(--borde); flex-wrap: wrap; }
@@ -30,7 +36,9 @@
   /* ⚠ Dimensionar solo por ANCHO dejaba las ruedas saliendose por abajo en
      una ventana baja, comiendose hasta el boton. El alto manda igual que el
      ancho: `vh` en el min() es lo que lo arregla. */
-  .rueda-wrap { position: relative; width: min(42vw, 560px, 52vh); aspect-ratio: 1; }
+  /* El `max(240px, …)` es el suelo: por debajo de eso no se lee nada, asi que
+     antes de encoger mas, que la pagina haga scroll. */
+  .rueda-wrap { position: relative; width: max(240px, min(42vw, 560px, 52vh)); aspect-ratio: 1; }
   .rueda-wrap svg { width: 100%; height: 100%; display: block; }
   /* ★ En SVG, `transform-origin: 50% 50%` NO se resuelve contra el propio
      elemento si no se dice con `transform-box` respecto a que caja. Sin esto
@@ -87,6 +95,10 @@
     position: absolute; opacity: 0; filter: saturate(.75) contrast(.9);
     will-change: transform, opacity;
   }
+  /* Las caras, redondas y con aro: un retrato cuadrado flotando parece un
+     cromo pegado, y redondo parece que forma parte del cielo. */
+  #naves img.cara  { border-radius: 50%; border: 3px solid rgba(245,194,66,.5); }
+  #naves img.marca { filter: saturate(1) contrast(1.05) drop-shadow(0 0 18px rgba(225,29,72,.35)); }
   @keyframes cruzar {
     0%   { opacity: 0;   transform: translate(var(--x0), var(--y0)) rotate(var(--g0)) scale(var(--s)); }
     12%  { opacity: .20; }
@@ -99,6 +111,29 @@
     background: radial-gradient(900px 600px at 20% 15%, rgba(225,29,72,.10), transparent 60%),
                 radial-gradient(800px 600px at 85% 80%, rgba(6,182,212,.10), transparent 60%);
   }
+  /* Auroras de Yoiul: dos cortinas verdes y moradas que respiran muy despacio.
+     Pintadas con gradientes, que no cuestan nada en el portatil del proyector:
+     una imagen de fondo de verdad habria que distribuirla con el plugin. */
+  body::before {
+    content: ""; position: fixed; inset: -20% -10% auto -10%; height: 85vh; z-index: -2;
+    pointer-events: none; filter: blur(50px); opacity: .5;
+    background:
+      radial-gradient(60vw 32vh at 22% 8%,  rgba(52,211,153,.30), transparent 70%),
+      radial-gradient(52vw 26vh at 62% 2%,  rgba(124,58,237,.26), transparent 70%),
+      radial-gradient(44vw 22vh at 88% 14%, rgba(6,182,212,.22),  transparent 70%);
+    animation: aurora 26s ease-in-out infinite alternate;
+  }
+  @keyframes aurora {
+    0%   { transform: translateX(-3vw) scaleY(1);    opacity: .40; }
+    100% { transform: translateX(3vw)  scaleY(1.18); opacity: .62; }
+  }
+  /* Si el director deja una imagen suya en
+     `koru_stats/static/koru_stats/ruleta/fondo.jpg`, manda esa y las auroras se
+     quedan por debajo. Si no hay fichero, el <img> se borra solo y no se nota. */
+  #fondo-foto {
+    position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover;
+    z-index: -3; opacity: .28; pointer-events: none; filter: saturate(.85);
+  }
   header, main, footer, .reparto { position: relative; z-index: 1; }
   .logo-corp { width: 48px; height: 48px; border-radius: 10px; border: 1px solid var(--borde); }
   @keyframes latido { 0%,100% { transform: scale(1); } 50% { transform: scale(1.06); } }
@@ -108,12 +143,30 @@
 <body>
 
 {# Dos lienzos: estrellas detras de todo, fuegos por delante y sin capturar clics #}
+{% comment %}
+El fondo propio del director, si lo hay. `onerror` lo quita cuando no existe el
+fichero, que es el caso normal: asi la pagina no depende de nada que haya que
+distribuir con el plugin, pero admite una imagen sin tocar codigo.
+
+⚠ A proposito NO se usa el tag `static`: el Auth guarda los estaticos con
+manifiesto, y pedirle por ese tag un fichero que no esta no devuelve un 404,
+revienta la plantilla entera con ValueError. Pegando la ruta a mano, si el
+fichero no existe es un 404 normal y el `onerror` hace su trabajo.
+{% endcomment %}
+<img id="fondo-foto" src="{{ STATIC_URL }}koru_stats/ruleta/fondo.jpg" alt=""
+     onerror="this.remove()">
+
 <canvas id="estrellas"></canvas>
 <div id="naves"></div>
 <canvas id="fuegos"></canvas>
 
-{# El filtro que apaga a los que ya salieron. Va en un svg suelto para que las
-   dos ruedas lo compartan: un solo id, referenciado desde las dos. #}
+{% comment %}
+⚠ El comentario corto de Django es de UNA sola linea. Escrito en dos se
+imprimia tal cual en la cabecera de la proyeccion, que es justo donde mas se
+veia. Para varias lineas, este tag.
+El filtro apaga a los que ya salieron. Va en un svg suelto para que las dos
+ruedas lo compartan: un solo id, referenciado desde las dos.
+{% endcomment %}
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
   <filter id="f-apagado"><feColorMatrix type="saturate" values="0"/></filter>
 </defs></svg>
@@ -461,6 +514,11 @@
     const cF = $("fuegos"),    ctxF = cF.getContext("2d");
     let ancho = 0, alto = 0, estrellas = [];
 
+    // ★ Nieve. Es lo que convierte un cielo estrellado cualquiera en el
+    // Festival de Yoiul, y sale igual de barata que las estrellas: los mismos
+    // puntos, pero cayendo y con un vaiven lateral para que no parezca lluvia.
+    let copos = [];
+
     function medir() {
       ancho = cE.width = cF.width = window.innerWidth;
       alto  = cE.height = cF.height = window.innerHeight;
@@ -469,6 +527,13 @@
         x: Math.random() * ancho, y: Math.random() * alto,
         r: Math.random() * 1.3 + .2, v: Math.random() * .05 + .01,
         f: Math.random() * Math.PI * 2,
+      }));
+      copos = Array.from({ length: Math.min(160, Math.round(ancho * alto / 14000)) }, () => ({
+        x: Math.random() * ancho, y: Math.random() * alto,
+        r: Math.random() * 1.8 + .6,
+        vy: Math.random() * .45 + .18,          // despacio: es nieve, no granizo
+        vx: Math.random() * .3 - .15,
+        f: Math.random() * Math.PI * 2, bal: Math.random() * .012 + .004,
       }));
     }
     window.addEventListener("resize", medir);
@@ -481,6 +546,18 @@
         ctxE.globalAlpha = .35 + Math.sin(e.f) * .35;
         ctxE.fillStyle = "#cfe0ff";
         ctxE.beginPath(); ctxE.arc(e.x, e.y, e.r, 0, 6.283); ctxE.fill();
+      }
+      ctxE.fillStyle = "#ffffff";
+      for (const c of copos) {
+        c.f += c.bal;
+        c.y += c.vy;
+        c.x += c.vx + Math.sin(c.f) * .5;
+        // Al salir por abajo vuelve arriba: asi nieva sin parar y sin crear ni
+        // destruir nada en todo el sorteo.
+        if (c.y - c.r > alto) { c.y = -c.r; c.x = Math.random() * ancho; }
+        if (c.x < -10) c.x = ancho + 10; else if (c.x > ancho + 10) c.x = -10;
+        ctxE.globalAlpha = .55 + Math.sin(c.f * 2) * .2;
+        ctxE.beginPath(); ctxE.arc(c.x, c.y, c.r, 0, 6.283); ctxE.fill();
       }
       ctxE.globalAlpha = 1;
       requestAnimationFrame(cielo);
@@ -600,14 +677,40 @@
     // Las de los PREMIOS de este sorteo: el fondo cuenta lo que se juega.
     (function navesDeFondo() {
       const caja = document.getElementById("naves");
-      const tipos = premios.map((p) => p.type_id).filter(Boolean);
-      if (!caja || !tipos.length) return;
+      if (!caja) return;
+
+      // ★ El fondo es la FIESTA, no un catalogo de naves: el logo de la corp,
+      // el CEO, la cara de cada uno de los que juegan y el render de cada
+      // premio, todo cruzando despacio. La gente se busca a si misma en el
+      // fondo, y eso vale mas que cualquier adorno.
+      const pozo = [];
+      const corpId = {{ corp_id|default:"null" }};
+      const ceoId  = {{ ceo_id|default:"null" }};
+      // El logo y el CEO van dos veces: son los que dan el sello de la casa.
+      if (corpId) {
+        pozo.push({ src: "https://images.evetech.net/corporations/" + corpId + "/logo?size=256", clase: "marca" });
+        pozo.push({ src: "https://images.evetech.net/corporations/" + corpId + "/logo?size=256", clase: "marca" });
+      }
+      if (ceoId) {
+        pozo.push({ src: "https://images.evetech.net/characters/" + ceoId + "/portrait?size=512", clase: "cara" });
+        pozo.push({ src: "https://images.evetech.net/characters/" + ceoId + "/portrait?size=512", clase: "cara" });
+      }
+      nombres.forEach((n) => pozo.push({
+        src: "https://images.evetech.net/characters/" + n.id + "/portrait?size=512", clase: "cara" }));
+      premios.forEach((p) => { if (p.type_id) pozo.push({
+        src: "https://images.evetech.net/types/" + p.type_id + "/render?size=512", clase: "nave" }); });
+      if (!pozo.length) return;
+
+      // Barajado: en orden saldrian todos los retratos seguidos y luego todas
+      // las naves, y se notaria el truco.
+      const cola = mezclar(pozo);
 
       let turno = 0;
       function soltar() {
-        const t = tipos[turno++ % tipos.length];
+        const pieza = cola[turno++ % cola.length];
         const img = document.createElement("img");
-        img.src = "https://images.evetech.net/types/" + t + "/render?size=512";
+        img.src = pieza.src;
+        img.className = pieza.clase;
         img.alt = "";
         img.onerror = () => img.remove();
 
@@ -622,14 +725,17 @@
         img.style.setProperty("--g0", (Math.random() * 40 - 20).toFixed(1) + "deg");
         img.style.setProperty("--g1", (Math.random() * 40 - 20).toFixed(1) + "deg");
         img.style.setProperty("--s", s);
-        img.style.width = "360px";
+        // Una cara no necesita el tamaño de un carguero para reconocerse
+        img.style.width = (pieza.clase === "nave" ? 360 : 220) + "px";
         img.style.animation = "cruzar " + dur + "s linear forwards";
         img.addEventListener("animationend", () => img.remove());
         caja.appendChild(img);
       }
+      // Mas a menudo que antes: ahora el pozo tiene tanta gente como premios y
+      // con un paso cada 18s la mayoria no llegaria a salir en toda la gala.
       soltar();
-      setTimeout(soltar, 9000);
-      setInterval(soltar, 18000);
+      setTimeout(soltar, 3500);
+      setInterval(soltar, 7000);
     })();
 
     // Tres estallidos escalonados, desde donde esta el ganador
