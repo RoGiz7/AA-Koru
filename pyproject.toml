@@ -4,16 +4,33 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "koru-stats"
-version = "0.2.0"
+dynamic = ["version"]
 description = "Rekium Corp Statistics App for Alliance Auth"
 readme = "README.md"
 requires-python = ">=3.10"
+authors = [{ name = "RoGiz7" }]
+keywords = ["allianceauth", "eveonline", "rekium", "koru"]
 dependencies = [
     "allianceauth>=5.0.0",
 ]
 
+classifiers = [
+    "Environment :: Web Environment",
+    "Framework :: Django",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Games/Entertainment",
+]
+
 [project.urls]
-Repository = "https://github.com/ZigorFM/AA-Koru"
+Repository = "https://github.com/RoGiz7/AA-Koru"
+Changelog = "https://github.com/RoGiz7/AA-Koru/blob/main/CHANGELOG.md"
+
+[tool.setuptools.dynamic]
+version = { attr = "koru_stats.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["."]

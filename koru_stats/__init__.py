@@ -1,1 +1,3 @@
-default_app_config = "koru_stats.apps.KoruStatsConfig"
+"""Koru Stats — app de estadísticas de Rekium para Alliance Auth."""
+
+__version__ = "0.3.0"
