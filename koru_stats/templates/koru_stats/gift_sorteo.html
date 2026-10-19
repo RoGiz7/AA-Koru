@@ -1,0 +1,378 @@
+{% extends 'allianceauth/base-bs5.html' %}
+{% load i18n koru_stats_tags %}
+
+{% block title %}{{ r.nombre }} — Sorteo{% endblock %}
+{% block page_title %}{{ r.nombre }}{% endblock %}
+
+{% block extra_css %}
+<style>
+.stat-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: #6c757d; }
+.hash-mono  { font-family: monospace; font-size: .78rem; word-break: break-all; }
+.badge-manual { background: #e11d48; }
+.badge-externo { background: #7c3aed; }
+.ganador-row td { vertical-align: middle; }
+.caja-pegado { font-family: monospace; font-size: .8rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+
+{% if messages %}
+<div class="row mb-3"><div class="col-12">
+    {% for m in messages %}
+    <div class="alert alert-{{ m.tags|default:'info' }} py-2 mb-2">{{ m }}</div>
+    {% endfor %}
+</div></div>
+{% endif %}
+
+{# ---------------- Cabecera y ciclo del sorteo ---------------- #}
+<div class="card mb-4">
+    <div class="card-body d-flex align-items-center gap-3 flex-wrap">
+        <div>
+            <div class="stat-label">{{ campaign.nombre }}</div>
+            <h4 class="mb-0">{{ r.nombre }}</h4>
+            <div class="small text-muted">
+                {{ r.get_tipo_display }} ·
+                {% if r.ponderar_por_rango %}papeletas por rango{% else %}una papeleta por cabeza{% endif %}
+                {% if r.excluir_propio_regalo %}· no te toca lo tuyo{% endif %}
+                {% if r.permitir_repetir_ganador %}· se puede repetir ganador{% endif %}
+            </div>
+        </div>
+
+        <div class="ms-auto d-flex gap-2 align-items-center flex-wrap">
+            {% if r.estado == "borrador" %}
+                <span class="badge bg-secondary">Borrador</span>
+                <form method="post" action="{% url 'koru_stats:gift_sorteo_accion' r.pk %}">
+                    {% csrf_token %}
+                    <button class="btn btn-warning btn-sm" name="accion" value="cerrar"
+                            onclick="return confirm('Al cerrar se congelan roster y bolsa y se publica el hash. ¿Seguro?')">
+                        <i class="fas fa-lock me-1"></i>1) Cerrar y publicar hash
+                    </button>
+                </form>
+            {% elif r.estado == "cerrado" %}
+                <span class="badge bg-warning text-dark">Cerrado</span>
+                <form method="post" action="{% url 'koru_stats:gift_sorteo_accion' r.pk %}">
+                    {% csrf_token %}
+                    <button class="btn btn-success btn-sm" name="accion" value="sortear">
+                        <i class="fas fa-dice me-1"></i>2) Sortear
+                    </button>
+                </form>
+            {% elif r.estado == "sorteado" %}
+                <span class="badge bg-success">Sorteado</span>
+                <a href="?verificar=1" class="btn btn-outline-info btn-sm">
+                    <i class="fas fa-fingerprint me-1"></i>3) Verificar
+                </a>
+            {% endif %}
+            <a href="{% url 'koru_stats:gift_sorteos' %}" class="btn btn-outline-secondary btn-sm">Volver</a>
+        </div>
+    </div>
+
+    {% if r.semilla_hash %}
+    <div class="card-footer small">
+        <div><strong>Hash publicado al cerrar</strong> <span class="hash-mono">{{ r.semilla_hash }}</span></div>
+        {% if r.semilla %}
+        <div class="mt-1"><strong>Semilla revelada</strong> <span class="hash-mono">{{ r.semilla }}</span></div>
+        {% endif %}
+        <div class="text-muted mt-1">
+            Publica el hash en Discord <em>antes</em> de sortear. Después, con la semilla, el roster y
+            la bolsa, cualquiera reproduce el resultado.
+        </div>
+    </div>
+    {% endif %}
+
+    {% if ok_verificado is not None %}
+    <div class="card-footer">
+        <div class="alert alert-{% if ok_verificado %}success{% else %}danger{% endif %} mb-0 py-2">
+            <strong>{% if ok_verificado %}Verificado{% else %}NO cuadra{% endif %}:</strong>
+            {{ detalles_verif|join:" · " }}
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+{# ---------------- Resultados ---------------- #}
+{% if draws %}
+<div class="card mb-4">
+    <div class="card-header"><strong>Resultado</strong></div>
+    <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+            <thead><tr><th>#</th><th>Premio</th><th>Ganador</th><th class="text-end">Valor</th></tr></thead>
+            <tbody>
+            {% for d in draws %}
+            <tr class="ganador-row">
+                <td class="text-muted">{{ d.orden|add:1 }}</td>
+                <td>{{ d.prize.etiqueta }}</td>
+                <td><strong>{{ d.entrant.main_name }}</strong>
+                    {% if d.entrant.origen == "manual" %}<span class="badge badge-manual">a mano</span>{% endif %}
+                    {% if d.entrant.externo %}<span class="badge badge-externo">de fuera</span>{% endif %}
+                </td>
+                <td class="text-end">{{ d.prize.valor|rkisk }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% if r.estado == "sorteado" %}
+<form method="post" action="{% url 'koru_stats:gift_sorteo_accion' r.pk %}" class="d-flex gap-2 mb-4 flex-wrap">
+    {% csrf_token %}
+    <input type="hidden" name="accion" value="anular">
+    <input type="text" name="motivo" class="form-control form-control-sm" style="max-width:420px"
+           placeholder="Motivo para anular el sorteo entero">
+    <button class="btn btn-sm btn-outline-danger"
+            onclick="return confirm('Esto borra TODOS los resultados y vuelve a borrador.')">
+        Anular sorteo
+    </button>
+    <span class="small text-muted align-self-center">
+        Se anula entero y con motivo: nunca una tirada suelta en silencio.
+    </span>
+</form>
+{% endif %}
+{% endif %}
+
+<div class="row g-3">
+
+    {# ---------------- Participantes ---------------- #}
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header d-flex align-items-center">
+                <strong>Participantes</strong>
+                <span class="badge bg-secondary ms-2">{{ entrants|length }}</span>
+                {% if not r.editable %}<span class="ms-auto small text-muted">congelado</span>{% endif %}
+            </div>
+
+            {% if r.editable %}
+            <div class="card-body border-bottom">
+                {# Filtrar -> VER -> fijar. El paso del medio es donde se cazan los filtros mal puestos #}
+                <form method="get" class="row g-2 align-items-end">
+                    <input type="hidden" name="preview" value="1">
+                    <div class="col-sm-6">
+                        <label class="stat-label">States</label>
+                        <select name="states" class="form-select form-select-sm" multiple size="4">
+                            {% for s in states_disponibles %}
+                            <option value="{{ s }}" {% if s in spec.states %}selected{% endif %}>{{ s }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-sm-6">
+                        <label class="stat-label">Rangos</label>
+                        <select name="rangos" class="form-select form-select-sm" multiple size="4">
+                            {% for t in tiers %}
+                            <option value="{{ t.nombre }}" {% if t.nombre in spec.rangos %}selected{% endif %}>{{ t.nombre }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-sm-8 form-check ms-2">
+                        <input class="form-check-input" type="checkbox" name="solo_aportantes" value="1"
+                               id="sa" {% if spec.solo_aportantes %}checked{% endif %}>
+                        <label class="form-check-label small" for="sa">Solo quien haya aportado algo</label>
+                    </div>
+                    <div class="col-12">
+                        <button class="btn btn-sm btn-outline-primary">Ver a quién saca</button>
+                    </div>
+                </form>
+
+                {% if preview is not None %}
+                <div class="mt-3">
+                    <div class="small text-muted mb-2">
+                        El filtro saca <strong>{{ preview|length }}</strong> persona{{ preview|length|pluralize }}.
+                        Todavía no se ha escrito nada.
+                    </div>
+                    <div style="max-height:200px;overflow:auto">
+                        <table class="table table-sm mb-0">
+                            <tbody>
+                            {% for p in preview|slice:":60" %}
+                            <tr>
+                                <td>{{ p.main_name }}</td>
+                                <td><span class="badge bg-secondary">{{ p.rango_nombre }}</span></td>
+                                <td class="text-end">{{ p.valor|rkisk }}</td>
+                            </tr>
+                            {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% if preview %}
+                    <form method="post" action="{% url 'koru_stats:gift_sorteo_accion' r.pk %}" class="mt-2">
+                        {% csrf_token %}
+                        <input type="hidden" name="accion" value="roster_fijar">
+                        <input type="hidden" name="spec" value="{{ spec_json }}">
+                        <button class="btn btn-sm btn-primary"
+                                onclick="return confirm('Se fija el roster con estas {{ preview|length }} personas. Los añadidos a mano se conservan.')">
+                            Fijar roster con estos {{ preview|length }}
+                        </button>
+                        <span class="small text-muted ms-2">Reemplaza a los que entraron por filtro</span>
+                    </form>
+                    {% endif %}
+                </div>
+                {% endif %}
+
+                <hr>
+                {# Alta a mano: por meritos o invitado del CEO, contrastado con ESI #}
+                <form method="post" action="{% url 'koru_stats:gift_sorteo_accion' r.pk %}" class="row g-2">
+                    {% csrf_token %}
+                    <input type="hidden" name="accion" value="entrante_nombre">
+                    <div class="col-sm-5">
+                        <input type="text" name="nombre" class="form-control form-control-sm"
+                               placeholder="Nombre del personaje" required>
+                    </div>
+                    <div class="col-sm-5">
+                        <input type="text" name="motivo" class="form-control form-control-sm"
+                               placeholder="Motivo (obligatorio)" required>
+                    </div>
+                    <div class="col-sm-2">
+                        <input type="number" name="papeletas" class="form-control form-control-sm"
+                               value="1" min="1">
+                    </div>
+                    <div class="col-12">
+                        <button class="btn btn-sm btn-outline-danger">Añadir a mano</button>
+                        <span class="small text-muted ms-2">
+                            Se resuelve contra ESI: vale aunque no esté en la corp ni en el Auth
+                        </span>
+                    </div>
+                </form>
+            </div>
+            {% endif %}
+
+            <div class="card-body p-0">
+                <table class="table table-sm mb-0">
+                    <tbody>
+                    {% for e in entrants %}
+                    <tr>
+                        <td>
+                            {{ e.main_name|default:e.main_char_id }}
+                            {% if e.origen == "manual" %}<span class="badge badge-manual">a mano</span>{% endif %}
+                            {% if e.externo %}<span class="badge badge-externo">de fuera</span>{% endif %}
+                            {% if e.motivo %}<div class="small text-muted">{{ e.motivo }}</div>{% endif %}
+                        </td>
+                        <td><span class="badge bg-secondary">{{ e.rango_nombre }}</span></td>
+                        <td class="text-end">×{{ e.papeletas }}</td>
+                        <td class="text-end" style="width:1%">
+                            {% if r.editable %}
+                            <form method="post" action="{% url 'koru_stats:gift_sorteo_accion' r.pk %}">
+                                {% csrf_token %}
+                                <input type="hidden" name="accion" value="entrante_quitar">
+                                <input type="hidden" name="entrant" value="{{ e.pk }}">
+                                <button class="btn btn-sm btn-link text-danger p-0">quitar</button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="4" class="text-center text-muted p-3">Roster vacío.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    {# ---------------- Bolsa de premios ---------------- #}
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header d-flex align-items-center">
+                <strong>Bolsa de premios</strong>
+                <span class="badge bg-secondary ms-2">{{ prizes|length }}</span>
+                {% if not r.editable %}<span class="ms-auto small text-muted">congelada</span>{% endif %}
+            </div>
+
+            {% if r.editable %}
+            <div class="card-body border-bottom">
+                {# Premio exclusivo: no sale de ningun miembro, lo pone el CEO #}
+                <form method="post" action="{% url 'koru_stats:gift_sorteo_accion' r.pk %}" class="row g-2 mb-3">
+                    {% csrf_token %}
+                    <input type="hidden" name="accion" value="premio_exclusivo">
+                    <div class="col-sm-7">
+                        <input type="text" name="descripcion" class="form-control form-control-sm"
+                               placeholder="Premio exclusivo (ej. Orca del CEO)" required>
+                    </div>
+                    <div class="col-sm-3">
+                        <input type="text" name="valor" class="form-control form-control-sm" placeholder="Valor (opc.)">
+                    </div>
+                    <div class="col-sm-2">
+                        <button class="btn btn-sm btn-outline-danger w-100">Añadir</button>
+                    </div>
+                </form>
+
+                {# Regalos aportados que aun no estan en ninguna bolsa #}
+                {% if libres %}
+                <form method="post" action="{% url 'koru_stats:gift_sorteo_accion' r.pk %}" class="row g-2 mb-3">
+                    {% csrf_token %}
+                    <input type="hidden" name="accion" value="premio_aportacion">
+                    <div class="col-sm-9">
+                        <select name="aportacion" class="form-select form-select-sm">
+                            {% for a in libres %}
+                            <option value="{{ a.pk }}">{{ a.main_name|default:a.donante_name }} — {{ a.valor_final|rkisk }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-sm-3">
+                        <button class="btn btn-sm btn-outline-primary w-100">Meter regalo</button>
+                    </div>
+                </form>
+                {% endif %}
+
+                {# ★ Pegado del hangar -> lotes equilibrados -> premios #}
+                <form method="post" action="{% url 'koru_stats:gift_sorteo_accion' r.pk %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="accion" value="pegado_lotes">
+                    <label class="stat-label">Pegar desde el juego</label>
+                    <textarea name="pegado" rows="4" class="form-control form-control-sm caja-pegado"
+                              placeholder="Copia el contenedor o el hangar en EVE y pégalo aquí"></textarea>
+                    <div class="row g-2 mt-1">
+                        <div class="col-sm-4">
+                            <input type="number" name="lotes" class="form-control form-control-sm"
+                                   placeholder="Nº de lotes" min="1" value="{{ entrants|length|default:1 }}">
+                        </div>
+                        <div class="col-sm-5">
+                            <input type="text" name="isk" class="form-control form-control-sm"
+                                   placeholder="ISK para nivelar (opcional)">
+                        </div>
+                        <div class="col-sm-3">
+                            <button class="btn btn-sm btn-success w-100">Armar lotes</button>
+                        </div>
+                    </div>
+                    <div class="small text-muted mt-1">
+                        Se valora contra Jita, se reparte en lotes parecidos y el ISK nivela lo que
+                        los objetos no pueden. Lo que no se reconozca te lo digo, no lo tiro.
+                    </div>
+                </form>
+            </div>
+            {% endif %}
+
+            <div class="card-body p-0">
+                <table class="table table-sm mb-0">
+                    <tbody>
+                    {% for p in prizes %}
+                    <tr>
+                        <td class="text-muted" style="width:1%">{{ p.orden }}</td>
+                        <td>
+                            {{ p.etiqueta }}
+                            {% if p.origen == "exclusivo" %}<span class="badge bg-danger">exclusivo</span>{% endif %}
+                            {% if p.donante_name %}<div class="small text-muted">de {{ p.donante_name }}</div>{% endif %}
+                        </td>
+                        <td class="text-end">{{ p.valor|rkisk }}</td>
+                        <td class="text-end" style="width:1%">
+                            {% if r.editable %}
+                            <form method="post" action="{% url 'koru_stats:gift_sorteo_accion' r.pk %}">
+                                {% csrf_token %}
+                                <input type="hidden" name="accion" value="premio_quitar">
+                                <input type="hidden" name="premio" value="{{ p.pk }}">
+                                <button class="btn btn-sm btn-link text-danger p-0">quitar</button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="4" class="text-center text-muted p-3">Bolsa vacía.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+</div>
+{% endblock %}

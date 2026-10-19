@@ -1,0 +1,96 @@
+{% extends 'allianceauth/base-bs5.html' %}
+{% load i18n koru_stats_tags %}
+
+{% block title %}Sorteos — Rekium Stats{% endblock %}
+{% block page_title %}Sorteos{% endblock %}
+
+{% block extra_css %}
+<style>
+.stat-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: #6c757d; }
+.sorteo-card { border-left: 4px solid #6c757d; }
+.sorteo-card.borrador { border-left-color: #6c757d; }
+.sorteo-card.cerrado  { border-left-color: #f59e0b; }
+.sorteo-card.sorteado { border-left-color: #10b981; }
+.sorteo-card.especial { border-left-color: #e11d48; }
+.hash-mono { font-family: monospace; font-size: .75rem; word-break: break-all; opacity: .8; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+
+{% if sin_campana %}
+    <div class="row justify-content-center mt-5">
+        <div class="col-md-6 text-center">
+            <div class="aa-callout aa-callout-info">
+                <div style="font-size:2.5rem">🎁</div>
+                <h5 class="mt-2">No hay ninguna campaña</h5>
+                <p class="mb-0">Créala desde el admin: <em>Koru Stats → Regalos — campañas</em>.</p>
+            </div>
+        </div>
+    </div>
+{% else %}
+
+    <div class="d-flex align-items-center gap-3 mb-3 flex-wrap">
+        <h4 class="mb-0">{{ campaign.nombre }}</h4>
+        <span class="badge bg-secondary">{{ campaign.get_estado_display }}</span>
+        <a href="{% url 'koru_stats:gift_gestion' %}" class="btn btn-sm btn-outline-info ms-auto">
+            <i class="fas fa-gifts me-1"></i>Gestión de aportaciones
+        </a>
+    </div>
+
+    <div class="row g-3">
+    {% for s in sorteos %}
+        <div class="col-md-6 col-xl-4">
+            <div class="card sorteo-card {{ s.r.estado }} {% if s.r.tipo == 'especial' %}especial{% endif %}">
+                <div class="card-body">
+                    <div class="d-flex align-items-center gap-2 flex-wrap mb-2">
+                        <strong class="flex-grow-1">{{ s.r.nombre }}</strong>
+                        {% if s.r.tipo == "especial" %}<span class="badge bg-danger">CEO</span>{% endif %}
+                        {% if s.r.estado == "borrador" %}<span class="badge bg-secondary">Borrador</span>
+                        {% elif s.r.estado == "cerrado" %}<span class="badge bg-warning text-dark">Cerrado</span>
+                        {% elif s.r.estado == "sorteado" %}<span class="badge bg-success">Sorteado</span>
+                        {% else %}<span class="badge bg-dark">Anulado</span>{% endif %}
+                    </div>
+
+                    {% if s.oculto %}
+                        <div class="small text-muted">
+                            <i class="fas fa-lock me-1"></i>Lo lleva el CEO. No se ve desde aquí.
+                        </div>
+                    {% else %}
+                        <div class="d-flex gap-4 small text-muted">
+                            <div><div class="stat-label">Gente</div>{{ s.participantes }}</div>
+                            <div><div class="stat-label">Premios</div>{{ s.premios }}</div>
+                            <div><div class="stat-label">Repartidos</div>{{ s.resultados }}</div>
+                        </div>
+                        {% if s.r.semilla_hash %}
+                        <div class="hash-mono mt-2" title="Publica esto antes de sortear">
+                            <i class="fas fa-fingerprint me-1"></i>{{ s.r.semilla_hash }}
+                        </div>
+                        {% endif %}
+                        <a href="{% url 'koru_stats:gift_sorteo' s.r.pk %}" class="btn btn-sm btn-outline-primary mt-3">
+                            Abrir <i class="fas fa-chevron-right ms-1"></i>
+                        </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    {% empty %}
+        <div class="col-12">
+            <div class="aa-callout aa-callout-info">
+                Esta campaña no tiene sorteos. Se crean desde el admin:
+                <em>Koru Stats → Regalos — sorteos</em>.
+            </div>
+        </div>
+    {% endfor %}
+    </div>
+
+    <div class="small text-muted mt-3">
+        El ganador se decide <strong>en el servidor</strong>; la ruleta solo anima un resultado ya
+        tomado. Al cerrar se publica el hash de la semilla y al sortear se revela: con eso, el roster
+        y la bolsa, cualquiera puede reproducir el sorteo y comprobar que nadie tocó nada.
+    </div>
+
+{% endif %}
+</div>
+{% endblock %}

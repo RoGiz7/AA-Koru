@@ -3,6 +3,36 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.11.0] — 2026-10-19
+
+Regalos, R3b completo: la pantalla de sorteos. **Con esto la fiesta se puede
+celebrar entera desde la web, sin shell y sin admin.**
+
+### Añadido
+
+- **Sorteos** (`/koru/regalos/sorteos/`): listado con estado, gente, premios y el
+  hash publicado de cada uno.
+- **Detalle de sorteo** con todo lo del día de la fiesta:
+  - **Constructor de roster**: filtrar por state y por rango, **ver a quién saca**
+    y solo entonces fijarlo. La previsualización no escribe nada.
+  - **Alta a mano** con motivo obligatorio, resuelta contra ESI: vale para alguien
+    que no está en la corp ni en el Auth.
+  - **Bolsa de premios**: exclusivos del CEO, regalos aportados que aún no están en
+    ninguna bolsa, y la **caja de pegado** que valora contra Jita, arma lotes
+    equilibrados y los crea como premios.
+  - **Cerrar → sortear → verificar**, y anular entero con motivo.
+- Los sorteos de tipo especial solo los ven y tocan quienes tengan `gift_ceo`; para
+  el resto salen en el listado como «lo lleva el CEO».
+
+### Decisiones
+
+- **El filtro viaja al POST en JSON.** Así se fija exactamente lo que se vio en la
+  previsualización, no lo que diga el formulario al reenviarse.
+- **Un despachador con `accion`** en vez de diez URLs: son diez acciones pequeñas
+  sobre el mismo objeto y partirlas solo añade sitios donde perderse.
+- Los states del filtro **se leen de la base de datos**, no de una lista escrita a
+  mano que se quedaría vieja.
+
 ## [0.10.0] — 2026-10-19
 
 Regalos, R3b (primera mitad): la pantalla de los directores. Hasta ahora validar y

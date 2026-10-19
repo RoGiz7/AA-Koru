@@ -4492,3 +4492,289 @@ def gift_validar(request, pk):
     a.save(update_fields=["valor_ajustado", "estado", "nota", "validado_por", "validado_en"])
     messages.success(request, f"Validada la aportación de {a.main_name or a.donante_name}.")
     return redirect(reverse("koru_stats:gift_gestion"))
+
+
+# ---------------------------------------------------------------------------
+# Regalos — R3b: pantalla de sorteos
+#
+# Aqui vive todo lo que el dia de la fiesta hay que poder hacer sin shell:
+# construir el roster (por filtro o a mano), llenar la bolsa de premios (a mano,
+# desde aportaciones o pegando el hangar), cerrar publicando el hash y sortear.
+#
+# El POST va por un despachador con `accion` en vez de una vista por cosa: son
+# diez acciones pequeñas sobre el mismo objeto y partirlas en diez URLs solo
+# añade sitios donde perderse.
+# ---------------------------------------------------------------------------
+
+def _campana_actual():
+    from .models import GiftCampaign
+    return (GiftCampaign.objects.filter(estado=GiftCampaign.ESTADO_ABIERTA)
+            .order_by("-ventana_desde").first()
+            or GiftCampaign.objects.order_by("-ventana_desde").first())
+
+
+@login_required
+@permission_required("koru_stats.gift_manage")
+def gift_sorteos(request):
+    """Listado de sorteos de la campaña."""
+    campaign = _campana_actual()
+    if not campaign:
+        return render(request, "koru_stats/gift_sorteos.html", {"sin_campana": True})
+
+    sorteos = []
+    for r in campaign.raffles.prefetch_related("entrants", "prizes", "draws").order_by("orden", "id"):
+        sorteos.append({
+            "r": r,
+            "participantes": r.entrants.count(),
+            "premios": r.prizes.count(),
+            "resultados": r.draws.count(),
+            # Un sorteo especial que no deja ver su roster antes de tiempo
+            "oculto": r.tipo == r.TIPO_ESPECIAL and not request.user.has_perm("koru_stats.gift_ceo"),
+        })
+    return render(request, "koru_stats/gift_sorteos.html",
+                  {"campaign": campaign, "sorteos": sorteos})
+
+
+@login_required
+@permission_required("koru_stats.gift_manage")
+def gift_sorteo(request, pk):
+    """Detalle de un sorteo: roster, bolsa y resultados."""
+    from .models import GiftContribution, Raffle
+
+    r = (Raffle.objects
+         .filter(pk=pk)
+         .prefetch_related("entrants", "prizes__contribution", "draws__entrant", "draws__prize")
+         .first())
+    if not r:
+        return render(request, "koru_stats/gift_sorteos.html", {"sin_campana": True})
+
+    if r.tipo == Raffle.TIPO_ESPECIAL and not request.user.has_perm("koru_stats.gift_ceo"):
+        from django.core.exceptions import PermissionDenied
+        raise PermissionDenied("Los sorteos especiales los lleva el CEO")
+
+    # Previsualizacion del filtro: se mira, NO se escribe. Es el paso donde se
+    # descubren los criterios mal puestos, antes de congelar nada.
+    preview, spec = None, {}
+    if request.GET.get("preview"):
+        from . import raffles as motor
+        spec = {}
+        estados = [s for s in request.GET.getlist("states") if s]
+        if estados:
+            spec["states"] = estados
+        rangos = [x for x in request.GET.getlist("rangos") if x]
+        if rangos:
+            spec["rangos"] = rangos
+        if request.GET.get("solo_aportantes"):
+            spec["solo_aportantes"] = True
+        for campo in ("valor_min", "valor_max"):
+            if request.GET.get(campo):
+                try:
+                    spec[campo] = float(request.GET[campo].replace(".", "").replace(",", "."))
+                except ValueError:
+                    pass
+        preview = motor.preview_roster(r.campaign, spec)
+
+    # Aportaciones que aun no son premio en ningun sorteo
+    libres = (GiftContribution.objects
+              .filter(campaign=r.campaign, origen=GiftContribution.ORIGEN_CONTRATO)
+              .exclude(estado=GiftContribution.ESTADO_DESCARTADA)
+              .filter(prize__isnull=True)
+              .order_by("-valor_estimado"))
+
+    ok_verificado = None
+    detalles_verif = []
+    if r.estado == Raffle.ESTADO_SORTEADO and request.GET.get("verificar"):
+        from . import raffles as motor
+        ok_verificado, detalles_verif = motor.verificar(r)
+
+    return render(request, "koru_stats/gift_sorteo.html", {
+        "r": r,
+        "campaign": r.campaign,
+        "entrants": r.entrants.all().order_by("-papeletas", "main_name"),
+        "prizes": r.prizes.all().order_by("orden", "id"),
+        "draws": r.draws.all().order_by("orden"),
+        "preview": preview,
+        "spec": spec,
+        # El filtro viaja al POST de fijar: asi se congela EXACTAMENTE lo que se
+        # vio en la previsualizacion, no lo que diga el formulario al reenviarse.
+        "spec_json": json.dumps(spec),
+        "states_disponibles": _states_disponibles(),
+        "tiers": list(r.campaign.tiers.order_by("orden")),
+        "libres": libres,
+        "ok_verificado": ok_verificado,
+        "detalles_verif": detalles_verif,
+    })
+
+
+def _states_disponibles():
+    """Los states que existen de verdad en este Auth, no una lista inventada."""
+    with connection.cursor() as c:
+        c.execute("SELECT name FROM authentication_state ORDER BY name")
+        return [x[0] for x in c.fetchall()]
+
+
+@login_required
+@permission_required("koru_stats.gift_manage")
+def gift_sorteo_accion(request, pk):
+    from django.contrib import messages
+    from django.shortcuts import redirect
+    from django.urls import reverse
+
+    from . import raffles as motor
+    from .models import GiftContribution, Raffle, RaffleEntrant, RafflePrize
+
+    r = Raffle.objects.filter(pk=pk).first()
+    destino = reverse("koru_stats:gift_sorteo", args=[pk])
+    if not r or request.method != "POST":
+        return redirect(reverse("koru_stats:gift_sorteos"))
+
+    if r.tipo == Raffle.TIPO_ESPECIAL and not request.user.has_perm("koru_stats.gift_ceo"):
+        from django.core.exceptions import PermissionDenied
+        raise PermissionDenied("Los sorteos especiales los lleva el CEO")
+
+    accion = request.POST.get("accion") or ""
+
+    try:
+        # --- roster ---------------------------------------------------------
+        if accion == "roster_fijar":
+            spec = json.loads(request.POST.get("spec") or "{}")
+            candidatos = motor.preview_roster(r.campaign, spec)
+            n = motor.fijar_roster(r, candidatos, usuario=request.user)
+            messages.success(request, f"Roster fijado: {n} participantes.")
+
+        elif accion == "entrante_nombre":
+            nombre = (request.POST.get("nombre") or "").strip()
+            motivo = (request.POST.get("motivo") or "").strip()
+            papeletas = int(request.POST.get("papeletas") or 1)
+            obj, creado, externo = motor.anadir_por_nombre(
+                r, nombre, motivo, papeletas, usuario=request.user)
+            messages.success(
+                request,
+                f"{'Añadido' if creado else 'Actualizado'}: {obj.main_name}"
+                + (" — es de FUERA del Auth, resuelto contra ESI" if externo else ""))
+
+        elif accion == "entrante_quitar":
+            e = RaffleEntrant.objects.filter(pk=request.POST.get("entrant"), raffle=r).first()
+            if e and not r.editable:
+                raise ValueError("El roster solo se toca en borrador")
+            if e:
+                nombre = e.main_name
+                e.delete()
+                messages.info(request, f"Fuera del roster: {nombre}.")
+
+        # --- premios --------------------------------------------------------
+        elif accion == "premio_exclusivo":
+            desc = (request.POST.get("descripcion") or "").strip()
+            if not desc:
+                raise ValueError("Un premio exclusivo necesita descripción")
+            valor = request.POST.get("valor") or ""
+            RafflePrize.objects.create(
+                raffle=r, origen=RafflePrize.ORIGEN_EXCLUSIVO, descripcion=desc,
+                valor=(Decimal(valor.replace(".", "").replace(",", ".")) if valor else None),
+                orden=(r.prizes.count() + 1))
+            messages.success(request, f"Premio añadido: {desc}")
+
+        elif accion == "premio_aportacion":
+            a = GiftContribution.objects.filter(pk=request.POST.get("aportacion")).first()
+            if not a:
+                raise ValueError("Esa aportación ya no está")
+            if hasattr(a, "prize") and a.prize:
+                raise ValueError("Ese regalo ya está en otra bolsa")
+            RafflePrize.objects.create(
+                raffle=r, origen=RafflePrize.ORIGEN_APORTACION, contribution=a,
+                descripcion=f"Regalo de {a.main_name or a.donante_name}",
+                valor=a.valor_final, donante_name=a.main_name or a.donante_name,
+                orden=(r.prizes.count() + 1))
+            messages.success(request, "Regalo añadido a la bolsa.")
+
+        elif accion == "premio_quitar":
+            p = RafflePrize.objects.filter(pk=request.POST.get("premio"), raffle=r).first()
+            if p:
+                p.delete()
+                messages.info(request, "Premio fuera de la bolsa.")
+
+        elif accion == "pegado_lotes":
+            n, avisos = _premios_desde_pegado(r, request)
+            messages.success(request, f"{n} lotes creados como premios.")
+            for a in avisos:
+                messages.warning(request, a)
+
+        # --- ciclo del sorteo ----------------------------------------------
+        elif accion == "cerrar":
+            h = motor.cerrar(r)
+            messages.success(request, f"Cerrado. Publica este hash ANTES de sortear: {h}")
+
+        elif accion == "sortear":
+            res, inc = motor.sortear(r)
+            messages.success(request, f"Sorteado: {len(res)} premios repartidos.")
+            for i in inc:
+                messages.warning(request, i)
+
+        elif accion == "anular":
+            motor.anular(r, request.user, (request.POST.get("motivo") or "").strip())
+            messages.warning(request, "Sorteo anulado y devuelto a borrador.")
+
+    except ValueError as exc:
+        messages.error(request, str(exc))
+
+    return redirect(destino)
+
+
+def _premios_desde_pegado(r, request):
+    """
+    Pegado del hangar -> lotes equilibrados -> premios.
+
+    Junta las tres piezas de R6: parsear, valorar contra Jita y repartir. Lo que
+    no se reconoce NO se descarta en silencio: vuelve como aviso.
+    """
+    from . import lotes as armador
+    from .models import KoruMarketPrice, RafflePrize
+    from .tasks import _refresh_jita_prices
+
+    texto = request.POST.get("pegado") or ""
+    k = max(1, int(request.POST.get("lotes") or 1))
+    isk = request.POST.get("isk") or "0"
+    isk = float(isk.replace(".", "").replace(",", ".") or 0)
+
+    items = armador.parse_pegado(texto)
+    if not items:
+        raise ValueError("No he entendido nada de lo pegado")
+
+    encontrados, faltan = armador.resolver_tipos([n for n, _ in items])
+    tids = [tid for tid, _ in encontrados.values()]
+    _refresh_jita_prices(tids)
+    precios = {p.type_id: p for p in KoruMarketPrice.objects.filter(type_id__in=tids)}
+
+    objetos, sin_precio = [], []
+    for nombre, cantidad in items:
+        hit = encontrados.get(nombre)
+        if not hit:
+            continue
+        tid, canonico = hit
+        p = precios.get(tid)
+        unidad = float(p.jita_percentil or p.jita_sell_min or 0) if p else 0
+        if not unidad:
+            sin_precio.append(canonico)
+        objetos.append({"id": tid, "etiqueta": f"{canonico} ×{cantidad:,}",
+                        "valor": unidad * cantidad})
+
+    resultado, resumen = armador.armar_lotes(objetos, k, isk)
+
+    base = r.prizes.count()
+    for i, l in enumerate(resultado, start=1):
+        trozos = [o["etiqueta"] for o in l["objetos"]]
+        if l["isk"] > 0:
+            trozos.append(f"{l['isk']:,.0f} ISK")
+        RafflePrize.objects.create(
+            raffle=r, origen=RafflePrize.ORIGEN_EXCLUSIVO,
+            descripcion=(" + ".join(trozos))[:200] or f"Lote {i} (vacío)",
+            valor=Decimal(str(round(l["total"], 2))), orden=base + i)
+
+    avisos = list(resumen["avisos"])
+    if faltan:
+        avisos.append("No reconocidos (revísalos a mano): " + ", ".join(faltan[:8]))
+    if sin_precio:
+        avisos.append("Sin precio en Jita: " + ", ".join(sin_precio[:8]))
+    if resumen["isk_para_igualar"] > 0:
+        avisos.append(f"Con {resumen['isk_para_igualar']:,.0f} ISK más quedarían a la par")
+    return len(resultado), avisos
