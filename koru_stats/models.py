@@ -22,6 +22,9 @@ class General(models.Model):
             ("tickets_asuntos_internos","Tickets: ve Asuntos Internos"),
             ("tickets_it",              "Tickets: ve IT y Soporte"),
             ("tickets_admin",           "Tickets: ve todos los tipos"),
+            ("gift_access",   "Regalos: ve lo suyo (Mi aportación)"),
+            ("gift_manage",   "Regalos: gestiona aportaciones, sorteos y entregas"),
+            ("gift_ceo",      "Regalos: monta los sorteos especiales del CEO"),
         )
 
 
@@ -468,6 +471,24 @@ class KoruMarketPrice(models.Model):
     average_price  = models.DecimalField(max_digits=22, decimal_places=2, default=0)
     adjusted_price = models.DecimalField(max_digits=22, decimal_places=2, default=0)
     updated_at     = models.DateTimeField(auto_now=True)
+
+    # --- Jita (The Forge / Jita 4-4), para valorar regalos --------------------
+    # `average_price` de la ESI NO es precio vendible: para un BPO es su valor
+    # base, y por eso valorar assets con el a pelo inflo 610 B el patrimonio en
+    # koru-desktop. Estas columnas traen el mercado REAL y se usan para los
+    # rangos; `average_price` se queda al lado como contraste para la regla de
+    # desviacion.
+    jita_buy_max   = models.DecimalField(max_digits=22, decimal_places=2, null=True, blank=True,
+                                         help_text="Mejor orden de compra en Jita: lo que te darian por el")
+    jita_sell_min  = models.DecimalField(max_digits=22, decimal_places=2, null=True, blank=True,
+                                         help_text="Orden de venta mas barata en Jita: lo que costaria comprarlo")
+    jita_percentil = models.DecimalField(max_digits=22, decimal_places=2, null=True, blank=True,
+                                         help_text="Percentil 5% de venta. Se usa en vez del minimo pelado: "
+                                                   "una sola orden troll de 1 ISK no debe decidir un rango")
+    jita_ordenes   = models.IntegerField(null=True, blank=True, help_text="Numero de ordenes de venta detras del precio")
+    jita_volumen   = models.BigIntegerField(null=True, blank=True, help_text="Unidades a la venta. Si es menor que lo regalado, el precio no aguanta")
+    jita_fuente    = models.CharField(max_length=30, blank=True, default="", help_text="fuzzwork / esi")
+    jita_consultado_en = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         verbose_name        = "Precio de mercado (Koru)"
@@ -989,3 +1010,294 @@ class MoonAllianceFee(models.Model):
     def __str__(self):
         quien = self.structure_name or self.structure_id or "todas las lunas"
         return f"{quien} · {self.isk_por_fractura} ISK/fractura desde {self.valid_from}"
+
+
+# ---------------------------------------------------------------------------
+# Regalos de la fiesta — R1: aportaciones, valoracion y rangos
+#
+# Diseno completo en `Auth Reki/koru-regalos-navidad-diseno.md`. Los tres
+# principios que vienen del tax lunar y aqui valen igual:
+#   - La deteccion propone, el director dispone: el sistema estima y marca,
+#     nunca decide cuanto vale un regalo.
+#   - Al validar se congela una foto. Los contratos de EVE se borran (81.530
+#     en `deleted`), asi que nada se recalcula en vivo.
+#   - Resolver siempre a main: quien contrata sera un alt la mitad de las veces.
+#
+# Y el cuarto, propio de este modulo: el SORTEO es independiente de la
+# APORTACION. Por eso aqui no hay nada de sorteos; eso es R3.
+# ---------------------------------------------------------------------------
+
+class GiftCampaign(models.Model):
+    """Una fiesta. Acota la ventana en la que un contrato o una donacion cuentan."""
+    ESTADO_BORRADOR = "borrador"
+    ESTADO_ABIERTA  = "abierta"
+    ESTADO_CERRADA  = "cerrada"
+    ESTADOS = [
+        (ESTADO_BORRADOR, "Borrador"),
+        (ESTADO_ABIERTA,  "Abierta"),
+        (ESTADO_CERRADA,  "Cerrada"),
+    ]
+
+    # Que precio de Jita manda para los rangos. Por defecto el de venta: para un
+    # regalo es lo mas honesto, porque es lo que se ahorra quien lo recibe.
+    PRECIO_SELL = "jita_sell"
+    PRECIO_BUY  = "jita_buy"
+    PRECIO_MODOS = [
+        (PRECIO_SELL, "Jita sell (lo que costaria comprarlo)"),
+        (PRECIO_BUY,  "Jita buy (lo que te darian por el)"),
+    ]
+
+    nombre        = models.CharField(max_length=120, unique=True)
+    estado        = models.CharField(max_length=20, choices=ESTADOS, default=ESTADO_BORRADOR, db_index=True)
+    ventana_desde = models.DateTimeField(help_text="Las aportaciones anteriores a esta fecha no se detectan")
+    ventana_hasta = models.DateTimeField(help_text="Ni las posteriores")
+    fecha_evento  = models.DateField(null=True, blank=True, help_text="El dia de la fiesta")
+
+    precio_modo        = models.CharField(max_length=20, choices=PRECIO_MODOS, default=PRECIO_SELL)
+    usar_percentil     = models.BooleanField(default=True, help_text="Usar el percentil 5% en vez del minimo pelado")
+    spread_max_pct     = models.DecimalField(max_digits=6, decimal_places=2, default=60.00,
+                                             help_text="Spread buy/sell por encima del cual se marca para valorar a mano")
+    desviacion_max_pct = models.DecimalField(max_digits=6, decimal_places=2, default=200.00,
+                                             help_text="Desviacion frente a average_price por encima de la cual se marca")
+
+    notes      = models.CharField(max_length=250, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name        = "Regalos — campaña"
+        verbose_name_plural = "Regalos — campañas"
+        ordering            = ["-ventana_desde"]
+
+    def __str__(self):
+        return f"{self.nombre} ({self.estado})"
+
+
+class GiftRecipient(models.Model):
+    """
+    A donde hay que aportar para que cuente.
+
+    CONFIGURABLE A PROPOSITO, igual que en el tax lunar: con el id en el codigo,
+    el dia que cambie quien recoge esto se rompe en silencio.
+
+    Ojo con el ISK: tiene que entrar en la cartera de la CORP. Si alguien dona a
+    la cartera personal de un director, el corp audit de corptools no lo ve.
+    """
+    campaign    = models.ForeignKey(GiftCampaign, on_delete=models.CASCADE, related_name="recipients",
+                                    null=True, blank=True,
+                                    help_text="Vacio = vale para todas las campañas")
+    entity_id   = models.BigIntegerField(db_index=True, help_text="ID de la corp o personaje que recibe")
+    entity_name = models.CharField(max_length=100, blank=True, default="")
+    is_active   = models.BooleanField(default=True, db_index=True)
+
+    acepta_contratos = models.BooleanField(default=True)
+    acepta_isk       = models.BooleanField(default=True)
+    wallet_division  = models.IntegerField(null=True, blank=True,
+                                           help_text="Division de la cartera de corp donde cuentan las donaciones. Vacio = cualquiera")
+
+    expected_location_id   = models.BigIntegerField(null=True, blank=True,
+                                                    help_text="Donde se espera el contrato. Vacio = no se comprueba")
+    expected_location_name = models.CharField(max_length=150, blank=True, default="")
+    notes       = models.CharField(max_length=200, blank=True, default="")
+
+    class Meta:
+        verbose_name        = "Regalos — destinatario válido"
+        verbose_name_plural = "Regalos — destinatarios válidos"
+        ordering            = ["entity_name"]
+        constraints = [
+            models.UniqueConstraint(fields=["campaign", "entity_id"], name="uniq_gift_recipient"),
+        ]
+
+    def __str__(self):
+        estado = "activo" if self.is_active else "inactivo"
+        return f"{self.entity_name or self.entity_id} ({estado})"
+
+
+class GiftTier(models.Model):
+    """
+    Rango de aportacion. El umbral se mide sobre la SUMA de lo aportado por el
+    main (alts incluidos, ya resueltos).
+
+    `papeletas` solo se usa si el sorteo decide ponderar por rango; un sorteo
+    plano da una por cabeza. Esa decision es de R3, aqui solo se guarda.
+    """
+    campaign     = models.ForeignKey(GiftCampaign, on_delete=models.CASCADE, related_name="tiers")
+    nombre       = models.CharField(max_length=60)
+    umbral_min   = models.DecimalField(max_digits=22, decimal_places=2, default=0,
+                                       help_text="Valor minimo aportado (ISK) para entrar en este rango")
+    papeletas    = models.PositiveIntegerField(default=1)
+    orden        = models.PositiveIntegerField(default=0, help_text="De menor a mayor")
+    color        = models.CharField(max_length=20, blank=True, default="", help_text="Clase o hex para la UI")
+
+    class Meta:
+        verbose_name        = "Regalos — rango"
+        verbose_name_plural = "Regalos — rangos"
+        ordering            = ["campaign", "orden"]
+        constraints = [
+            models.UniqueConstraint(fields=["campaign", "orden"],  name="uniq_gift_tier_orden"),
+            models.UniqueConstraint(fields=["campaign", "nombre"], name="uniq_gift_tier_nombre"),
+        ]
+
+    def __str__(self):
+        return f"{self.nombre} (desde {self.umbral_min})"
+
+
+class GiftContribution(models.Model):
+    """
+    Lo que ha aportado una persona: un contrato de items o una donacion de ISK.
+
+    Las trampas de `corptools_corporatecontract` son las mismas del tax lunar:
+    cada contrato esta repetido una vez por corp que lo ve (deduplicar por
+    `contract_id`), `issuer_id` vale 0 en TODAS las filas (el emisor sale de
+    `issuer_name_id`) y `raw_quantity` negativo marca copia de blueprint.
+
+    Para el ISK la cosa es mas limpia: en
+    `corptools_corporationwalletjournalentry` el `first_party_id` SI viene
+    relleno, y `entry_id` es la clave natural para no contar dos veces en una
+    reingesta.
+    """
+    ORIGEN_CONTRATO = "contrato"
+    ORIGEN_ISK      = "isk"
+    ORIGENES = [
+        (ORIGEN_CONTRATO, "Contrato de ítems"),
+        (ORIGEN_ISK,      "Donación de ISK"),
+    ]
+
+    ESTADO_DETECTADA  = "detectada"
+    ESTADO_VALIDADA   = "validada"
+    ESTADO_REVISAR    = "revisar"
+    ESTADO_DESCARTADA = "descartada"
+    ESTADOS = [
+        (ESTADO_DETECTADA,  "Detectada"),
+        (ESTADO_VALIDADA,   "Validada"),
+        (ESTADO_REVISAR,    "Revisar"),
+        (ESTADO_DESCARTADA, "Descartada"),
+    ]
+
+    campaign     = models.ForeignKey(GiftCampaign, on_delete=models.CASCADE, related_name="contributions")
+    origen       = models.CharField(max_length=15, choices=ORIGENES, db_index=True)
+
+    # ★ Clave de deduplicacion: "c:<contract_id>" o "w:<entry_id>".
+    # Se hace asi y NO con dos UniqueConstraint condicionales sobre contract_id /
+    # entry_id porque MariaDB no soporta indices parciales: Django lo avisa en
+    # `manage.py check` y NO crea la restriccion, asi que la unicidad se quedaria
+    # en el aire justo donde mas duele (reingesta que cuenta dos veces el mismo
+    # regalo). Con una sola clave de texto, la BD si la garantiza.
+    fuente_key   = models.CharField(max_length=40, db_index=True,
+                                    help_text='"c:<contract_id>" para contratos, "w:<entry_id>" para donaciones')
+
+    donante_id   = models.BigIntegerField(db_index=True, help_text="Personaje que aporto (puede ser un alt)")
+    donante_name = models.CharField(max_length=100, blank=True, default="")
+    main_char_id = models.BigIntegerField(null=True, blank=True, db_index=True)
+    main_name    = models.CharField(max_length=100, blank=True, default="")
+
+    # --- Foto del contrato (origen = contrato) -------------------------------
+    contract_id         = models.BigIntegerField(null=True, blank=True, db_index=True)
+    assignee_id         = models.BigIntegerField(null=True, blank=True, db_index=True)
+    acceptor_id         = models.BigIntegerField(null=True, blank=True)
+    acceptor_name       = models.CharField(max_length=100, blank=True, default="")
+    contract_type       = models.CharField(max_length=20, blank=True, default="")
+    esi_status          = models.CharField(max_length=25, blank=True, default="")
+    price               = models.DecimalField(max_digits=20, decimal_places=2, default=0)
+    reward              = models.DecimalField(max_digits=20, decimal_places=2, default=0)
+    volume              = models.DecimalField(max_digits=20, decimal_places=2, default=0)
+    start_location_id   = models.BigIntegerField(null=True, blank=True)
+    start_location_name = models.CharField(max_length=150, blank=True, default="")
+
+    # --- Foto de la donacion (origen = isk) ----------------------------------
+    entry_id        = models.BigIntegerField(null=True, blank=True, db_index=True,
+                                             help_text="entry_id del journal: clave para no contar dos veces")
+    wallet_division = models.IntegerField(null=True, blank=True)
+    reason          = models.CharField(max_length=500, blank=True, default="",
+                                       help_text="Lo que escribio el donante. Se enseña, no filtra: medio mundo lo deja vacio")
+
+    fecha        = models.DateTimeField(null=True, blank=True, db_index=True, help_text="date_issued o date del journal")
+
+    # --- Valoracion ----------------------------------------------------------
+    # Se guardan los DOS numeros a proposito: el que dijo el mercado y el que
+    # dijo una persona. Para los rangos manda el ajustado si existe, y la
+    # pantalla enseña los dos para que se vea que hubo una decision humana.
+    valor_estimado   = models.DecimalField(max_digits=22, decimal_places=2, default=0)
+    valor_ajustado   = models.DecimalField(max_digits=22, decimal_places=2, null=True, blank=True)
+    valor_fuente     = models.CharField(max_length=40, blank=True, default="",
+                                        help_text="jita_sell / jita_buy / percentil / isk / manual")
+    valor_consultado_en = models.DateTimeField(null=True, blank=True,
+                                               help_text="Cuando se pregunto el precio. NO se recalcula: el precio justo es el del momento en que se aporto")
+
+    estado       = models.CharField(max_length=20, choices=ESTADOS, default=ESTADO_DETECTADA, db_index=True)
+
+    # --- Banderas: el sistema marca y explica, el director resuelve -----------
+    requiere_valoracion = models.BooleanField(default=False, help_text="Algo no cuadra con el precio de mercado")
+    ubicacion_rara      = models.BooleanField(default=False)
+    cobra_isk           = models.BooleanField(default=False, help_text="price o reward distintos de cero")
+    sin_main            = models.BooleanField(default=False, help_text="El donante no resuelve a ningun main")
+    aviso               = models.CharField(max_length=250, blank=True, default="")
+
+    validado_por = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True,
+                                     related_name="gift_contributions_validadas")
+    validado_en  = models.DateTimeField(null=True, blank=True)
+    nota         = models.TextField(blank=True, default="", help_text="Por que se ajusto el valor o se valido asi")
+
+    detected_at  = models.DateTimeField(auto_now_add=True)
+    updated_at   = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name        = "Regalos — aportación"
+        verbose_name_plural = "Regalos — aportaciones"
+        ordering            = ["-fecha"]
+        constraints = [
+            models.UniqueConstraint(fields=["campaign", "fuente_key"], name="uniq_gift_fuente"),
+        ]
+        indexes = [
+            models.Index(fields=["campaign", "main_char_id"], name="koru_gift_camp_main"),
+            models.Index(fields=["campaign", "estado"],       name="koru_gift_camp_estado"),
+        ]
+
+    @property
+    def valor_final(self):
+        return self.valor_ajustado if self.valor_ajustado is not None else self.valor_estimado
+
+    @property
+    def tiene_anomalias(self):
+        return any([self.requiere_valoracion, self.ubicacion_rara, self.cobra_isk, self.sin_main])
+
+    def __str__(self):
+        quien = self.main_name or self.donante_name or self.donante_id
+        return f"{quien} · {self.get_origen_display()} · {self.valor_final}"
+
+
+class GiftContributionItem(models.Model):
+    """
+    Un item del regalo. `quantity`, nunca `raw_quantity`.
+
+    ★ `es_bpc`: un BPC NO se vende en el mercado (solo por contrato) y ADEMAS
+    comparte typeID con su BPO, asi que preguntar precio por typeID le pone a la
+    copia el precio del original. Eso infló 610 B el patrimonio en koru-desktop.
+    El chivato en los items de contrato es el `raw_quantity` NEGATIVO. Un BPC
+    va SIEMPRE a valoracion manual, nunca hereda precio.
+    """
+    contribution = models.ForeignKey(GiftContribution, on_delete=models.CASCADE, related_name="items")
+    type_id      = models.BigIntegerField(db_index=True)
+    type_name    = models.CharField(max_length=150, blank=True, default="")
+    quantity     = models.BigIntegerField(default=0)
+    group_id     = models.IntegerField(null=True, blank=True, db_index=True)
+    category_id  = models.IntegerField(null=True, blank=True, db_index=True, help_text="9 = Blueprints")
+    es_bpc       = models.BooleanField(default=False, help_text="raw_quantity negativo = copia de blueprint")
+
+    precio_unitario = models.DecimalField(max_digits=22, decimal_places=2, null=True, blank=True)
+    valor_linea     = models.DecimalField(max_digits=22, decimal_places=2, default=0)
+    precio_fuente   = models.CharField(max_length=40, blank=True, default="")
+
+    requiere_valoracion = models.BooleanField(default=False)
+    motivo              = models.CharField(max_length=150, blank=True, default="",
+                                           help_text="sin_ordenes / volumen_corto / spread / desviacion / bpc / categoria")
+
+    class Meta:
+        verbose_name        = "Regalos — ítem aportado"
+        verbose_name_plural = "Regalos — ítems aportados"
+        ordering            = ["-valor_linea"]
+        constraints = [
+            models.UniqueConstraint(fields=["contribution", "type_id"], name="uniq_gift_item"),
+        ]
+
+    def __str__(self):
+        return f"{self.type_name} x{self.quantity:,}"
