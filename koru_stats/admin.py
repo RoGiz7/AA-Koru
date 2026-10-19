@@ -422,7 +422,7 @@ class RafflePrizeInline(admin.TabularInline):
     model = RafflePrize
     extra = 0
     fields = ("orden", "origen", "descripcion", "contribution", "valor",
-              "isk_del_fondo", "donante_name")
+              "isk_del_fondo", "type_id", "donante_name")
     ordering = ("orden",)
 
 

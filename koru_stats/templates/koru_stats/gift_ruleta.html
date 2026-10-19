@@ -27,9 +27,14 @@
   .rueda-caja { text-align: center; }
   .rueda-rotulo { font-size: .9rem; letter-spacing: .22em; text-transform: uppercase;
                   color: var(--suave); margin-bottom: .6rem; }
-  .rueda-wrap { position: relative; width: min(38vw, 420px); aspect-ratio: 1; }
+  .rueda-wrap { position: relative; width: min(44vw, 560px); aspect-ratio: 1; }
   .rueda-wrap svg { width: 100%; height: 100%; display: block; }
-  .giro { transform-origin: 50% 50%; }
+  /* ★ En SVG, `transform-origin: 50% 50%` NO se resuelve contra el propio
+     elemento si no se dice con `transform-box` respecto a que caja. Sin esto
+     la rueda orbita alrededor de un punto fuera de la pantalla en vez de girar
+     sobre su centro. `fill-box` = la caja del dibujo del grupo, que aqui es el
+     circulo, asi que su centro es el eje de la rueda. */
+  .giro { transform-box: fill-box; transform-origin: center center; }
   /* La aguja, arriba y apuntando al centro */
   .aguja { position: absolute; top: -6px; left: 50%; transform: translateX(-50%);
            width: 0; height: 0; border-left: 14px solid transparent;
@@ -37,18 +42,19 @@
   .centro { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
             pointer-events: none; }
   .centro span { background: var(--fondo); border: 2px solid var(--borde); border-radius: 50%;
-                 width: 22%; height: 22%; display: flex; align-items: center;
-                 justify-content: center; font-size: 1.6rem; }
+                 width: 15%; height: 15%; display: flex; align-items: center;
+                 justify-content: center; font-size: 1.2rem; }
   .resultado { margin-top: .8rem; font-size: clamp(1.2rem, 2.4vw, 2rem); font-weight: 800;
                min-height: 2.4rem; }
   .resultado.premio { color: var(--oro); }
+  .mini-render { width: 52px; height: 52px; border-radius: 10px; vertical-align: middle; margin-right: .5rem; }
   .insignia { display: inline-block; font-size: .75rem; padding: .15rem .6rem; border-radius: 999px;
               background: var(--acento); vertical-align: middle; margin-left: .5rem; }
   .retrato { width: 72px; height: 72px; border-radius: 50%; border: 3px solid var(--oro);
              margin-top: .4rem; }
 
   /* Fallback: con demasiados nombres una rueda es ilegible y se usa la tira */
-  .ventana { position: relative; height: 180px; width: min(38vw, 420px); overflow: hidden;
+  .ventana { position: relative; height: 200px; width: min(44vw, 560px); overflow: hidden;
              background: var(--panel); border: 1px solid var(--borde); border-radius: 14px; }
   .marca { position: absolute; top: 50%; left: 0; right: 0; height: 60px; margin-top: -30px;
            border-top: 2px solid var(--acento); border-bottom: 2px solid var(--acento); z-index: 3; }
@@ -72,6 +78,18 @@
 
   /* Ambiente: estrellas detras, fuegos delante. Los dos ocupan la ventana entera */
   #estrellas { position: fixed; inset: 0; z-index: -2; }
+  /* Naves de fondo: las de los PREMIOS de este sorteo, cruzando despacio */
+  #naves { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+  #naves img {
+    position: absolute; opacity: 0; filter: saturate(.75) contrast(.9);
+    will-change: transform, opacity;
+  }
+  @keyframes cruzar {
+    0%   { opacity: 0;   transform: translate(var(--x0), var(--y0)) rotate(var(--g0)) scale(var(--s)); }
+    12%  { opacity: .20; }
+    88%  { opacity: .20; }
+    100% { opacity: 0;   transform: translate(var(--x1), var(--y1)) rotate(var(--g1)) scale(var(--s)); }
+  }
   #fuegos    { position: fixed; inset: 0; z-index: 5; pointer-events: none; }
   body::after {            /* nebulosa tenue, para que el negro no sea plano */
     content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
@@ -88,6 +106,7 @@
 
 {# Dos lienzos: estrellas detras de todo, fuegos por delante y sin capturar clics #}
 <canvas id="estrellas"></canvas>
+<div id="naves"></div>
 <canvas id="fuegos"></canvas>
 
 <header>
@@ -151,7 +170,10 @@
   const tiradas = JSON.parse(document.getElementById("datos-tiradas").textContent);
 
   // Mas porciones que esto y en un proyector no se lee nada: esa rueda cae a la tira.
-  const MAX_PORCIONES = 24;
+  // Con etiquetas horizontales, por encima de 12 porciones la letra baja de
+  // lo que se lee desde el fondo de una sala. A partir de ahi, tira vertical:
+  // el criterio es el PROYECTOR, no cuantas quepan dibujadas.
+  const MAX_PORCIONES = 12;
   const COLORES = ["#1e2a4d","#24325c","#1a2443","#2a3a6b","#202c52","#2e3f74"];
 
   const $ = (id) => document.getElementById(id);
@@ -164,11 +186,12 @@
   function recortar(s, n) { return s.length > n ? s.slice(0, n - 1) + "…" : s; }
 
   /** Dibuja una rueda de `etiquetas` dentro del <g> dado. */
-  function dibujar(g, etiquetas) {
-    const n = etiquetas.length, paso = 360 / n, R = 100;
+  function dibujar(g, entradas) {
+    const n = entradas.length, paso = 360 / n, R = 100;
     const rad = (a) => (a - 90) * Math.PI / 180;   // 0 grados arriba
     let html = "";
-    etiquetas.forEach((txt, i) => {
+    entradas.forEach((entrada, i) => {
+      const txt = entrada.texto, img = entrada.img;
       const a0 = i * paso, a1 = a0 + paso;
       const x0 = R * Math.cos(rad(a0)), y0 = R * Math.sin(rad(a0));
       const x1 = R * Math.cos(rad(a1)), y1 = R * Math.sin(rad(a1));
@@ -176,11 +199,42 @@
       html += '<path d="M0,0 L' + x0.toFixed(2) + ',' + y0.toFixed(2) +
               ' A' + R + ',' + R + ' 0 ' + grande + ',1 ' + x1.toFixed(2) + ',' + y1.toFixed(2) + ' Z" ' +
               'fill="' + COLORES[i % COLORES.length] + '" stroke="#0b1020" stroke-width="0.8"/>';
-      // Etiqueta radial, legible sin ladear la cabeza
+      // ★ TEXTO RADIAL, como las ruletas de verdad: corre a lo largo del radio
+      // dentro de su propia porcion. Las de la mitad izquierda se voltean 180
+      // grados, que es lo que evita que se lean del reves — y a diferencia de
+      // la version horizontal, esto sigue valiendo con la rueda girada.
       const medio = a0 + paso / 2;
-      const tam = Math.max(4.5, Math.min(9, 110 / n));
-      const corte = Math.max(8, Math.floor(260 / n));
-      html += '<text transform="rotate(' + medio.toFixed(2) + ') translate(0,-60) rotate(90)" ' +
+      const volteo = (medio > 180) ? 180 : 0;
+      // Radialmente cabe mucho mas que en horizontal: el limite pasa a ser el
+      // radio y no el angulo, y lo que estrecha es cuantas porciones hay.
+      const tam = Math.max(4.6, Math.min(9, 54 / Math.sqrt(n)));
+      // ⚠ El recorte sale del ESPACIO RADIAL que queda libre, no de un numero
+      // a ojo: con la imagen puesta, el texto llegaba hasta el radio 77 y la
+      // imagen empezaba en el 63, asi que «Satanax Lefour» salia comido por los
+      // dos lados. Ahora la imagen se va al borde y el texto se mide contra lo
+      // que de verdad le queda.
+      const rImg = 86;
+      const lado = Math.max(12, Math.min(22, 130 / n));
+      // El hueco util va del disco central (que tapa) al borde o a la imagen
+      const dentro = 24;                                  // radio del disco del centro
+      const fuera  = img ? (rImg - lado / 2 - 5) : 96;
+      const libre  = Math.max(18, fuera - dentro);
+      const rTxt   = dentro + libre / 2;
+      const corte  = Math.max(7, Math.floor(libre / (tam * 0.58)));
+
+      if (img) {
+        // La imagen va al borde, derecha (se deshace la rotacion) y recortada
+        // en circulo; el texto ocupa lo de dentro sin tocarla.
+        html += '<g transform="rotate(' + medio.toFixed(2) + ') translate(0,' + (-rImg) + ') rotate(' +
+                (-medio).toFixed(2) + ')">' +
+                '<image href="' + img + '" x="' + (-lado / 2) + '" y="' + (-lado / 2) +
+                '" width="' + lado + '" height="' + lado +
+                '" clip-path="circle(' + (lado / 2) + 'px)" preserveAspectRatio="xMidYMid slice"/>' +
+                "</g>";
+      }
+
+      html += '<text transform="rotate(' + medio.toFixed(2) + ') translate(0,' + (-rTxt) +
+              ') rotate(' + (90 + volteo) + ')" ' +
               'text-anchor="middle" dominant-baseline="middle" fill="#e8edff" ' +
               'font-size="' + tam.toFixed(1) + '" font-weight="700">' +
               escapar(recortar(txt, corte)) + "</text>";
@@ -203,15 +257,28 @@
   // --- Rueda de premios -----------------------------------------------------
   const gPremios = $("giro-premios");
   const etiquetasPremio = premios.map((p) => p.etiqueta);
-  const premiosEnRueda = etiquetasPremio.length <= MAX_PORCIONES;
-  if (premiosEnRueda) dibujar(gPremios, etiquetasPremio);
-  else dibujar(gPremios, etiquetasPremio.slice(0, MAX_PORCIONES));
+  const entradasPremio = premios.map((p) => ({
+    texto: p.etiqueta,
+    // El render de EVE cuando se pudo adivinar el type_id; si no, sin imagen
+    img: p.type_id ? ("https://images.evetech.net/types/" + p.type_id + "/render?size=128") : null,
+  }));
+  const premiosEnRueda = entradasPremio.length <= MAX_PORCIONES;
+  if (premiosEnRueda) {
+    dibujar(gPremios, entradasPremio);
+  } else {
+    // Mas premios que porciones legibles: la rueda queda de adorno y el nombre
+    // del premio se lee debajo, que es donde importa.
+    dibujar(gPremios, entradasPremio.slice(0, MAX_PORCIONES));
+  }
 
   // --- Rueda (o tira) de nombres -------------------------------------------
   const gNombres = $("giro-nombres");
   const nombresEnRueda = nombres.length <= MAX_PORCIONES && nombres.length > 1;
   if (nombresEnRueda) {
-    dibujar(gNombres, nombres.map((x) => x.nombre));
+    dibujar(gNombres, nombres.map((x) => ({
+      texto: x.nombre,
+      img: "https://images.evetech.net/characters/" + x.id + "/portrait?size=64",
+    })));
   } else {
     // Demasiada gente para una rueda legible: tira vertical
     $("wrap-nombres").style.display = "none";
@@ -277,8 +344,13 @@
     }
 
     setTimeout(function () {
-      $("res-premio").innerHTML = escapar(t.premio) +
-        (t.valor ? ' <span style="color:var(--suave);font-weight:400">' + formatearIsk(t.valor) + "</span>" : "");
+      $("res-premio").innerHTML =
+        (t.premio_type_id
+          ? '<img src="https://images.evetech.net/types/' + t.premio_type_id +
+            '/render?size=64" class="mini-render" onerror="this.style.display=\'none\'">'
+          : "")
+        + escapar(t.premio)
+        + (t.valor ? ' <span style="color:var(--suave);font-weight:400">' + formatearIsk(t.valor) + "</span>" : "");
     }, 3100);
 
     setTimeout(function () {
@@ -316,6 +388,11 @@
       .map((n) => "<div>" + escapar(n.nombre) + "</div>").join("");
   }
   pintarContador();
+  // Que se lea de entrada cuantos premios quedan por repartir
+  if (tiradas.length) {
+    $("res-premio").innerHTML = '<span style="color:var(--suave);font-weight:400">'
+      + tiradas.length + " premio" + (tiradas.length > 1 ? "s" : "") + " por repartir</span>";
+  }
 
   // ======================= AMBIENTE =======================
   // Estrellas y fuegos a mano con canvas: ni librerias ni imagenes que bajar.
@@ -383,6 +460,120 @@
       }
       if (!vivo) { vivo = true; requestAnimationFrame(bucleFuegos); }
     }
+
+    // --- Colores de la corp, sacados de su propio logo --------------------
+    // ★ Se leen los pixeles del logo en vez de pedir codigos de color a nadie:
+    // asi vale para Rekium hoy y para cualquier corp mañana, sin un ajuste que
+    // alguien tenga que recordar. Si el servidor de imagenes no deja leer el
+    // canvas (CORS), salta la excepcion y se queda la paleta de siempre.
+    (function paletaDeLaCorp() {
+      const logo = document.querySelector(".logo-corp");
+      if (!logo || !logo.src) return;
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = function () {
+        try {
+          const L = 40, c = document.createElement("canvas");
+          c.width = c.height = L;
+          const cx = c.getContext("2d", { willReadFrequently: true });
+          cx.drawImage(img, 0, 0, L, L);
+          const d = cx.getImageData(0, 0, L, L).data;
+          const cubos = new Map();
+          for (let i = 0; i < d.length; i += 4) {
+            const r = d[i], g = d[i + 1], b = d[i + 2], a = d[i + 3];
+            if (a < 200) continue;
+            const max = Math.max(r, g, b), min = Math.min(r, g, b);
+            const lum = (max + min) / 2, sat = max === min ? 0 : (max - min) / (255 - Math.abs(max + min - 255));
+            // Fuera los grises y los extremos: no son el color de la marca
+            if (sat < .35 || lum < 40 || lum > 225) continue;
+            const clave = (r >> 4) + "," + (g >> 4) + "," + (b >> 4);
+            const v = cubos.get(clave) || { n: 0, r: 0, g: 0, b: 0 };
+            v.n++; v.r += r; v.g += g; v.b += b;
+            cubos.set(clave, v);
+          }
+          const orden = [...cubos.values()].sort((x, y) => y.n - x.n);
+          if (!orden.length) return;
+          const medio = (v) => [v.r / v.n, v.g / v.n, v.b / v.n];
+          const hex = (c) => "#" + c.map((k) => Math.round(k).toString(16).padStart(2, "0")).join("");
+
+          // ⚠ MEDIDO contra el logo de Rekium: sus tres cubos dominantes son el
+          // MISMO ambar (#feb23d, #f6ac3b, #eaa438). Muchos logos de corp son
+          // de un solo color, asi que coger "los dos mas frecuentes" dejaria la
+          // pantalla monocroma y sin contraste. Se usa el dominante como color
+          // protagonista y, para el acento, otro tono del logo solo si de
+          // verdad es distinto; si no, un complementario derivado.
+          const aHsl = (c) => {
+            const [r, g, b] = c.map((k) => k / 255);
+            const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2;
+            if (max === min) return [0, 0, l];
+            const d2 = max - min;
+            const sa = l > .5 ? d2 / (2 - max - min) : d2 / (max + min);
+            let h = max === r ? ((g - b) / d2 + (g < b ? 6 : 0))
+                  : max === g ? ((b - r) / d2 + 2) : ((r - g) / d2 + 4);
+            return [h * 60, sa, l];
+          };
+          const deHsl = (h, sa, l) => {
+            h = ((h % 360) + 360) % 360 / 360;
+            const q = l < .5 ? l * (1 + sa) : l + sa - l * sa, pp = 2 * l - q;
+            const f = (t) => {
+              t = (t + 1) % 1;
+              return 255 * (t < 1 / 6 ? pp + (q - pp) * 6 * t
+                : t < 1 / 2 ? q
+                : t < 2 / 3 ? pp + (q - pp) * (2 / 3 - t) * 6 : pp);
+            };
+            return [f(h + 1 / 3), f(h), f(h - 1 / 3)];
+          };
+
+          const marca = medio(orden[0]);
+          const [hM] = aHsl(marca);
+          const distinto = orden.slice(1).map(medio)
+            .find((c) => Math.abs(((aHsl(c)[0] - hM + 540) % 360) - 180) < 140);
+
+          const raiz = document.documentElement.style;
+          raiz.setProperty("--oro", hex(marca));
+          raiz.setProperty("--acento", hex(distinto || deHsl(hM + 165, .72, .48)));
+        } catch (e) {
+          /* canvas "manchado" por CORS: nos quedamos con la paleta de serie */
+        }
+      };
+      img.src = logo.src;
+    })();
+
+    // --- Naves de fondo ---------------------------------------------------
+    // Las de los PREMIOS de este sorteo: el fondo cuenta lo que se juega.
+    (function navesDeFondo() {
+      const caja = document.getElementById("naves");
+      const tipos = premios.map((p) => p.type_id).filter(Boolean);
+      if (!caja || !tipos.length) return;
+
+      let turno = 0;
+      function soltar() {
+        const t = tipos[turno++ % tipos.length];
+        const img = document.createElement("img");
+        img.src = "https://images.evetech.net/types/" + t + "/render?size=512";
+        img.alt = "";
+        img.onerror = () => img.remove();
+
+        const haciaIzq = Math.random() < .5;
+        const y0 = Math.random() * 70 + 5, y1 = y0 + (Math.random() * 30 - 15);
+        const s = (Math.random() * .5 + .5).toFixed(2);
+        const dur = Math.round(Math.random() * 25 + 45);
+        img.style.setProperty("--x0", haciaIzq ? "110vw" : "-40vw");
+        img.style.setProperty("--x1", haciaIzq ? "-40vw" : "110vw");
+        img.style.setProperty("--y0", y0 + "vh");
+        img.style.setProperty("--y1", y1 + "vh");
+        img.style.setProperty("--g0", (Math.random() * 40 - 20).toFixed(1) + "deg");
+        img.style.setProperty("--g1", (Math.random() * 40 - 20).toFixed(1) + "deg");
+        img.style.setProperty("--s", s);
+        img.style.width = "360px";
+        img.style.animation = "cruzar " + dur + "s linear forwards";
+        img.addEventListener("animationend", () => img.remove());
+        caja.appendChild(img);
+      }
+      soltar();
+      setTimeout(soltar, 9000);
+      setInterval(soltar, 18000);
+    })();
 
     // Tres estallidos escalonados, desde donde esta el ganador
     window.koruCelebrar = function () {

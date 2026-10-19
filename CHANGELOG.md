@@ -3,6 +3,91 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.16.0] — 2026-10-19
+
+### Añadido
+
+- **La ruleta se viste con los colores de la corp**, leídos del propio logo: se
+  cargan sus píxeles en un canvas y se saca el color de marca. No hay que
+  configurar ningún código de color, y vale para cualquier corp.
+- **Naves de fondo cruzando despacio**, y no unas cualquiera: **las de los premios
+  de ese sorteo**. El fondo cuenta lo que se está jugando.
+
+### Lo que la medición cambió
+
+Comprobado contra el logo real de Rekium: sus tres colores dominantes son **el
+mismo ámbar** (`#feb23d`, `#f6ac3b`, `#eaa438`). Muchos logos de corp son de un
+solo color, así que coger «los dos más frecuentes» habría dejado la pantalla
+monocroma y sin contraste. Ahora el dominante es el color protagonista y el acento
+sale de otro tono del logo **solo si de verdad es distinto**; si no, se deriva un
+complementario. Para Rekium: ámbar `#feb23d` + cian `#2294d3`.
+
+También verificado que `images.evetech.net` permite leer el canvas desde otro
+dominio; si algún día dejara de permitirlo, salta la excepción y se queda la
+paleta de serie.
+
+## [0.15.0] — 2026-10-19
+
+Las ruedas, como las de verdad.
+
+### Añadido
+
+- **Retrato del piloto** en cada porción de la rueda de nombres y **render de EVE**
+  en cada premio, también junto al rótulo del ganador.
+- `RafflePrize.type_id` (migración `0031`), que se **adivina solo** desde la
+  descripción al crear el premio: «Orca (prueba)» → Orca → su render. Limpia
+  paréntesis, cantidades y prefijos de lote, y prueba de lo más específico a lo
+  más general. Si no acierta deja el campo vacío y se pinta un icono: **nunca
+  inventa un id**. Los premios que salen de un contrato o de un lote cogen el
+  `type_id` del ítem más valioso.
+
+### Cambiado
+
+- **Texto radial dentro de su porción**, volteado en la mitad izquierda para que
+  nunca se lea del revés — y a diferencia de la versión horizontal, esto sigue
+  valiendo con la rueda girada, que es como se queda al parar.
+- Ruedas más grandes (560 px).
+
+### El detalle que costó dos vueltas
+
+El recorte del texto sale del **espacio radial libre**, no de un número a ojo: con
+la imagen puesta el texto llegaba al radio 77 y la imagen empezaba en el 63, así
+que «Satanax Lefour» salía comido; y por dentro se metía bajo el disco central.
+Ahora se mide contra el hueco real entre el disco y la imagen.
+
+## [0.14.2] — 2026-10-19
+
+### Corregido
+
+- **Las ruedas no giraban sobre su centro**, sino alrededor de un punto fuera de
+  la pantalla. En SVG, `transform-origin: 50% 50%` no se resuelve contra el propio
+  elemento si no se dice con **`transform-box`** respecto a qué caja. Con
+  `transform-box: fill-box` el origen pasa a ser el centro del dibujo, que es el
+  eje de la rueda. Verificado forzando rotaciones de 137° y 221°: las dos ruedas
+  se quedan centradas bajo su aguja.
+
+### Sabido y aceptado
+
+Al girar, las etiquetas giran **con** la rueda, así que al pararse quedan en
+ángulos arbitrarios. Es lo que hace cualquier ruleta de verdad, y el ganador se lee
+en el texto grande de debajo, no en la porción.
+
+## [0.14.1] — 2026-10-19
+
+### Corregido en las ruedas
+
+- **La mitad de las etiquetas salían boca abajo.** Las porciones de la izquierda
+  invertían el texto, que en un proyector canta muchísimo. Ahora el texto es
+  siempre horizontal: se rota el grupo y se deshace la rotación en la etiqueta.
+- **Las etiquetas largas se encabalgaban.** Con etiquetas horizontales el límite
+  no es el ángulo sino el **ancho**: con 4 porciones cabe un texto larguísimo en
+  grados de sobra y aun así pisa al vecino de arriba. Recorte por ancho y radios
+  alternos para que las vecinas no estén a la misma altura.
+- **El techo de la rueda baja de 24 a 12 porciones.** El criterio es el proyector,
+  no cuántas quepan dibujadas: por encima de doce la letra baja de lo que se lee
+  desde el fondo de una sala, y la tira vertical se lee mejor.
+- Ruedas algo más grandes y la cuenta de premios pendientes visible de entrada.
+
 ## [0.14.0] — 2026-10-19
 
 ### Cambiado — la ruleta ahora son DOS ruedas

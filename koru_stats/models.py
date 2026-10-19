@@ -1513,6 +1513,12 @@ class RafflePrize(models.Model):
         max_digits=22, decimal_places=2, default=0,
         help_text="Cuanto de este premio salio del fondo (ISK aportado). 0 = lo puso alguien de su bolsillo")
 
+    # Para enseñar el render de EVE en la ruleta. Se intenta adivinar del texto
+    # al crear el premio, y si no sale se puede poner a mano desde el admin.
+    type_id = models.BigIntegerField(
+        null=True, blank=True,
+        help_text="type_id de EVE para la imagen del premio. Vacio = se enseña un icono generico")
+
     class Meta:
         verbose_name        = "Regalos — premio"
         verbose_name_plural = "Regalos — premios"

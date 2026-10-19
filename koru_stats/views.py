@@ -4703,9 +4703,14 @@ def gift_sorteo_accion(request, pk):
             importe = Decimal(valor.replace(".", "").replace(",", ".")) if valor else None
             # Si lo compro con el bote de la fiesta, ese ISK sale del fondo
             del_fondo = importe if (request.POST.get("del_fondo") and importe) else Decimal(0)
+            # Se intenta adivinar el type_id para enseñar el render en la ruleta.
+            # Si no sale, se queda vacio y se pinta un icono generico: nunca se
+            # inventa un id.
+            from .lotes import tipo_desde_texto
+            tid, _ = tipo_desde_texto(desc)
             RafflePrize.objects.create(
                 raffle=r, origen=RafflePrize.ORIGEN_EXCLUSIVO, descripcion=desc,
-                valor=importe, isk_del_fondo=del_fondo,
+                valor=importe, isk_del_fondo=del_fondo, type_id=tid,
                 orden=(r.prizes.count() + 1))
             messages.success(request, f"Premio añadido: {desc}")
 
@@ -4715,10 +4720,14 @@ def gift_sorteo_accion(request, pk):
                 raise ValueError("Esa aportación ya no está")
             if hasattr(a, "prize") and a.prize:
                 raise ValueError("Ese regalo ya está en otra bolsa")
+            # La imagen sale del item mas valioso del contrato: es el que la
+            # gente identifica con "ese regalo".
+            gordo = a.items.order_by("-valor_linea").first()
             RafflePrize.objects.create(
                 raffle=r, origen=RafflePrize.ORIGEN_APORTACION, contribution=a,
                 descripcion=f"Regalo de {a.main_name or a.donante_name}",
                 valor=a.valor_final, donante_name=a.main_name or a.donante_name,
+                type_id=(gordo.type_id if gordo else None),
                 orden=(r.prizes.count() + 1))
             messages.success(request, "Regalo añadido a la bolsa.")
 
@@ -4800,12 +4809,14 @@ def _premios_desde_pegado(r, request):
         trozos = [o["etiqueta"] for o in l["objetos"]]
         if l["isk"] > 0:
             trozos.append(f"{l['isk']:,.0f} ISK")
+        gordo = max(l["objetos"], key=lambda o: o.get("valor") or 0, default=None)
         RafflePrize.objects.create(
             raffle=r, origen=RafflePrize.ORIGEN_EXCLUSIVO,
             descripcion=(" + ".join(trozos))[:200] or f"Lote {i} (vacío)",
             valor=Decimal(str(round(l["total"], 2))),
             # El mortero de ISK sale del bote, no de la nada
             isk_del_fondo=Decimal(str(round(l["isk"], 2))),
+            type_id=(gordo["id"] if gordo else None),
             orden=base + i)
 
     avisos = list(resumen["avisos"])
@@ -4863,6 +4874,7 @@ def gift_ruleta(request, pk):
             "orden": d.orden,
             "premio": d.prize.etiqueta,
             "valor": float(d.prize.valor or 0),
+            "premio_type_id": d.prize.type_id,
             "ganador": d.entrant.main_name or str(d.entrant.main_char_id),
             "ganador_id": d.entrant.main_char_id,
             "manual": d.entrant.origen == "manual",
@@ -4875,7 +4887,7 @@ def gift_ruleta(request, pk):
     # una vez y el navegador hace un solo JSON.parse. Pasar la cadena obligaria
     # a parsear dos veces, que funciona pero es el tipo de cosa que se rompe
     # cuando alguien la toca dentro de seis meses.
-    premios = [{"etiqueta": p.etiqueta, "valor": float(p.valor or 0)}
+    premios = [{"etiqueta": p.etiqueta, "valor": float(p.valor or 0), "type_id": p.type_id}
                for p in r.prizes.all().order_by("orden", "id")]
 
     # El logo de la cabecera sale del destinatario de la campaña: ya esta

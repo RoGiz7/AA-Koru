@@ -242,3 +242,47 @@ def armar_lotes(objetos, k, isk_disponible=0, umbral_aviso=2.0):
         "avisos": avisos,
     }
     return lotes, resumen
+
+
+# ---------------------------------------------------------------------------
+# 3. Adivinar el type_id de un premio escrito a mano
+# ---------------------------------------------------------------------------
+
+def tipo_desde_texto(texto):
+    """
+    (type_id, nombre) a partir de la descripcion de un premio, o (None, None).
+
+    Para poder enseñar el render de EVE en la ruleta sin pedirle al director que
+    busque ids. Limpia lo que la gente escribe de verdad —"Orca (prueba)",
+    "Gila x2", "Lote: Nanite Paste x1.200 + 300 M ISK"— y prueba de lo mas
+    especifico a lo mas general.
+
+    Es un APAÑO deliberado: si no acierta devuelve vacio y la ruleta enseña un
+    icono generico. Nunca inventa un id.
+    """
+    import re as _re
+
+    bruto = (texto or "").strip()
+    if not bruto:
+        return None, None
+
+    # Quitar adornos: parentesis, cantidades, el prefijo "Lote:", lo que va tras +
+    limpio = _re.sub(r"\([^)]*\)", " ", bruto)
+    limpio = _re.split(r"\s*\+\s*", limpio)[0]
+    limpio = _re.sub(r"^\s*lote\s*\d*\s*:\s*", "", limpio, flags=_re.I)
+    limpio = _re.sub(r"[x×]\s*[\d.,]+", " ", limpio, flags=_re.I)
+    limpio = _re.sub(r"\s+", " ", limpio).strip(" -—:·,")
+
+    candidatos = []
+    if limpio:
+        candidatos.append(limpio)
+        palabras = limpio.split()
+        # "Vexor Navy Issue" antes que "Vexor": de lo especifico a lo general
+        for n in range(len(palabras) - 1, 0, -1):
+            candidatos.append(" ".join(palabras[:n]))
+
+    for c in candidatos:
+        encontrados, _ = resolver_tipos([c])
+        if c in encontrados:
+            return encontrados[c]
+    return None, None
