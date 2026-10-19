@@ -10,6 +10,8 @@ from .models import (
     CharacterOwnershipSnapshot, CharacterLifecycleEvent,
     TicketsConfig, Ticket,
     MoonAllianceFee, MoonTaxRecipient,
+    GiftCampaign, GiftRecipient, GiftTier,
+    GiftContribution, GiftContributionItem,
 )
 
 
@@ -302,3 +304,97 @@ class MoonAllianceFeeAdmin(admin.ModelAdmin):
     @admin.display(description="Aplica a")
     def _quien(self, obj):
         return obj.structure_name or obj.structure_id or "TODAS las lunas (por defecto)"
+
+
+# ---------------------------------------------------------------------------
+# Regalos de la fiesta — R1
+#
+# La campana, los destinatarios y los rangos se montan aqui. Las aportaciones
+# las detecta `sync_gift_contributions`, asi que se ven pero no se crean a mano.
+# ---------------------------------------------------------------------------
+
+class GiftTierInline(admin.TabularInline):
+    model = GiftTier
+    extra = 0
+    fields = ("orden", "nombre", "umbral_min", "papeletas", "color")
+    ordering = ("orden",)
+
+
+class GiftRecipientInline(admin.TabularInline):
+    model = GiftRecipient
+    extra = 0
+    fields = ("entity_name", "entity_id", "is_active", "acepta_contratos",
+              "acepta_isk", "wallet_division", "expected_location_id",
+              "expected_location_name")
+
+
+@admin.register(GiftCampaign)
+class GiftCampaignAdmin(admin.ModelAdmin):
+    list_display  = ("nombre", "estado", "ventana_desde", "ventana_hasta",
+                     "fecha_evento", "precio_modo")
+    list_filter   = ("estado",)
+    search_fields = ("nombre",)
+    inlines       = (GiftRecipientInline, GiftTierInline)
+    fieldsets = (
+        (None, {"fields": ("nombre", "estado", "ventana_desde", "ventana_hasta", "fecha_evento", "notes")}),
+        ("Valoración", {
+            "fields": ("precio_modo", "usar_percentil", "spread_max_pct", "desviacion_max_pct"),
+            "description": "Jita sell es lo que costaría comprar el regalo; es lo que se ahorra quien lo "
+                           "recibe. El percentil evita que una sola orden rara decida un rango. Los dos "
+                           "umbrales marcan para valorar a mano, nunca descartan.",
+        }),
+    )
+
+
+@admin.register(GiftRecipient)
+class GiftRecipientAdmin(admin.ModelAdmin):
+    list_display  = ("entity_name", "entity_id", "campaign", "is_active",
+                     "acepta_contratos", "acepta_isk", "wallet_division")
+    list_filter   = ("is_active", "campaign")
+    search_fields = ("entity_name", "entity_id")
+
+
+@admin.register(GiftTier)
+class GiftTierAdmin(admin.ModelAdmin):
+    list_display  = ("nombre", "campaign", "umbral_min", "papeletas", "orden")
+    list_filter   = ("campaign",)
+    ordering      = ("campaign", "orden")
+
+
+class GiftContributionItemInline(admin.TabularInline):
+    model = GiftContributionItem
+    extra = 0
+    can_delete = False
+    fields = ("type_name", "quantity", "es_bpc", "precio_unitario",
+              "valor_linea", "precio_fuente", "requiere_valoracion", "motivo")
+    readonly_fields = fields
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(GiftContribution)
+class GiftContributionAdmin(admin.ModelAdmin):
+    list_display  = ("_quien", "campaign", "origen", "valor_estimado",
+                     "valor_ajustado", "estado", "fecha", "aviso")
+    list_filter   = ("campaign", "origen", "estado", "requiere_valoracion")
+    search_fields = ("main_name", "donante_name", "fuente_key")
+    date_hierarchy = "fecha"
+    inlines = (GiftContributionItemInline,)
+    # Se puede ajustar el valor y validar; lo que detecto el sistema se mira,
+    # no se reescribe: el precio es el del momento en que se aporto.
+    readonly_fields = ("campaign", "origen", "fuente_key", "donante_id", "donante_name",
+                       "main_char_id", "main_name", "contract_id", "assignee_id",
+                       "acceptor_id", "acceptor_name", "contract_type", "esi_status",
+                       "price", "reward", "volume", "start_location_id",
+                       "start_location_name", "entry_id", "wallet_division", "reason",
+                       "fecha", "valor_estimado", "valor_fuente", "valor_consultado_en",
+                       "requiere_valoracion", "ubicacion_rara", "cobra_isk", "sin_main",
+                       "aviso", "detected_at", "updated_at")
+
+    def has_add_permission(self, request):
+        return False  # Las detecta el sync
+
+    @admin.display(description="Quién", ordering="main_name")
+    def _quien(self, obj):
+        return obj.main_name or obj.donante_name or obj.donante_id

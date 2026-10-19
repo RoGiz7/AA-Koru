@@ -2851,3 +2851,451 @@ def rebuild_moon_tax_ledger(period=None):
 
     logger.info("koru rebuild_moon_tax_ledger: %s filas de saldo", guardados)
     return guardados
+
+
+# ---------------------------------------------------------------------------
+# Regalos de la fiesta — R1: ingesta y valoracion
+#
+# Diseno completo en `Auth Reki/koru-regalos-navidad-diseno.md`.
+#
+# NO hace falta scope ESI ni task de ingesta nueva: corptools ya trae los
+# contratos y el diario de la cartera de corp. Lo unico que sale a internet es
+# el precio, y va a Fuzzwork en UN lote con los type_id deduplicados.
+#
+# Las trampas, todas ya pagadas en el tax lunar:
+#   - Cada contrato esta repetido una vez por corp que lo ve -> deduplicar por
+#     `contract_id` (la PK `id` es varchar = corporation_id + contract_id).
+#   - `issuer_id` vale 0 en TODAS las filas: el emisor sale de `issuer_name_id`.
+#   - `quantity`, nunca `raw_quantity`... salvo para detectar el BPC, que es
+#     justo lo que marca el `raw_quantity` NEGATIVO.
+#   - Resolver siempre a main: quien aporta sera un alt la mitad de las veces.
+# ---------------------------------------------------------------------------
+
+JITA_STATION_ID = 60003760          # Jita IV - Moon 4 - Caldari Navy Assembly Plant
+CATEGORIA_BLUEPRINT = 9
+
+
+def _fetch_jita_aggregates(type_ids):
+    """
+    {type_id: dict} con el mercado de Jita 4-4 desde Fuzzwork.
+
+    Se pide por ESTACION y no por region: el `sell.min` de toda The Forge puede
+    venir de una orden perdida en una estacion de paso, y lo que la gente llama
+    "precio de Jita" es el de Jita 4-4.
+
+    Una peticion por lote de 200 type_id. Cero coste de ESI, cero tokens.
+    """
+    if not type_ids:
+        return {}
+
+    out = {}
+    ids = sorted({int(t) for t in type_ids if t})
+    for i in range(0, len(ids), 200):
+        chunk = ids[i:i + 200]
+        url = ("https://market.fuzzwork.co.uk/aggregates/"
+               "?station=" + str(JITA_STATION_ID) +
+               "&types=" + ",".join(str(t) for t in chunk))
+        try:
+            resp = http_requests.get(url, timeout=30)
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as exc:
+            logger.error("koru _fetch_jita_aggregates lote %d: %s", i, exc)
+            continue
+
+        for tid_str, p in data.items():
+            buy  = p.get("buy")  or {}
+            sell = p.get("sell") or {}
+            out[int(tid_str)] = {
+                "buy_max":    float(buy.get("max") or 0),
+                "sell_min":   float(sell.get("min") or 0),
+                # percentil 5% de las ventas mas baratas: una sola orden troll
+                # de 1 ISK no deberia decidir el rango de nadie
+                "percentil":  float(sell.get("percentile") or 0),
+                "ordenes":    int(sell.get("orderCount") or 0),
+                "volumen":    int(float(sell.get("volume") or 0)),
+            }
+    return out
+
+
+def _refresh_jita_prices(type_ids):
+    """
+    Guarda el mercado de Jita en KoruMarketPrice.jita_* y devuelve lo leido.
+
+    Solo pregunta por los type_id que se le pasan, deduplicados: aqui el
+    conjunto es pequeno y cerrado (lo que aparece en los regalos de la
+    campana), que es justo la condicion que faltaba para poder hacer esto.
+    """
+    from .models import KoruMarketPrice
+
+    datos = _fetch_jita_aggregates(type_ids)
+    if not datos:
+        return {}
+
+    ahora = timezone.now()
+    for tid, d in datos.items():
+        KoruMarketPrice.objects.update_or_create(
+            type_id=tid,
+            defaults={
+                "jita_buy_max":       d["buy_max"],
+                "jita_sell_min":      d["sell_min"],
+                "jita_percentil":     d["percentil"],
+                "jita_ordenes":       d["ordenes"],
+                "jita_volumen":       d["volumen"],
+                "jita_fuente":        "fuzzwork",
+                "jita_consultado_en": ahora,
+            },
+        )
+    logger.info("koru _refresh_jita_prices: %s tipos", len(datos))
+    return datos
+
+
+def _item_catalogo(type_ids):
+    """{type_id: (nombre, group_id, category_id)} desde el SDE."""
+    if not type_ids:
+        return {}
+    ids = sorted({int(t) for t in type_ids if t})
+    ph = ",".join(["%s"] * len(ids))
+    out = {}
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT it.id, it.name, it.group_id, g.category_id "
+            "FROM eve_sde_itemtype it "
+            "LEFT JOIN eve_sde_itemgroup g ON g.id = it.group_id "
+            "WHERE it.id IN (" + ph + ")",
+            ids,
+        )
+        for tid, nombre, gid, cat in cursor.fetchall():
+            out[int(tid)] = (nombre or "", int(gid) if gid else None,
+                             int(cat) if cat else None)
+    return out
+
+
+def _valorar_item(campaign, tid, cantidad, es_bpc, categoria, mercado, average_price):
+    """
+    (precio_unitario, fuente, requiere_valoracion, motivo).
+
+    El sistema NO inventa un numero cuando el mercado no da para sostenerlo:
+    marca, explica, y deja que lo valore una persona.
+    """
+    # ★ Un BPC no se vende en el mercado (solo por contrato) y ADEMAS comparte
+    # typeID con su BPO, asi que preguntar por typeID le pondria el precio del
+    # original. Eso infló 610 B el patrimonio en koru-desktop. Nunca hereda.
+    if es_bpc:
+        return (None, "", True, "bpc")
+    if categoria == CATEGORIA_BLUEPRINT:
+        return (None, "", True, "blueprint")
+
+    m = mercado.get(int(tid))
+    if not m or not m.get("ordenes"):
+        return (None, "", True, "sin_ordenes")
+
+    sell = m.get("percentil") if campaign.usar_percentil else m.get("sell_min")
+    sell = sell or m.get("sell_min") or 0
+    buy  = m.get("buy_max") or 0
+
+    if campaign.precio_modo == campaign.PRECIO_BUY:
+        precio, fuente = buy, "jita_buy"
+    else:
+        precio, fuente = sell, ("percentil" if campaign.usar_percentil else "jita_sell")
+
+    if not precio:
+        return (None, "", True, "sin_precio")
+
+    # El precio unitario no aguanta la cantidad regalada
+    if m.get("volumen") is not None and cantidad > max(m["volumen"], 0):
+        return (precio, fuente, True, "volumen_corto")
+
+    # Mercado iliquido: el spread delata que ese precio no es real
+    if sell and buy:
+        spread = (sell - buy) / sell * 100 if sell else 0
+        if spread > float(campaign.spread_max_pct):
+            return (precio, fuente, True, "spread")
+
+    # Se desvia mucho de lo que dice la ESI -> que lo mire alguien
+    if average_price:
+        ref = float(average_price)
+        if ref > 0:
+            desv = abs(precio - ref) / ref * 100
+            if desv > float(campaign.desviacion_max_pct):
+                return (precio, fuente, True, "desviacion")
+
+    return (precio, fuente, False, "")
+
+
+SQL_CONTRATOS_REGALO = """
+    SELECT c.id, c.contract_id, c.issuer_name_id, c.assignee_id, c.acceptor_name_id,
+           c.price, c.reward, c.volume, c.contract_type, c.status,
+           c.start_location_id, c.date_issued, c.date_accepted
+    FROM corptools_corporatecontract c
+    JOIN (
+        SELECT contract_id, MIN(id) AS rid
+        FROM corptools_corporatecontract
+        WHERE assignee_id IN ({dest})
+          AND date_issued >= %s
+          AND date_issued <= %s
+        GROUP BY contract_id
+    ) u ON u.rid = c.id
+    ORDER BY c.date_issued DESC
+"""
+
+SQL_DONACIONES_REGALO = """
+    SELECT j.entry_id, j.first_party_id, j.amount, j.date, j.reason, j.ref_type,
+           d.division AS division, eci.corporation_id AS corp_eve_id
+    FROM corptools_corporationwalletjournalentry j
+    JOIN corptools_corporationwalletdivision d ON d.id = j.division_id
+    JOIN corptools_corporationaudit          ca ON ca.id = d.corporation_id
+    JOIN eveonline_evecorporationinfo       eci ON eci.id = ca.corporation_id
+    WHERE j.ref_type = 'player_donation'
+      AND j.amount > 0
+      AND j.date >= %s
+      AND j.date <= %s
+      AND eci.corporation_id IN ({dest})
+    ORDER BY j.date DESC
+"""
+
+
+def _campana_activa(campaign_id=None):
+    from .models import GiftCampaign
+    if campaign_id:
+        return GiftCampaign.objects.filter(pk=campaign_id).first()
+    return GiftCampaign.objects.filter(estado=GiftCampaign.ESTADO_ABIERTA).order_by("-ventana_desde").first()
+
+
+@shared_task
+def sync_gift_contributions(campaign_id=None):
+    """
+    Detecta las aportaciones de la campana: contratos de items y donaciones de ISK.
+
+    Solo DETECTA, valora y marca. Quien decide si cuenta —y por cuanto— es un
+    director validando, que es cuando se congela la foto.
+
+    Las filas ya VALIDADAS no se tocan: su precio es el del momento en que se
+    aporto, y recalcularlo seria mentir sobre lo que se decidio entonces.
+    """
+    from django.db.models import Q
+
+    from .models import (GiftRecipient, GiftContribution,
+                         GiftContributionItem, KoruMarketPrice)
+
+    campaign = _campana_activa(campaign_id)
+    if not campaign:
+        logger.warning("koru sync_gift_contributions: no hay campana abierta, no hago nada")
+        return 0
+
+    # Un destinatario sin campana vale para todas
+    destinos = list(
+        GiftRecipient.objects
+        .filter(is_active=True)
+        .filter(Q(campaign=campaign) | Q(campaign__isnull=True))
+    )
+    if not destinos:
+        logger.warning("koru sync_gift_contributions: campana '%s' sin destinatarios activos",
+                       campaign.nombre)
+        return 0
+
+    desde, hasta = campaign.ventana_desde, campaign.ventana_hasta
+    por_destino = {int(d.entity_id): d for d in destinos}
+    guardados = 0
+
+    # --- 1. Contratos de items ---------------------------------------------
+    dest_contratos = [e for e, d in por_destino.items() if d.acepta_contratos]
+    contratos, items_por_contrato = [], {}
+    if dest_contratos:
+        sql = SQL_CONTRATOS_REGALO.format(dest=",".join(["%s"] * len(dest_contratos)))
+        with connection.cursor() as cursor:
+            cursor.execute(sql, dest_contratos + [desde, hasta])
+            cols = [c[0] for c in cursor.description]
+            contratos = [dict(zip(cols, r)) for r in cursor.fetchall()]
+
+    if contratos:
+        row_ids = [c["id"] for c in contratos]
+        ph = ",".join(["%s"] * len(row_ids))
+        with connection.cursor() as cursor:
+            # MIN(raw_quantity) < 0 delata que hay copia de blueprint
+            cursor.execute(
+                "SELECT i.contract_id, i.type_name_id, SUM(i.quantity), MIN(i.raw_quantity) "
+                "FROM corptools_corporatecontractitem i "
+                "WHERE i.contract_id IN (" + ph + ") AND i.is_included = 1 "
+                "GROUP BY i.contract_id, i.type_name_id",
+                row_ids,
+            )
+            for rid, tid, qty, raw in cursor.fetchall():
+                items_por_contrato.setdefault(rid, []).append(
+                    (int(tid or 0), int(qty or 0), int(raw) if raw is not None else None))
+
+    # --- 2. Donaciones de ISK ----------------------------------------------
+    dest_isk = [e for e, d in por_destino.items() if d.acepta_isk]
+    donaciones = []
+    if dest_isk:
+        sql = SQL_DONACIONES_REGALO.format(dest=",".join(["%s"] * len(dest_isk)))
+        with connection.cursor() as cursor:
+            cursor.execute(sql, [desde, hasta] + dest_isk)
+            cols = [c[0] for c in cursor.description]
+            donaciones = [dict(zip(cols, r)) for r in cursor.fetchall()]
+
+    if not contratos and not donaciones:
+        logger.info("koru sync_gift_contributions: nada nuevo en la ventana de '%s'", campaign.nombre)
+        return 0
+
+    # --- 3. Precios: UN lote con todo lo que aparece, deduplicado ----------
+    todos_tids = {t for items in items_por_contrato.values() for t, _, _ in items}
+    catalogo = _item_catalogo(todos_tids)
+    mercado = _refresh_jita_prices(todos_tids)
+    averages = {}
+    if todos_tids:
+        averages = {int(p.type_id): p.average_price
+                    for p in KoruMarketPrice.objects.filter(type_id__in=list(todos_tids))}
+
+    # --- 4. Nombres y mains -------------------------------------------------
+    ids_persona = {int(c["issuer_name_id"] or 0) for c in contratos}
+    ids_persona |= {int(d["first_party_id"] or 0) for d in donaciones}
+    ids_persona |= {int(c["acceptor_name_id"] or 0) for c in contratos if c["acceptor_name_id"]}
+    ids_persona.discard(0)
+
+    mains = _resolve_mains(ids_persona)
+    nombres = {}
+    if ids_persona:
+        ph2 = ",".join(["%s"] * len(ids_persona))
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT eve_id, name FROM corptools_evename WHERE eve_id IN (" + ph2 + ")",
+                list(ids_persona),
+            )
+            nombres = {int(i): n or "" for i, n in cursor.fetchall()}
+
+    validadas = set(
+        GiftContribution.objects
+        .filter(campaign=campaign, estado=GiftContribution.ESTADO_VALIDADA)
+        .values_list("fuente_key", flat=True)
+    )
+
+    # --- 5. Contratos -> aportaciones --------------------------------------
+    for c in contratos:
+        fuente_key = "c:%s" % int(c["contract_id"])
+        if fuente_key in validadas:
+            continue
+
+        destino = por_destino.get(int(c["assignee_id"] or 0))
+        donante = int(c["issuer_name_id"] or 0)
+        main_id, main_name = mains.get(donante, (None, ""))
+
+        detalle, valor_total, hay_que_valorar = [], 0, False
+        for tid, qty, raw in items_por_contrato.get(c["id"], []):
+            nombre, gid, cat = catalogo.get(tid, ("", None, None))
+            es_bpc = bool(raw is not None and raw < 0)
+            precio, fuente, requiere, motivo = _valorar_item(
+                campaign, tid, qty, es_bpc, cat, mercado, averages.get(tid))
+            linea = (precio or 0) * qty
+            if requiere:
+                hay_que_valorar = True
+            else:
+                valor_total += linea
+            detalle.append({
+                "type_id": tid, "type_name": nombre, "quantity": qty,
+                "group_id": gid, "category_id": cat, "es_bpc": es_bpc,
+                "precio_unitario": precio, "valor_linea": linea,
+                "precio_fuente": fuente,
+                "requiere_valoracion": requiere, "motivo": motivo,
+            })
+
+        if not detalle:
+            continue
+
+        cobra_isk = bool((c["price"] or 0) or (c["reward"] or 0))
+        ubicacion_rara = bool(
+            destino and destino.expected_location_id
+            and int(c["start_location_id"] or 0) != int(destino.expected_location_id)
+        )
+
+        avisos = []
+        if hay_que_valorar:  avisos.append("hay items sin precio fiable")
+        if ubicacion_rara:   avisos.append("entregado fuera de la ubicacion esperada")
+        if cobra_isk:        avisos.append("price/reward distinto de cero")
+        if main_id is None:  avisos.append("el donante no resuelve a ningun main")
+        if (c["contract_type"] or "") != "item_exchange":
+            avisos.append("tipo de contrato %s" % c["contract_type"])
+
+        obj, _ = GiftContribution.objects.update_or_create(
+            campaign=campaign, fuente_key=fuente_key,
+            defaults={
+                "origen":        GiftContribution.ORIGEN_CONTRATO,
+                "donante_id":    donante,
+                "donante_name":  nombres.get(donante, ""),
+                "main_char_id":  main_id,
+                "main_name":     main_name,
+                "contract_id":   int(c["contract_id"]),
+                "assignee_id":   int(c["assignee_id"] or 0),
+                "acceptor_id":   int(c["acceptor_name_id"]) if c["acceptor_name_id"] else None,
+                "acceptor_name": nombres.get(int(c["acceptor_name_id"] or 0), ""),
+                "contract_type": c["contract_type"] or "",
+                "esi_status":    c["status"] or "",
+                "price":         c["price"] or 0,
+                "reward":        c["reward"] or 0,
+                "volume":        c["volume"] or 0,
+                "start_location_id":   c["start_location_id"],
+                "start_location_name": (destino.expected_location_name if destino else ""),
+                "fecha":         _aware(c["date_issued"]),
+                "valor_estimado": valor_total,
+                "valor_fuente":   campaign.precio_modo,
+                "valor_consultado_en": timezone.now(),
+                "estado": (GiftContribution.ESTADO_REVISAR if avisos
+                           else GiftContribution.ESTADO_DETECTADA),
+                "requiere_valoracion": hay_que_valorar,
+                "ubicacion_rara": ubicacion_rara,
+                "cobra_isk":      cobra_isk,
+                "sin_main":       main_id is None,
+                "aviso":          "; ".join(avisos)[:250],
+            },
+        )
+        obj.items.all().delete()
+        GiftContributionItem.objects.bulk_create(
+            [GiftContributionItem(contribution=obj, **d) for d in detalle])
+        guardados += 1
+
+    # --- 6. Donaciones -> aportaciones -------------------------------------
+    for d in donaciones:
+        fuente_key = "w:%s" % int(d["entry_id"])
+        if fuente_key in validadas:
+            continue
+
+        destino = por_destino.get(int(d["corp_eve_id"] or 0))
+        # Si el destinatario fija division, una donacion a otra no cuenta
+        if destino and destino.wallet_division is not None \
+                and int(d["division"] or 0) != int(destino.wallet_division):
+            continue
+
+        donante = int(d["first_party_id"] or 0)
+        main_id, main_name = mains.get(donante, (None, ""))
+
+        avisos = []
+        if main_id is None:
+            avisos.append("el donante no resuelve a ningun main")
+
+        GiftContribution.objects.update_or_create(
+            campaign=campaign, fuente_key=fuente_key,
+            defaults={
+                "origen":       GiftContribution.ORIGEN_ISK,
+                "donante_id":   donante,
+                "donante_name": nombres.get(donante, ""),
+                "main_char_id": main_id,
+                "main_name":    main_name,
+                "entry_id":        int(d["entry_id"]),
+                "wallet_division": int(d["division"] or 0),
+                # Se enseña, no filtra: medio mundo lo deja vacio
+                "reason":          (d["reason"] or "")[:500],
+                "fecha":           _aware(d["date"]),
+                "valor_estimado":  d["amount"] or 0,
+                "valor_fuente":    "isk",
+                "valor_consultado_en": timezone.now(),
+                "estado": (GiftContribution.ESTADO_REVISAR if avisos
+                           else GiftContribution.ESTADO_DETECTADA),
+                "sin_main": main_id is None,
+                "aviso":    "; ".join(avisos)[:250],
+            },
+        )
+        guardados += 1
+
+    logger.info("koru sync_gift_contributions: %s aportaciones en '%s' (%s contratos, %s donaciones)",
+                guardados, campaign.nombre, len(contratos), len(donaciones))
+    return guardados

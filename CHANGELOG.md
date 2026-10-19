@@ -3,6 +3,40 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.4.0] — 2026-10-19
+
+Regalos de la fiesta, R1: el Auth ya detecta y valora lo que aporta cada uno. Sin
+pantallas todavía — se ve y se gestiona desde el admin.
+
+### Añadido
+
+- Modelos `GiftCampaign`, `GiftRecipient`, `GiftTier`, `GiftContribution` y
+  `GiftContributionItem` (migración `0027`).
+- Tarea `sync_gift_contributions`: detecta contratos de ítems y donaciones de ISK
+  dentro de la ventana de la campaña, leyendo lo que **corptools ya trae**. No
+  necesita scope ESI ni ingesta propia.
+- Valoración contra el mercado real de **Jita 4-4** (Fuzzwork, una petición por
+  lote de tipos deduplicados), guardada en columnas nuevas de `KoruMarketPrice`
+  junto al `average_price` de la ESI, que se queda como contraste.
+- Reglas explícitas de "este precio no me lo creo" → el ítem se marca para que lo
+  valore una persona: sin órdenes, volumen menor que lo regalado, spread
+  desorbitado, desviación fuerte frente al `average_price`, y **cualquier BPC**.
+- Permisos `gift_access`, `gift_manage` y `gift_ceo`.
+- Admin de campañas con destinatarios y rangos en línea; las aportaciones se ven
+  y se ajustan, pero no se crean a mano.
+
+### Notas
+
+- Un BPC **comparte typeID con su BPO**, así que preguntar el precio por typeID le
+  pondría a la copia el del original. Va siempre a valoración manual; el chivato en
+  los ítems de contrato es el `raw_quantity` negativo.
+- La deduplicación usa una columna `fuente_key` (`c:<contract_id>` / `w:<entry_id>`)
+  en vez de restricciones únicas condicionales: MariaDB no soporta índices
+  parciales y Django no llega a crearlas.
+- Se guardan siempre los dos valores, `valor_estimado` y `valor_ajustado`. Una vez
+  validada, la aportación no se recalcula: el precio justo es el del momento en que
+  se aportó.
+
 ## [0.3.0] — 2026-10-19
 
 Primera versión numerada de verdad. Hasta aquí el paquete declaraba `0.2.0` desde
