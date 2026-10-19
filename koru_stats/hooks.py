@@ -167,6 +167,28 @@ def register_menu_regalos():
     )
 
 
+class RegalosGestionMenuHook(MenuItemHook):
+    """Para directores, y tambien estacional: sin campaña abierta no se pinta."""
+    def render(self, request):
+        if not request.user.has_perm("koru_stats.gift_manage"):
+            return ""
+        from .models import GiftCampaign
+        if not GiftCampaign.objects.filter(estado=GiftCampaign.ESTADO_ABIERTA).exists():
+            return ""
+        return super().render(request)
+
+
+@hooks.register("menu_item_hook")
+def register_menu_regalos_gestion():
+    return RegalosGestionMenuHook(
+        "\U0001f381 Koru \u2014 Gesti\u00f3n de regalos",
+        "fas fa-gifts fa-fw",
+        "koru_stats:gift_gestion",
+        navactive=["koru_stats:gift_gestion"],
+        order=1208,
+    )
+
+
 @hooks.register("url_hook")
 def register_urls():
     return UrlHook(urls, "koru_stats", r"^koru/")

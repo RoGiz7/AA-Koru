@@ -4328,3 +4328,167 @@ def gift_mi(request):
     g = _gift_mi_ctx(request)
     return render(request, "koru_stats/gift_mi.html",
                   {"g": g, "sin_main": g is None})
+
+
+# ---------------------------------------------------------------------------
+# Regalos — R3b: gestion de aportaciones (directores)
+#
+# Hasta ahora validar y ajustar valores obligaba a pasar por el admin de Django.
+# Esta es la pantalla donde un director hace su trabajo: ve lo detectado, ajusta
+# lo que el mercado no sostiene y valida congelando la foto.
+#
+# El principio de siempre: la deteccion PROPONE, el director DISPONE. Por eso se
+# guardan los DOS valores —el que dijo el mercado y el que dijo la persona— y la
+# nota explica el porque.
+# ---------------------------------------------------------------------------
+
+def _gift_gestion_ctx(request, campaign):
+    from .models import GiftContribution
+
+    qs = (GiftContribution.objects
+          .filter(campaign=campaign)
+          .prefetch_related("items")
+          .select_related("validado_por")
+          .order_by("-fecha"))
+
+    estado = request.GET.get("estado") or ""
+    origen = request.GET.get("origen") or ""
+    if estado:
+        qs = qs.filter(estado=estado)
+    if origen:
+        qs = qs.filter(origen=origen)
+
+    aportaciones = list(qs)
+
+    # Los KPI se calculan sobre TODA la campaña, no sobre el filtro: si no, al
+    # filtrar por "revisar" el total aportado bajaria y pareceria que se ha
+    # perdido dinero.
+    todas = list(GiftContribution.objects.filter(campaign=campaign).prefetch_related("items"))
+    vivas = [a for a in todas if a.estado != GiftContribution.ESTADO_DESCARTADA]
+
+    por_main = {}
+    for a in vivas:
+        if a.main_char_id:
+            por_main.setdefault(a.main_char_id, {"nombre": a.main_name, "total": 0})
+            por_main[a.main_char_id]["total"] += (a.valor_final or 0)
+
+    tiers = list(campaign.tiers.order_by("orden"))
+    for datos in por_main.values():
+        rango = None
+        for t in tiers:
+            if datos["total"] >= t.umbral_min:
+                rango = t
+        datos["rango"] = rango.nombre if rango else ""
+
+    ranking = sorted(por_main.values(), key=lambda d: -float(d["total"]))
+
+    return {
+        "campaign": campaign,
+        "aportaciones": aportaciones,
+        "ranking": ranking,
+        "filtro_estado": estado,
+        "filtro_origen": origen,
+        "kpi": {
+            "total": sum((a.valor_final or 0) for a in vivas),
+            "aportantes": len(por_main),
+            "entregas": len(vivas),
+            "por_revisar": sum(1 for a in vivas if a.estado == GiftContribution.ESTADO_REVISAR),
+            "validadas": sum(1 for a in vivas if a.estado == GiftContribution.ESTADO_VALIDADA),
+            "sin_valorar": sum(1 for a in vivas for i in a.items.all() if i.requiere_valoracion),
+            "sin_main": sum(1 for a in vivas if a.sin_main),
+        },
+        "estados": GiftContribution.ESTADOS,
+        "origenes": GiftContribution.ORIGENES,
+    }
+
+
+@login_required
+@permission_required("koru_stats.gift_manage")
+def gift_gestion(request):
+    from .models import GiftCampaign
+
+    campaign = (GiftCampaign.objects
+                .filter(estado=GiftCampaign.ESTADO_ABIERTA)
+                .order_by("-ventana_desde").first())
+    if not campaign:
+        campaign = GiftCampaign.objects.order_by("-ventana_desde").first()
+    if not campaign:
+        return render(request, "koru_stats/gift_gestion.html", {"sin_campana": True})
+
+    return render(request, "koru_stats/gift_gestion.html", _gift_gestion_ctx(request, campaign))
+
+
+@login_required
+@permission_required("koru_stats.gift_manage")
+def gift_validar(request, pk):
+    """
+    Validar, ajustar el valor o descartar una aportacion.
+
+    ★ Al VALIDAR se congela: el precio es el del momento en que se aporto y a
+    partir de ahi `sync_gift_contributions` se salta esa fila. Si se recalculara,
+    el valor cambiaria con el mercado y lo que decidio el director dejaria de
+    ser lo que dice el sistema.
+    """
+    from django.contrib import messages
+    from django.shortcuts import redirect
+    from django.urls import reverse
+    from django.utils import timezone
+
+    from .models import GiftContribution
+
+    if request.method != "POST":
+        return redirect(reverse("koru_stats:gift_gestion"))
+
+    a = GiftContribution.objects.filter(pk=pk).first()
+    if not a:
+        messages.error(request, "Esa aportación ya no existe.")
+        return redirect(reverse("koru_stats:gift_gestion"))
+
+    accion = request.POST.get("accion") or "validar"
+    nota   = (request.POST.get("nota") or "").strip()
+    valor  = (request.POST.get("valor") or "").strip()
+
+    if accion == "descartar":
+        if not nota:
+            messages.error(request, "Descartar pide una nota: alguien preguntará por qué.")
+            return redirect(reverse("koru_stats:gift_gestion"))
+        a.estado = GiftContribution.ESTADO_DESCARTADA
+        a.nota = nota
+        a.validado_por = request.user
+        a.validado_en = timezone.now()
+        a.save(update_fields=["estado", "nota", "validado_por", "validado_en"])
+        messages.warning(request, f"Descartada la aportación de {a.main_name or a.donante_name}.")
+        return redirect(reverse("koru_stats:gift_gestion"))
+
+    if accion == "reabrir":
+        a.estado = GiftContribution.ESTADO_DETECTADA
+        a.validado_por = None
+        a.validado_en = None
+        a.nota = nota
+        a.save(update_fields=["estado", "validado_por", "validado_en", "nota"])
+        messages.info(request, "Reabierta: volverá a entrar en el siguiente sync.")
+        return redirect(reverse("koru_stats:gift_gestion"))
+
+    # validar, con ajuste de valor opcional
+    if valor:
+        from decimal import InvalidOperation
+        try:
+            # admite "1.500.000.000", "1500000000" y "1,5e9" no
+            limpio = valor.replace(".", "").replace(" ", "").replace(",", ".")
+            nuevo = Decimal(limpio)
+        except (InvalidOperation, ValueError):
+            messages.error(request, f"No entiendo el valor «{valor}».")
+            return redirect(reverse("koru_stats:gift_gestion"))
+        if nuevo != (a.valor_ajustado or a.valor_estimado):
+            if not nota:
+                messages.error(request, "Cambiar el valor pide una nota explicando por qué.")
+                return redirect(reverse("koru_stats:gift_gestion"))
+            a.valor_ajustado = nuevo
+
+    a.estado = GiftContribution.ESTADO_VALIDADA
+    a.nota = nota or a.nota
+    a.validado_por = request.user
+    a.validado_en = timezone.now()
+    a.save(update_fields=["valor_ajustado", "estado", "nota", "validado_por", "validado_en"])
+    messages.success(request, f"Validada la aportación de {a.main_name or a.donante_name}.")
+    return redirect(reverse("koru_stats:gift_gestion"))

@@ -3,6 +3,31 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.10.0] — 2026-10-19
+
+Regalos, R3b (primera mitad): la pantalla de los directores. Hasta ahora validar y
+ajustar valores obligaba a pasar por el admin de Django.
+
+### Añadido
+
+- **Gestión de regalos** (`/koru/regalos/gestion/`, permiso `gift_manage`):
+  KPIs de la campaña, lista de aportaciones con filtros por estado y origen, el
+  desglose de ítems con el motivo de cada uno sin precio fiable, y el ranking por
+  persona con su rango.
+- Validar, **ajustar el valor a mano** y descartar, cada uno desde su fila.
+- Entrada de menú para directores, estacional como la del piloto: sin campaña
+  abierta no se pinta.
+
+### Decisiones
+
+- **Cambiar el valor o descartar exigen nota.** No es burocracia: es el registro de
+  por qué se decidió así, y alguien preguntará. Validar sin tocar nada no la pide.
+- **Los KPI se calculan sobre toda la campaña, no sobre el filtro.** Si no, al
+  filtrar por «por revisar» el total aportado bajaría y parecería que se ha perdido
+  dinero.
+- El valor a mano admite `1.500.000.000` y `1500000000`: el director escribe como
+  le sale, no como le conviene a la base de datos.
+
 ## [0.9.1] — 2026-10-19
 
 ### Corregido

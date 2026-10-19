@@ -1,0 +1,223 @@
+{% extends 'allianceauth/base-bs5.html' %}
+{% load i18n koru_stats_tags %}
+
+{% block title %}Gestión de regalos — Rekium Stats{% endblock %}
+{% block page_title %}Gestión de regalos{% endblock %}
+
+{% block extra_css %}
+<style>
+.stat-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: #6c757d; }
+.stat-big   { font-size: 1.6rem; font-weight: 700; line-height: 1.1; }
+.kpi-card   { border-left: 4px solid #e11d48; }
+.kpi-card.ok   { border-left-color: #10b981; }
+.kpi-card.warn { border-left-color: #f59e0b; }
+.marcado    { color: #f59e0b; }
+.fila-revisar { background: rgba(245,158,11,.07); }
+.fila-validada { background: rgba(16,185,129,.05); }
+.item-row   { font-size: .85rem; }
+.valor-input { max-width: 170px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+
+{% if sin_campana %}
+    <div class="row justify-content-center mt-5">
+        <div class="col-md-6 text-center">
+            <div class="aa-callout aa-callout-info">
+                <div style="font-size:2.5rem">🎁</div>
+                <h5 class="mt-2">No hay ninguna campaña creada</h5>
+                <p class="mb-0">Créala desde el admin: <em>Koru Stats → Regalos — campañas</em>.</p>
+            </div>
+        </div>
+    </div>
+
+{% else %}
+
+    {% if messages %}
+    <div class="row mb-3"><div class="col-12">
+        {% for m in messages %}
+        <div class="alert alert-{{ m.tags|default:'info' }} py-2 mb-2">{{ m }}</div>
+        {% endfor %}
+    </div></div>
+    {% endif %}
+
+    {# KPIs: sobre TODA la campaña, no sobre el filtro #}
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="card kpi-card"><div class="card-body">
+                <div class="stat-label">{{ campaign.nombre }} — aportado</div>
+                <div class="stat-big">{{ kpi.total|rkisk }}</div>
+                <div class="small text-muted">{{ kpi.entregas }} entrega{{ kpi.entregas|pluralize }} de {{ kpi.aportantes }} persona{{ kpi.aportantes|pluralize }}</div>
+            </div></div>
+        </div>
+        <div class="col-md-3">
+            <div class="card kpi-card ok"><div class="card-body">
+                <div class="stat-label">Validadas</div>
+                <div class="stat-big">{{ kpi.validadas }}</div>
+                <div class="small text-muted">congeladas, ya no se recalculan</div>
+            </div></div>
+        </div>
+        <div class="col-md-3">
+            <div class="card kpi-card warn"><div class="card-body">
+                <div class="stat-label">Por revisar</div>
+                <div class="stat-big">{{ kpi.por_revisar }}</div>
+                <div class="small text-muted">{{ kpi.sin_main }} sin main resuelto</div>
+            </div></div>
+        </div>
+        <div class="col-md-3">
+            <div class="card kpi-card warn"><div class="card-body">
+                <div class="stat-label">Ítems sin precio fiable</div>
+                <div class="stat-big">{{ kpi.sin_valorar }}</div>
+                <div class="small text-muted">esperan valor a mano</div>
+            </div></div>
+        </div>
+    </div>
+
+    <div class="row g-3">
+        {# ---------------- Aportaciones ---------------- #}
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header d-flex align-items-center gap-2 flex-wrap">
+                    <strong>Aportaciones</strong>
+                    <form method="get" class="ms-auto d-flex gap-2">
+                        <select name="estado" class="form-select form-select-sm" onchange="this.form.submit()">
+                            <option value="">Todos los estados</option>
+                            {% for valor, etiqueta in estados %}
+                            <option value="{{ valor }}" {% if filtro_estado == valor %}selected{% endif %}>{{ etiqueta }}</option>
+                            {% endfor %}
+                        </select>
+                        <select name="origen" class="form-select form-select-sm" onchange="this.form.submit()">
+                            <option value="">Contratos e ISK</option>
+                            {% for valor, etiqueta in origenes %}
+                            <option value="{{ valor }}" {% if filtro_origen == valor %}selected{% endif %}>{{ etiqueta }}</option>
+                            {% endfor %}
+                        </select>
+                    </form>
+                </div>
+
+                <div class="card-body p-0">
+                {% if aportaciones %}
+                    {% for a in aportaciones %}
+                    <div class="border-bottom p-3 {% if a.estado == 'revisar' %}fila-revisar{% elif a.estado == 'validada' %}fila-validada{% endif %}">
+                        <div class="d-flex align-items-start gap-3 flex-wrap">
+                            <div class="flex-grow-1">
+                                <div class="d-flex align-items-center gap-2 flex-wrap">
+                                    <strong>{{ a.main_name|default:a.donante_name|default:a.donante_id }}</strong>
+                                    {% if a.donante_name and a.main_name and a.donante_name != a.main_name %}
+                                        <span class="badge bg-dark">vía {{ a.donante_name }}</span>
+                                    {% endif %}
+                                    {% if a.origen == "isk" %}
+                                        <span class="badge bg-warning text-dark"><i class="fas fa-coins me-1"></i>ISK</span>
+                                    {% else %}
+                                        <span class="badge bg-info text-dark"><i class="fas fa-box-open me-1"></i>contrato #{{ a.contract_id }}</span>
+                                    {% endif %}
+                                    {% if a.estado == "validada" %}
+                                        <span class="badge bg-success">Validada</span>
+                                    {% elif a.estado == "revisar" %}
+                                        <span class="badge bg-warning text-dark">Por revisar</span>
+                                    {% elif a.estado == "descartada" %}
+                                        <span class="badge bg-secondary">Descartada</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">Detectada</span>
+                                    {% endif %}
+                                    <span class="text-muted small">{{ a.fecha|date:"d/m/Y H:i" }}</span>
+                                </div>
+
+                                {% if a.aviso %}
+                                <div class="small marcado mt-1"><i class="fas fa-exclamation-triangle me-1"></i>{{ a.aviso }}</div>
+                                {% endif %}
+                                {% if a.reason %}
+                                <div class="small text-muted">«{{ a.reason }}»</div>
+                                {% endif %}
+
+                                {% for i in a.items.all %}
+                                <div class="item-row text-muted ms-2">
+                                    {{ i.type_name }} ×{{ i.quantity|rknum }}
+                                    {% if i.es_bpc %}<span class="badge bg-dark">BPC</span>{% endif %}
+                                    —
+                                    {% if i.requiere_valoracion %}
+                                        <span class="marcado">sin precio fiable ({{ i.motivo }})</span>
+                                    {% else %}
+                                        {{ i.valor_linea|rkisk }} <span class="opacity-50">{{ i.precio_fuente }}</span>
+                                    {% endif %}
+                                </div>
+                                {% endfor %}
+
+                                {% if a.nota %}
+                                <div class="small mt-1"><i class="fas fa-sticky-note me-1 opacity-50"></i>{{ a.nota }}
+                                    {% if a.validado_por %}<span class="text-muted">— {{ a.validado_por }}, {{ a.validado_en|date:"d/m/Y H:i" }}</span>{% endif %}
+                                </div>
+                                {% endif %}
+                            </div>
+
+                            <div class="text-end">
+                                <div class="stat-label">Valor</div>
+                                <div class="stat-big">{{ a.valor_final|rkisk }}</div>
+                                {% if a.valor_ajustado is not None %}
+                                    <div class="small text-muted">mercado dijo {{ a.valor_estimado|rkisk }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        {# Acciones. Cambiar el valor o descartar PIDEN nota: es el registro de la decisión #}
+                        <form method="post" action="{% url 'koru_stats:gift_validar' a.pk %}" class="d-flex gap-2 mt-2 flex-wrap align-items-center">
+                            {% csrf_token %}
+                            {% if a.estado == "validada" %}
+                                <input type="hidden" name="accion" value="reabrir">
+                                <input type="text" name="nota" class="form-control form-control-sm flex-grow-1" placeholder="Motivo para reabrir">
+                                <button class="btn btn-sm btn-outline-warning">Reabrir</button>
+                            {% else %}
+                                <input type="text" name="valor" class="form-control form-control-sm valor-input"
+                                       placeholder="Valor a mano (ISK)" value="">
+                                <input type="text" name="nota" class="form-control form-control-sm flex-grow-1"
+                                       placeholder="Nota — obligatoria si cambias el valor o descartas">
+                                <button class="btn btn-sm btn-success" name="accion" value="validar">
+                                    <i class="fas fa-check me-1"></i>Validar
+                                </button>
+                                <button class="btn btn-sm btn-outline-secondary" name="accion" value="descartar">
+                                    Descartar
+                                </button>
+                            {% endif %}
+                        </form>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="p-4 text-center text-muted">No hay aportaciones con ese filtro.</div>
+                {% endif %}
+                </div>
+            </div>
+        </div>
+
+        {# ---------------- Ranking por persona ---------------- #}
+        <div class="col-lg-4">
+            <div class="card">
+                <div class="card-header"><strong>Por persona</strong></div>
+                <div class="card-body p-0">
+                    <table class="table table-sm mb-0">
+                        <thead><tr><th>Piloto</th><th>Rango</th><th class="text-end">Aportado</th></tr></thead>
+                        <tbody>
+                        {% for p in ranking %}
+                        <tr>
+                            <td>{{ p.nombre|default:"(sin main)" }}</td>
+                            <td><span class="badge bg-secondary">{{ p.rango }}</span></td>
+                            <td class="text-end">{{ p.total|rkisk }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="3" class="text-center text-muted p-3">Todavía nadie.</td></tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="small text-muted mt-2">
+                El rango se calcula sobre la suma de lo aportado por cada main, alts incluidos.
+                Se congela cuando se fije el roster de cada sorteo, no antes.
+            </div>
+        </div>
+    </div>
+
+{% endif %}
+</div>
+{% endblock %}
