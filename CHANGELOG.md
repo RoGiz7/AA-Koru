@@ -3,6 +3,34 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.13.0] — 2026-10-19
+
+Regalos, R4: **la ruleta**. Pantalla de directo para proyectar en la fiesta.
+
+### Añadido
+
+- `/koru/regalos/sorteos/<id>/ruleta/`: página **completa, sin el menú de Alliance
+  Auth**, en oscuro y a pantalla grande. Se abre desde el botón «Proyectar la
+  ruleta» del sorteo.
+- Revela **premio a premio**, al ritmo que marque quien presenta: botón o barra
+  espaciadora. Primero se ve el premio, después se gira, después el ganador con su
+  retrato.
+- El hash de la semilla va impreso en la propia pantalla, para que se vea mientras
+  se sortea.
+- Abajo se va formando la lista de lo ya repartido.
+
+### Decisiones
+
+- ★ **La página no decide nada.** El resultado ya está en `RaffleDraw`; esto solo
+  lo anima. Si el ganador lo eligiera el navegador, cualquiera con la consola
+  abierta podría discutirlo.
+- **Tira vertical tipo tragaperras, no ruleta circular.** Con 60 nombres los
+  segmentos de una rueda quedan de dos grados y no se lee nada en un proyector.
+- **Giran TODOS los del roster**, no solo los premiados: si solo giraran los
+  ganadores, el primero que se fijara vería que la tira ya sabe el resultado.
+- Los nombres se pasan con `json_script` y se pintan con `textContent`: un
+  personaje con `<b>` en el nombre no rompe la página.
+
 ## [0.12.0] — 2026-10-19
 
 ### Añadido

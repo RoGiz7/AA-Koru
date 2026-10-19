@@ -4816,3 +4816,66 @@ def _premios_desde_pegado(r, request):
     if resumen["isk_para_igualar"] > 0:
         avisos.append(f"Con {resumen['isk_para_igualar']:,.0f} ISK más quedarían a la par")
     return len(resultado), avisos
+
+
+# ---------------------------------------------------------------------------
+# Regalos — R4: la ruleta (pantalla de directo)
+#
+# ★ LA PAGINA NO DECIDE NADA. El resultado ya esta calculado en el servidor y
+# guardado en RaffleDraw; esto solo lo ANIMA. Si el ganador lo eligiera el
+# navegador, cualquiera con la consola abierta podria discutirlo — y un sorteo
+# discutible es peor que no tener sorteo.
+#
+# Se sirve como pagina COMPLETA, sin el menu de Alliance Auth: esto se proyecta.
+# ---------------------------------------------------------------------------
+
+@login_required
+@permission_required("koru_stats.gift_manage")
+def gift_ruleta(request, pk):
+    from .models import Raffle
+
+    r = (Raffle.objects
+         .filter(pk=pk)
+         .prefetch_related("entrants", "draws__entrant", "draws__prize")
+         .first())
+    if not r:
+        from django.shortcuts import redirect
+        from django.urls import reverse
+        return redirect(reverse("koru_stats:gift_sorteos"))
+
+    if r.tipo == Raffle.TIPO_ESPECIAL and not request.user.has_perm("koru_stats.gift_ceo"):
+        from django.core.exceptions import PermissionDenied
+        raise PermissionDenied("Los sorteos especiales los lleva el CEO")
+
+    # Los nombres que giran en la tira. Son TODOS los del roster, no solo los
+    # ganadores: si girasen solo los premiados, el primero en fijarse veria que
+    # la tira ya sabe quien gana.
+    nombres = [
+        {"id": e.main_char_id, "nombre": e.main_name or str(e.main_char_id)}
+        for e in r.entrants.all()
+    ]
+
+    tiradas = [
+        {
+            "orden": d.orden,
+            "premio": d.prize.etiqueta,
+            "valor": float(d.prize.valor or 0),
+            "ganador": d.entrant.main_name or str(d.entrant.main_char_id),
+            "ganador_id": d.entrant.main_char_id,
+            "manual": d.entrant.origen == "manual",
+            "externo": d.entrant.externo,
+        }
+        for d in r.draws.all().order_by("orden")
+    ]
+
+    # Se pasan las LISTAS, no un JSON ya serializado: `json_script` serializa
+    # una vez y el navegador hace un solo JSON.parse. Pasar la cadena obligaria
+    # a parsear dos veces, que funciona pero es el tipo de cosa que se rompe
+    # cuando alguien la toca dentro de seis meses.
+    return render(request, "koru_stats/gift_ruleta.html", {
+        "r": r,
+        "campaign": r.campaign,
+        "nombres": nombres,
+        "tiradas": tiradas,
+        "n_tiradas": len(tiradas),
+    })

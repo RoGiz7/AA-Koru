@@ -1,0 +1,249 @@
+{% load koru_stats_tags %}<!doctype html>
+{# Pagina COMPLETA y sin el menu de AA: esto se proyecta en la fiesta. #}
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ r.nombre }} — {{ campaign.nombre }}</title>
+<style>
+  :root {
+    --fondo:   #0b1020;
+    --panel:   #141c33;
+    --borde:   #27345c;
+    --texto:   #e8edff;
+    --suave:   #8fa0c9;
+    --acento:  #e11d48;
+    --oro:     #f5c242;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: var(--fondo); color: var(--texto);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  header {
+    padding: 1.2rem 2rem; display: flex; align-items: baseline; gap: 1rem;
+    border-bottom: 1px solid var(--borde); flex-wrap: wrap;
+  }
+  .campana { font-size: 1rem; letter-spacing: .22em; text-transform: uppercase; color: var(--suave); }
+  .sorteo  { font-size: 2rem; font-weight: 800; }
+  .contador { margin-left: auto; color: var(--suave); font-size: 1rem; }
+
+  main { flex: 1; display: flex; align-items: center; justify-content: center; padding: 1rem 2rem; }
+  .escena { width: min(1100px, 100%); text-align: center; }
+
+  .premio-rotulo { font-size: 1rem; letter-spacing: .22em; text-transform: uppercase; color: var(--suave); }
+  .premio { font-size: clamp(1.8rem, 4.5vw, 3.4rem); font-weight: 800; color: var(--oro); margin: .2rem 0 1.4rem; line-height: 1.1; }
+  .premio-valor { font-size: 1.2rem; color: var(--suave); font-weight: 400; }
+
+  /* La tira: los nombres pasan en vertical y frenan en el ganador.
+     Una ruleta circular con 60 nombres es ilegible en un proyector. */
+  .ventana {
+    position: relative; height: 180px; overflow: hidden;
+    background: var(--panel); border: 1px solid var(--borde); border-radius: 14px;
+  }
+  .ventana::before, .ventana::after {
+    content: ""; position: absolute; left: 0; right: 0; height: 60px; z-index: 2; pointer-events: none;
+  }
+  .ventana::before { top: 0;    background: linear-gradient(var(--panel), transparent); }
+  .ventana::after  { bottom: 0; background: linear-gradient(transparent, var(--panel)); }
+  .marca {
+    position: absolute; top: 50%; left: 0; right: 0; height: 60px; margin-top: -30px;
+    border-top: 2px solid var(--acento); border-bottom: 2px solid var(--acento); z-index: 3;
+    pointer-events: none;
+  }
+  .tira { position: absolute; left: 0; right: 0; top: 60px; }
+  .tira div {
+    height: 60px; line-height: 60px; font-size: 1.9rem; font-weight: 700;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 1rem;
+  }
+
+  .ganador { margin-top: 1.6rem; min-height: 150px; }
+  .ganador.oculto { visibility: hidden; }
+  .ganador img { width: 96px; height: 96px; border-radius: 50%; border: 3px solid var(--oro); }
+  .ganador .nombre { font-size: clamp(2rem, 5vw, 3.6rem); font-weight: 800; margin-top: .4rem; }
+  .insignia {
+    display: inline-block; font-size: .8rem; padding: .15rem .6rem; border-radius: 999px;
+    background: var(--acento); vertical-align: middle; margin-left: .6rem;
+  }
+
+  footer { padding: 1rem 2rem; border-top: 1px solid var(--borde); display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
+  button {
+    background: var(--acento); color: #fff; border: 0; border-radius: 10px;
+    padding: .9rem 2rem; font-size: 1.1rem; font-weight: 700; cursor: pointer;
+  }
+  button[disabled] { opacity: .35; cursor: default; }
+  .salir { background: transparent; border: 1px solid var(--borde); color: var(--suave); font-weight: 400; padding: .6rem 1.2rem; font-size: .95rem; }
+  .hash { font-family: ui-monospace, monospace; font-size: .72rem; color: var(--suave); word-break: break-all; max-width: 520px; }
+  .reparto { padding: 0 2rem 1rem; display: flex; gap: .5rem; flex-wrap: wrap; }
+  .reparto span { background: var(--panel); border: 1px solid var(--borde); border-radius: 999px; padding: .25rem .8rem; font-size: .85rem; }
+  .aviso { padding: 2rem; text-align: center; color: var(--suave); }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="campana">{{ campaign.nombre }}</div>
+    <div class="sorteo">{{ r.nombre }}</div>
+  </div>
+  <div class="contador" id="contador"></div>
+</header>
+
+{% if n_tiradas %}
+<main>
+  <div class="escena">
+    <div class="premio-rotulo">Premio</div>
+    <div class="premio" id="premio">—</div>
+
+    <div class="ventana">
+      <div class="marca"></div>
+      <div class="tira" id="tira"></div>
+    </div>
+
+    <div class="ganador oculto" id="ganador">
+      <img id="retrato" alt="" onerror="this.style.display='none'">
+      <div class="nombre" id="nombre"></div>
+    </div>
+  </div>
+</main>
+
+<div class="reparto" id="reparto"></div>
+
+<footer>
+  <button id="girar">Girar</button>
+  <div class="hash">
+    {% if r.semilla_hash %}hash {{ r.semilla_hash }}{% endif %}
+  </div>
+  <a href="{% url 'koru_stats:gift_sorteo' r.pk %}" class="salir" style="margin-left:auto;text-decoration:none;padding:.6rem 1.2rem;border:1px solid var(--borde);border-radius:10px">Salir</a>
+</footer>
+
+{{ nombres|json_script:"datos-nombres" }}
+{{ tiradas|json_script:"datos-tiradas" }}
+
+<script>
+(function () {
+  "use strict";
+  // El resultado VIENE DADO. Esto solo lo anima.
+  const nombres = JSON.parse(document.getElementById("datos-nombres").textContent);
+  const tiradas = JSON.parse(document.getElementById("datos-tiradas").textContent);
+
+  const tira      = document.getElementById("tira");
+  const premioEl  = document.getElementById("premio");
+  const ganadorEl = document.getElementById("ganador");
+  const nombreEl  = document.getElementById("nombre");
+  const retratoEl = document.getElementById("retrato");
+  const botonEl   = document.getElementById("girar");
+  const contador  = document.getElementById("contador");
+  const repartoEl = document.getElementById("reparto");
+
+  const ALTO = 60;
+  let indice = 0, girando = false;
+
+  const mezclar = (xs) => {
+    const a = xs.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  };
+
+  function pintarPremio(i) {
+    // El publico ve PRIMERO el premio y despues quien se lo lleva. Girar sobre
+    // un premio desconocido quita la mitad de la gracia.
+    if (i >= tiradas.length) { premioEl.textContent = "—"; return; }
+    const t = tiradas[i];
+    premioEl.innerHTML = escapar(t.premio) +
+      (t.valor ? ' <span class="premio-valor">' + formatearIsk(t.valor) + "</span>" : "");
+  }
+
+  function pintarContador() {
+    contador.textContent = indice + " de " + tiradas.length + " repartidos";
+    botonEl.textContent = indice === 0 ? "Girar"
+                        : (indice >= tiradas.length ? "Se acabó" : "Siguiente premio");
+    botonEl.disabled = indice >= tiradas.length;
+  }
+
+  function girar() {
+    if (girando || indice >= tiradas.length) return;
+    girando = true;
+    botonEl.disabled = true;
+    ganadorEl.classList.add("oculto");
+
+    const t = tiradas[indice];
+
+    // Tira larga de nombres al azar; el ganador se coloca al final, y ahi para.
+    const pasos = Math.max(28, nombres.length * 2);
+    const relleno = [];
+    while (relleno.length < pasos) {
+      mezclar(nombres).forEach((n) => { if (relleno.length < pasos) relleno.push(n.nombre); });
+    }
+    relleno.push(t.ganador);
+
+    tira.innerHTML = relleno.map((n) => "<div>" + escapar(n) + "</div>").join("");
+    tira.style.transition = "none";
+    tira.style.transform = "translateY(0)";
+    // forzar reflow para que la transicion arranque de verdad
+    void tira.offsetHeight;
+
+    const destino = -(relleno.length - 1) * ALTO;
+    tira.style.transition = "transform 4.2s cubic-bezier(.12,.72,.14,1)";
+    tira.style.transform = "translateY(" + destino + "px)";
+
+    setTimeout(function () {
+      nombreEl.innerHTML = escapar(t.ganador)
+        + (t.manual  ? '<span class="insignia">a mano</span>'  : "")
+        + (t.externo ? '<span class="insignia">de fuera</span>' : "");
+      retratoEl.style.display = "";
+      retratoEl.src = "https://images.evetech.net/characters/" + t.ganador_id + "/portrait?size=128";
+      ganadorEl.classList.remove("oculto");
+
+      const chip = document.createElement("span");
+      chip.textContent = t.ganador + " → " + t.premio;
+      repartoEl.appendChild(chip);
+
+      indice += 1;
+      girando = false;
+      pintarContador();
+      pintarPremio(indice);
+    }, 4300);
+  }
+
+  function escapar(s) {
+    const d = document.createElement("div");
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  function formatearIsk(v) {
+    if (v >= 1e12) return (v / 1e12).toFixed(2) + " T";
+    if (v >= 1e9)  return (v / 1e9).toFixed(2) + " B";
+    if (v >= 1e6)  return (v / 1e6).toFixed(2) + " M";
+    return Math.round(v).toLocaleString("es-ES");
+  }
+
+  botonEl.addEventListener("click", girar);
+  // Espacio para girar: el CEO maneja el ritmo sin buscar el raton
+  document.addEventListener("keydown", function (e) {
+    if (e.code === "Space" || e.code === "Enter") { e.preventDefault(); girar(); }
+  });
+
+  tira.innerHTML = mezclar(nombres).slice(0, 6).map((n) => "<div>" + escapar(n.nombre) + "</div>").join("");
+  pintarContador();
+  pintarPremio(0);
+})();
+</script>
+
+{% else %}
+<main>
+  <div class="aviso">
+    <p style="font-size:1.4rem">Este sorteo todavía no se ha resuelto.</p>
+    <p>Ciérralo y sortéalo desde la pantalla de gestión; aquí solo se proyecta el resultado.</p>
+    <p><a href="{% url 'koru_stats:gift_sorteo' r.pk %}" style="color:var(--oro)">Volver al sorteo</a></p>
+  </div>
+</main>
+{% endif %}
+
+</body>
+</html>

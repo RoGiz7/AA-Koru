@@ -60,6 +60,9 @@
                 </form>
             {% elif r.estado == "sorteado" %}
                 <span class="badge bg-success">Sorteado</span>
+                <a href="{% url 'koru_stats:gift_ruleta' r.pk %}" class="btn btn-danger btn-sm" target="_blank">
+                    <i class="fas fa-dharmachakra me-1"></i>Proyectar la ruleta
+                </a>
                 <a href="?verificar=1" class="btn btn-outline-info btn-sm">
                     <i class="fas fa-fingerprint me-1"></i>3) Verificar
                 </a>
