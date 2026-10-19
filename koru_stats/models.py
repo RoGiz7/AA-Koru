@@ -1446,6 +1446,13 @@ class RaffleEntrant(models.Model):
     papeletas    = models.PositiveIntegerField(default=1)
     rango_nombre = models.CharField(max_length=60, blank=True, default="",
                                     help_text="Rango congelado al fijar el roster")
+    # Alguien de fuera: ni en la corp ni en el Auth, metido a dedo y resuelto
+    # contra ESI. Lleva insignia propia en pantalla porque meter a un ajeno es
+    # justo la decision que mas conviene que se vea.
+    externo        = models.BooleanField(default=False, db_index=True,
+                                         help_text="No existe en Alliance Auth: resuelto contra ESI")
+    verificado_esi = models.DateTimeField(null=True, blank=True,
+                                          help_text="Cuando se contrasto el nombre con ESI")
     valor_aportado = models.DecimalField(max_digits=22, decimal_places=2, default=0)
     anadido_por  = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True,
                                      related_name="raffle_entrants_anadidos")

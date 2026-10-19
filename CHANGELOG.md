@@ -3,6 +3,26 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.7.0] — 2026-10-19
+
+### Añadido
+
+- **Alta de participantes por nombre, contrastada contra ESI** (`anadir_por_nombre`):
+  para cuando el CEO quiere meter a alguien que no está en la corp ni en el Auth.
+  Se teclea el nombre y se resuelve en ese momento.
+- `RaffleEntrant.externo` y `verificado_esi` (migración `0029`): quien no existe en
+  Alliance Auth queda marcado, y en el admin sale con su propia columna.
+
+### Notas
+
+- **Se mira primero en la base de datos del Auth**: a ESI no se le pregunta lo que
+  ya sabemos. Solo se sale a internet si el nombre no está en casa.
+- ★ **Verificado en vivo**: `POST /universe/ids/` **no da error con un nombre que
+  no existe — lo omite de la respuesta**. Sin emparejar explícitamente el nombre
+  pedido con el devuelto, un nombre mal escrito entraría con el id de otro.
+- El User-Agent se toma de `tasks.py` con un import **perezoso**: hacerlo arriba
+  arrastraría celery entero por una cadena y abriría la puerta a un import circular.
+
 ## [0.6.0] — 2026-10-19
 
 Regalos, R3a: el motor de sorteos. Sin pantallas todavía — se opera desde el

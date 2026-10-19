@@ -412,9 +412,9 @@ class GiftContributionAdmin(admin.ModelAdmin):
 class RaffleEntrantInline(admin.TabularInline):
     model = RaffleEntrant
     extra = 0
-    fields = ("main_name", "main_char_id", "origen", "papeletas",
+    fields = ("main_name", "main_char_id", "origen", "externo", "papeletas",
               "rango_nombre", "valor_aportado", "motivo")
-    readonly_fields = ("valor_aportado",)
+    readonly_fields = ("valor_aportado", "verificado_esi")
     ordering = ("-papeletas", "main_name")
 
 
@@ -494,10 +494,14 @@ class RaffleAdmin(admin.ModelAdmin):
 
 @admin.register(RaffleEntrant)
 class RaffleEntrantAdmin(admin.ModelAdmin):
-    list_display  = ("main_name", "raffle", "origen", "papeletas", "rango_nombre",
-                     "valor_aportado", "motivo", "anadido_por")
-    list_filter   = ("raffle", "origen")
+    list_display  = ("main_name", "raffle", "origen", "_externo", "papeletas",
+                     "rango_nombre", "valor_aportado", "motivo", "anadido_por")
+    list_filter   = ("raffle", "origen", "externo")
     search_fields = ("main_name", "main_char_id", "motivo")
+
+    @admin.display(description="De fuera", boolean=True)
+    def _externo(self, obj):
+        return obj.externo
 
 
 @admin.register(RafflePrize)

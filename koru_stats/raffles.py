@@ -398,3 +398,117 @@ def anadir_por_meritos(raffle, main_char_id, motivo, papeletas=1, usuario=None):
         },
     )
     return obj, creado
+
+
+# ---------------------------------------------------------------------------
+# Alta por NOMBRE, contrastada contra ESI
+#
+# Para cuando el CEO decide meter a alguien que no esta en la corp ni en el
+# Auth: se teclea el nombre y se resuelve contra ESI en ese momento.
+#
+# ★ LA TRAMPA, verificada en vivo el 2026-10-19: `POST /universe/ids/` NO da
+# error con un nombre que no existe — simplemente lo OMITE de la respuesta.
+#   ["SieteHierros", "Satanax Lefour", "NombreInventado"]
+#   -> {"characters":[{"id":152730148,...},{"id":94707383,...}]}
+# Si no se comprueba que el nombre pedido esta en la respuesta, un nombre mal
+# escrito entraria con el id de otro. De ahi el emparejado explicito.
+# ---------------------------------------------------------------------------
+
+ESI_IDS_URL = "https://esi.evetech.net/universe/ids/"
+ESI_COMPAT_DATE_FALLBACK = "2026-08-18"
+
+
+def _user_agent():
+    """El UA sale de tasks.py, pero PEREZOSAMENTE.
+
+    Importarlo arriba arrastraria celery entero solo por una cadena, y
+    abriria la puerta a un import circular el dia que tasks necesite este
+    modulo. El nucleo del sorteo se queda sin dependencias a proposito.
+    """
+    try:
+        from .tasks import ESI_HEADERS
+        return ESI_HEADERS.get("User-Agent", "koru_stats")
+    except Exception:
+        return "koru_stats"
+ESI_COMPAT_DATE = "2026-08-18"
+
+
+def resolver_nombre_esi(nombre):
+    """
+    (character_id, nombre_canonico) o (None, None).
+
+    Mira primero en la BD del Auth: no se le pregunta a ESI lo que ya sabemos.
+    """
+    from django.db import connection
+
+    nombre = (nombre or "").strip()
+    if not nombre:
+        return None, None
+
+    # 1. Local, gratis
+    with connection.cursor() as c:
+        c.execute(
+            "SELECT character_id, character_name FROM eveonline_evecharacter "
+            "WHERE LOWER(character_name) = LOWER(%s) LIMIT 1", [nombre])
+        fila = c.fetchone()
+    if fila:
+        return int(fila[0]), fila[1]
+
+    # 2. ESI. Una peticion, un nombre.
+    import requests as http_requests
+
+    try:
+        resp = http_requests.post(
+            ESI_IDS_URL, json=[nombre], timeout=20,
+            headers={"Content-Type": "application/json",
+                     "X-Compatibility-Date": ESI_COMPAT_DATE,
+                     "User-Agent": _user_agent()},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception:
+        return None, None
+
+    # El nombre inexistente NO viene de vuelta: hay que emparejar a mano
+    for ch in (data.get("characters") or []):
+        if (ch.get("name") or "").lower() == nombre.lower():
+            return int(ch["id"]), ch["name"]
+    return None, None
+
+
+def anadir_por_nombre(raffle, nombre, motivo, papeletas=1, usuario=None):
+    """
+    Mete a alguien tecleando su nombre, aunque no este en la corp ni en el Auth.
+
+    Devuelve (entrant, creado, externo). `externo` dice si el personaje no
+    existe en Alliance Auth: en pantalla lleva insignia propia, porque meter a
+    un ajeno es justo la decision que mas conviene que se vea.
+    """
+    from django.utils import timezone
+
+    from .models import Raffle, RaffleEntrant
+
+    if raffle.estado != Raffle.ESTADO_BORRADOR:
+        raise ValueError("El roster solo se toca en borrador")
+    if not motivo:
+        raise ValueError("Entrar a mano pide motivo")
+
+    char_id, canonico = resolver_nombre_esi(nombre)
+    if not char_id:
+        raise ValueError(f"ESI no reconoce a «{nombre}». Revisa como esta escrito.")
+
+    from django.db import connection
+    with connection.cursor() as c:
+        c.execute("SELECT 1 FROM eveonline_evecharacter WHERE character_id = %s", [char_id])
+        en_auth = bool(c.fetchone())
+
+    obj, creado = RaffleEntrant.objects.update_or_create(
+        raffle=raffle, main_char_id=char_id,
+        defaults={
+            "main_name": canonico, "origen": RaffleEntrant.ORIGEN_MANUAL,
+            "motivo": motivo[:200], "papeletas": max(1, int(papeletas)),
+            "externo": not en_auth, "verificado_esi": timezone.now(),
+            "anadido_por": usuario,
+        },
+    )
+    return obj, creado, (not en_auth)
