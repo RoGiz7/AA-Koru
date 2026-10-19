@@ -4388,6 +4388,7 @@ def _gift_gestion_ctx(request, campaign):
         "ranking": ranking,
         "filtro_estado": estado,
         "filtro_origen": origen,
+        "fondo": _fondo(campaign),
         "kpi": {
             "total": sum((a.valor_final or 0) for a in vivas),
             "aportantes": len(por_main),
@@ -4399,6 +4400,36 @@ def _gift_gestion_ctx(request, campaign):
         },
         "estados": GiftContribution.ESTADOS,
         "origenes": GiftContribution.ORIGENES,
+    }
+
+
+def _fondo(campaign):
+    """
+    El bote de la fiesta: lo aportado en ISK, lo comprometido y lo que queda.
+
+    ⚠ COMPRAR CON EL FONDO ES UN TRASPASO, NO VALOR NUEVO. Si el CEO compra una
+    Gila de 500 M con el bote y la mete como premio, ese ISK ya se contó cuando
+    entró como aportación. Sumarlo otra vez inflaría el «valor de la fiesta» y
+    cualquiera que eche la cuenta a mano nos pillaría.
+    """
+    from django.db.models import Sum
+
+    from .models import GiftContribution, RafflePrize
+
+    entrado = (GiftContribution.objects
+               .filter(campaign=campaign, origen=GiftContribution.ORIGEN_ISK)
+               .exclude(estado=GiftContribution.ESTADO_DESCARTADA)
+               .aggregate(t=Sum("valor_estimado"))["t"] or 0)
+
+    comprometido = (RafflePrize.objects
+                    .filter(raffle__campaign=campaign)
+                    .aggregate(t=Sum("isk_del_fondo"))["t"] or 0)
+
+    return {
+        "entrado": entrado,
+        "comprometido": comprometido,
+        "disponible": entrado - comprometido,
+        "pasado": comprometido > entrado,
     }
 
 
@@ -4532,7 +4563,7 @@ def gift_sorteos(request):
             "oculto": r.tipo == r.TIPO_ESPECIAL and not request.user.has_perm("koru_stats.gift_ceo"),
         })
     return render(request, "koru_stats/gift_sorteos.html",
-                  {"campaign": campaign, "sorteos": sorteos})
+                  {"campaign": campaign, "sorteos": sorteos, "fondo": _fondo(campaign)})
 
 
 @login_required
@@ -4603,6 +4634,7 @@ def gift_sorteo(request, pk):
         "libres": libres,
         "ok_verificado": ok_verificado,
         "detalles_verif": detalles_verif,
+        "fondo": _fondo(r.campaign),
     })
 
 
@@ -4668,9 +4700,12 @@ def gift_sorteo_accion(request, pk):
             if not desc:
                 raise ValueError("Un premio exclusivo necesita descripción")
             valor = request.POST.get("valor") or ""
+            importe = Decimal(valor.replace(".", "").replace(",", ".")) if valor else None
+            # Si lo compro con el bote de la fiesta, ese ISK sale del fondo
+            del_fondo = importe if (request.POST.get("del_fondo") and importe) else Decimal(0)
             RafflePrize.objects.create(
                 raffle=r, origen=RafflePrize.ORIGEN_EXCLUSIVO, descripcion=desc,
-                valor=(Decimal(valor.replace(".", "").replace(",", ".")) if valor else None),
+                valor=importe, isk_del_fondo=del_fondo,
                 orden=(r.prizes.count() + 1))
             messages.success(request, f"Premio añadido: {desc}")
 
@@ -4768,7 +4803,10 @@ def _premios_desde_pegado(r, request):
         RafflePrize.objects.create(
             raffle=r, origen=RafflePrize.ORIGEN_EXCLUSIVO,
             descripcion=(" + ".join(trozos))[:200] or f"Lote {i} (vacío)",
-            valor=Decimal(str(round(l["total"], 2))), orden=base + i)
+            valor=Decimal(str(round(l["total"], 2))),
+            # El mortero de ISK sale del bote, no de la nada
+            isk_del_fondo=Decimal(str(round(l["isk"], 2))),
+            orden=base + i)
 
     avisos = list(resumen["avisos"])
     if faltan:

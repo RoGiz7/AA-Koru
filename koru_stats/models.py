@@ -1498,6 +1498,21 @@ class RafflePrize(models.Model):
     donante_name = models.CharField(max_length=100, blank=True, default="")
     orden        = models.PositiveIntegerField(default=0, help_text="Orden en que se sortea")
 
+    # ★ EL FONDO. El ISK que aporta la gente NO es un premio: es un bote con el
+    # que el CEO compra naves, y con el que el armador nivela los lotes. Este
+    # campo dice CUANTO de este premio salio de ese bote.
+    #
+    # Es decimal y no un booleano a proposito: un lote lleva objetos MAS ISK de
+    # mortero, asi que la parte pagada con el fondo es parcial. Con un si/no
+    # habria que mentir en un sentido o en el otro.
+    #
+    # ⚠ Y es lo que evita CONTAR DOS VECES: comprar con el fondo es un TRASPASO,
+    # no valor nuevo. Ese ISK ya se conto cuando entro como aportacion, asi que
+    # no vuelve a sumar al total de la fiesta.
+    isk_del_fondo = models.DecimalField(
+        max_digits=22, decimal_places=2, default=0,
+        help_text="Cuanto de este premio salio del fondo (ISK aportado). 0 = lo puso alguien de su bolsillo")
+
     class Meta:
         verbose_name        = "Regalos — premio"
         verbose_name_plural = "Regalos — premios"

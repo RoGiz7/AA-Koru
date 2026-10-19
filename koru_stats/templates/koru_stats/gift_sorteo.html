@@ -132,6 +132,8 @@
 {% endif %}
 {% endif %}
 
+{% include "koru_stats/includes/fondo.html" %}
+
 <div class="row g-3">
 
     {# ---------------- Participantes ---------------- #}
@@ -293,6 +295,12 @@
                     <div class="col-sm-2">
                         <button class="btn btn-sm btn-outline-danger w-100">Añadir</button>
                     </div>
+                    <div class="col-12 form-check ms-2">
+                        <input class="form-check-input" type="checkbox" name="del_fondo" value="1" id="df">
+                        <label class="form-check-label small" for="df">
+                            Lo compré con el fondo de la fiesta (no suma al total: ese ISK ya se contó)
+                        </label>
+                    </div>
                 </form>
 
                 {# Regalos aportados que aun no estan en ninguna bolsa #}
@@ -351,6 +359,7 @@
                             {{ p.etiqueta }}
                             {% if p.origen == "exclusivo" %}<span class="badge bg-danger">exclusivo</span>{% endif %}
                             {% if p.donante_name %}<div class="small text-muted">de {{ p.donante_name }}</div>{% endif %}
+                            {% if p.isk_del_fondo %}<div class="small text-info">{{ p.isk_del_fondo|rkisk }} del fondo</div>{% endif %}
                         </td>
                         <td class="text-end">{{ p.valor|rkisk }}</td>
                         <td class="text-end" style="width:1%">

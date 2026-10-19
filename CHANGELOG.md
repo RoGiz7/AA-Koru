@@ -3,6 +3,30 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.12.0] — 2026-10-19
+
+### Añadido
+
+- **El fondo de la fiesta.** El ISK que aporta la gente no es un premio: es un bote
+  con el que el CEO compra naves y con el que el armador nivela los lotes. Ahora se
+  ve en las tres pantallas: **entrado / comprometido / disponible**, en rojo y con
+  aviso si se compromete más del que entró.
+- `RafflePrize.isk_del_fondo` (migración `0030`): cuánto de cada premio salió del
+  bote. Al crear un premio exclusivo hay casilla para marcarlo, y el ISK que el
+  armador usa como mortero se marca solo.
+
+### Por qué un decimal y no un sí/no
+
+Un lote lleva objetos **más** ISK de mortero, así que la parte pagada con el fondo
+es parcial. Con un booleano habría que mentir en un sentido o en el otro.
+
+### ⚠ Lo que esto evita
+
+**Comprar con el fondo es un traspaso, no valor nuevo.** Si el CEO compra una Gila
+de 500 M con el bote y la mete como premio, ese ISK ya se contó cuando entró como
+aportación: sumarlo otra vez inflaría el valor de la fiesta y cualquiera que eche
+la cuenta a mano nos pillaría.
+
 ## [0.11.0] — 2026-10-19
 
 Regalos, R3b completo: la pantalla de sorteos. **Con esto la fiesta se puede

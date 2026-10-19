@@ -421,7 +421,8 @@ class RaffleEntrantInline(admin.TabularInline):
 class RafflePrizeInline(admin.TabularInline):
     model = RafflePrize
     extra = 0
-    fields = ("orden", "origen", "descripcion", "contribution", "valor", "donante_name")
+    fields = ("orden", "origen", "descripcion", "contribution", "valor",
+              "isk_del_fondo", "donante_name")
     ordering = ("orden",)
 
 
@@ -506,7 +507,8 @@ class RaffleEntrantAdmin(admin.ModelAdmin):
 
 @admin.register(RafflePrize)
 class RafflePrizeAdmin(admin.ModelAdmin):
-    list_display  = ("etiqueta", "raffle", "origen", "valor", "donante_name", "orden")
+    list_display  = ("etiqueta", "raffle", "origen", "valor", "isk_del_fondo",
+                     "donante_name", "orden")
     list_filter   = ("raffle", "origen")
     search_fields = ("descripcion", "donante_name")
 
