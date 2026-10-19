@@ -3,6 +3,25 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.16.2] — 2026-10-19
+
+### Añadido
+
+- **Sello «ENTREGADO» sobre lo ya repartido.** El nombre y el premio que ya han
+  salido se apagan en la rueda —porción en gris, retrato o render sin color,
+  rótulo tachado— y encima del retrato se estampa un sello rojo. Lo repartido
+  **no se borra de la rueda**: borrarlo cambiaría el número de porciones a mitad
+  de gala y la rueda bailaría entre tirada y tirada; además la gente quiere
+  seguir viendo quién va cayendo. El sello se pone **al cantar el resultado**, no
+  al acabar la tirada, así que ya está puesto antes de que nadie pueda volver a
+  girar.
+
+### Corregido
+
+- **Dos premios con el mismo nombre** («Lote 1» repetido) hacían que la rueda
+  parara siempre en la misma porción, porque se buscaba con `indexOf`. Ahora se
+  busca la primera porción **que no esté ya repartida**.
+
 ## [0.16.1] — 2026-10-19
 
 ### Corregido

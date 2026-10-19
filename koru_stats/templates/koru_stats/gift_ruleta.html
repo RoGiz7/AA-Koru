@@ -112,6 +112,12 @@
 <div id="naves"></div>
 <canvas id="fuegos"></canvas>
 
+{# El filtro que apaga a los que ya salieron. Va en un svg suelto para que las
+   dos ruedas lo compartan: un solo id, referenciado desde las dos. #}
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <filter id="f-apagado"><feColorMatrix type="saturate" values="0"/></filter>
+</defs></svg>
+
 <header>
   {% if corp_id %}
   <img class="logo-corp" src="https://images.evetech.net/corporations/{{ corp_id }}/logo?size=64"
@@ -195,13 +201,19 @@
     let html = "";
     entradas.forEach((entrada, i) => {
       const txt = entrada.texto, img = entrada.img;
+      // ★ Lo ya repartido NO se borra de la rueda: se APAGA y se sella. Borrarlo
+      // cambiaria el numero de porciones a mitad de gala y la rueda bailaria
+      // entre tirada y tirada; ademas la gente quiere seguir viendo quien va
+      // cayendo. Apagar cuenta la historia sin mover nada de sitio.
+      const dado = !!entrada.dado;
       const a0 = i * paso, a1 = a0 + paso;
       const x0 = R * Math.cos(rad(a0)), y0 = R * Math.sin(rad(a0));
       const x1 = R * Math.cos(rad(a1)), y1 = R * Math.sin(rad(a1));
       const grande = paso > 180 ? 1 : 0;
       html += '<path d="M0,0 L' + x0.toFixed(2) + ',' + y0.toFixed(2) +
               ' A' + R + ',' + R + ' 0 ' + grande + ',1 ' + x1.toFixed(2) + ',' + y1.toFixed(2) + ' Z" ' +
-              'fill="' + COLORES[i % COLORES.length] + '" stroke="#0b1020" stroke-width="0.8"/>';
+              'fill="' + (dado ? "#141a2b" : COLORES[i % COLORES.length]) +
+              '" stroke="#0b1020" stroke-width="0.8"/>';
       // ★ TEXTO RADIAL, como las ruletas de verdad: corre a lo largo del radio
       // dentro de su propia porcion. Las de la mitad izquierda se voltean 180
       // grados, que es lo que evita que se lean del reves — y a diferencia de
@@ -220,25 +232,51 @@
       const lado = Math.max(12, Math.min(22, 130 / n));
       // El hueco util va del disco central (que tapa) al borde o a la imagen
       const dentro = 24;                                  // radio del disco del centro
-      const fuera  = img ? (rImg - lado / 2 - 5) : 96;
+      // Sin imagen el texto llega casi al borde, salvo que haya sello: entonces
+      // el sello ocupa ese sitio y el texto se retira igual que con imagen.
+      const fuera  = (img || dado) ? (rImg - lado / 2 - 5) : 96;
       const libre  = Math.max(18, fuera - dentro);
       const rTxt   = dentro + libre / 2;
       const corte  = Math.max(7, Math.floor(libre / (tam * 0.58)));
 
-      if (img) {
+      // El sello va donde la imagen, que es el elemento mas gordo de la
+      // porcion: es lo unico que se lee de un vistazo desde el fondo de la sala.
+      // ⚠ El ancho se FUERZA con textLength: "ENTREGADO" son nueve letras y en
+      // una rueda de doce porciones no cabe de ninguna manera a su tamaño
+      // natural. Mejor apretada y legible que recortada.
+      const sello = dado
+        ? '<circle r="' + (lado / 2 - .6).toFixed(2) + '" fill="none" ' +
+          'stroke="#e11d48" stroke-width="1.4" opacity=".95"/>' +
+          '<g transform="rotate(-18)">' +
+          '<rect x="' + (-lado * .43).toFixed(2) + '" y="' + (-lado * .16).toFixed(2) + '" ' +
+          'width="' + (lado * .86).toFixed(2) + '" height="' + (lado * .32).toFixed(2) +
+          '" rx="' + (lado * .06).toFixed(2) + '" fill="#e11d48" opacity=".92"/>' +
+          '<text text-anchor="middle" dominant-baseline="central" fill="#fff" ' +
+          'font-size="' + (lado * .22).toFixed(2) + '" font-weight="800" ' +
+          'textLength="' + (lado * .78).toFixed(2) + '" lengthAdjust="spacingAndGlyphs"' +
+          '>ENTREGADO</text></g>'
+        : "";
+
+      if (img || dado) {
         // La imagen va al borde, derecha (se deshace la rotacion) y recortada
         // en circulo; el texto ocupa lo de dentro sin tocarla.
         html += '<g transform="rotate(' + medio.toFixed(2) + ') translate(0,' + (-rImg) + ') rotate(' +
                 (-medio).toFixed(2) + ')">' +
-                '<image href="' + img + '" x="' + (-lado / 2) + '" y="' + (-lado / 2) +
-                '" width="' + lado + '" height="' + lado +
-                '" clip-path="circle(' + (lado / 2) + 'px)" preserveAspectRatio="xMidYMid slice"/>' +
+                (img
+                  ? '<image href="' + img + '" x="' + (-lado / 2) + '" y="' + (-lado / 2) +
+                    '" width="' + lado + '" height="' + lado +
+                    '" clip-path="circle(' + (lado / 2) + 'px)" preserveAspectRatio="xMidYMid slice"' +
+                    (dado ? ' filter="url(#f-apagado)" opacity=".45"' : "") + "/>"
+                  : "") +
+                sello +
                 "</g>";
       }
 
       html += '<text transform="rotate(' + medio.toFixed(2) + ') translate(0,' + (-rTxt) +
               ') rotate(' + (90 + volteo) + ')" ' +
-              'text-anchor="middle" dominant-baseline="middle" fill="#e8edff" ' +
+              'text-anchor="middle" dominant-baseline="middle" fill="' +
+              (dado ? "#64718f" : "#e8edff") + '"' +
+              (dado ? ' text-decoration="line-through"' : "") + " " +
               'font-size="' + tam.toFixed(1) + '" font-weight="700">' +
               escapar(recortar(txt, corte)) + "</text>";
     });
@@ -277,11 +315,12 @@
   // --- Rueda (o tira) de nombres -------------------------------------------
   const gNombres = $("giro-nombres");
   const nombresEnRueda = nombres.length <= MAX_PORCIONES && nombres.length > 1;
+  const entradasNombre = nombres.map((x) => ({
+    texto: x.nombre,
+    img: "https://images.evetech.net/characters/" + x.id + "/portrait?size=64",
+  }));
   if (nombresEnRueda) {
-    dibujar(gNombres, nombres.map((x) => ({
-      texto: x.nombre,
-      img: "https://images.evetech.net/characters/" + x.id + "/portrait?size=64",
-    })));
+    dibujar(gNombres, entradasNombre);
   } else {
     // Demasiada gente para una rueda legible: tira vertical
     $("wrap-nombres").style.display = "none";
@@ -335,13 +374,17 @@
     const t = tiradas[indice];
 
     // Las dos ruedas arrancan juntas; la de premios para antes.
+    // ⚠ Dos premios pueden llamarse igual ("Lote 1" dos veces). Se busca el
+    // primero que NO se haya repartido aun: con `indexOf` a secas la rueda
+    // pararia siempre en la misma porcion y la segunda saldria ya sellada.
+    const kPremio = entradasPremio.findIndex((e) => !e.dado && e.texto === t.premio);
+    const kNombre = nombres.findIndex((x, j) => x.id === t.ganador_id && !entradasNombre[j].dado);
+
     if (premiosEnRueda) {
-      const k = etiquetasPremio.indexOf(t.premio);
-      girarHasta(gPremios, etiquetasPremio.length, k < 0 ? 0 : k, 4, 3.0);
+      girarHasta(gPremios, entradasPremio.length, kPremio < 0 ? 0 : kPremio, 4, 3.0);
     }
     if (nombresEnRueda) {
-      const k = nombres.findIndex((x) => x.id === t.ganador_id);
-      girarHasta(gNombres, nombres.length, k < 0 ? 0 : k, 6, 4.6);
+      girarHasta(gNombres, nombres.length, kNombre < 0 ? 0 : kNombre, 6, 4.6);
     } else {
       girarTira(t.ganador);
     }
@@ -354,6 +397,12 @@
           : "")
         + escapar(t.premio)
         + (t.valor ? ' <span style="color:var(--suave);font-weight:400">' + formatearIsk(t.valor) + "</span>" : "");
+      // Sellado al cantarlo, no al acabar la tirada: asi el sello cae con el
+      // anuncio y ya esta puesto antes de que nadie pueda volver a girar.
+      if (premiosEnRueda && kPremio >= 0) {
+        entradasPremio[kPremio].dado = true;
+        dibujar(gPremios, entradasPremio);
+      }
     }, 3100);
 
     setTimeout(function () {
@@ -369,6 +418,11 @@
       void caja.offsetWidth;
       caja.classList.add("celebra");
       if (window.koruCelebrar) window.koruCelebrar();
+
+      if (nombresEnRueda && kNombre >= 0) {
+        entradasNombre[kNombre].dado = true;
+        dibujar(gNombres, entradasNombre);
+      }
 
       const chip = document.createElement("span");
       chip.textContent = t.ganador + " → " + t.premio;
