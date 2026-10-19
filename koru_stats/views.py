@@ -4855,6 +4855,9 @@ def gift_ruleta(request, pk):
         for e in r.entrants.all()
     ]
 
+    # El orden de presentacion sale de la semilla, no del que puso un humano:
+    # si la rueda de premios gira, que sea verdad que elige.
+    from . import raffles as motor
     tiradas = [
         {
             "orden": d.orden,
@@ -4865,16 +4868,26 @@ def gift_ruleta(request, pk):
             "manual": d.entrant.origen == "manual",
             "externo": d.entrant.externo,
         }
-        for d in r.draws.all().order_by("orden")
+        for d in motor.orden_de_revelado(r)
     ]
 
     # Se pasan las LISTAS, no un JSON ya serializado: `json_script` serializa
     # una vez y el navegador hace un solo JSON.parse. Pasar la cadena obligaria
     # a parsear dos veces, que funciona pero es el tipo de cosa que se rompe
     # cuando alguien la toca dentro de seis meses.
+    premios = [{"etiqueta": p.etiqueta, "valor": float(p.valor or 0)}
+               for p in r.prizes.all().order_by("orden", "id")]
+
+    # El logo de la cabecera sale del destinatario de la campaña: ya esta
+    # configurado ahi, asi que no hay un ajuste nuevo que nadie recuerde poner.
+    destino = r.campaign.recipients.filter(is_active=True).first()
+    corp_id = destino.entity_id if destino else None
+
     return render(request, "koru_stats/gift_ruleta.html", {
         "r": r,
         "campaign": r.campaign,
+        "corp_id": corp_id,
+        "premios": premios,
         "nombres": nombres,
         "tiradas": tiradas,
         "n_tiradas": len(tiradas),

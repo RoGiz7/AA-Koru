@@ -3,6 +3,40 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.14.0] — 2026-10-19
+
+### Cambiado — la ruleta ahora son DOS ruedas
+
+- **Ruedas circulares**: una de premios y otra de nombres, girando a la vez. La de
+  premios para antes; después para la de nombres y aparece el ganador.
+- **Regla de legibilidad, no manía**: rueda redonda hasta 24 porciones; si un
+  sorteo concreto lleva más gente, esa rueda cae sola a la tira vertical. Lo
+  decide el número, porque con 60 nombres los segmentos quedan de dos grados.
+- ★ **El orden de revelado sale de la semilla** (`orden_de_revelado`). Si la rueda
+  de premios gira, el público entiende que el premio también sale al azar: ahora
+  eso es **verdad** y además se reproduce, en vez de ser una animación bonita
+  sobre una lista decidida a dedo.
+
+### Añadido — ambiente de fiesta
+
+- Campo de **estrellas** de fondo y **fuegos artificiales** al revelar cada
+  ganador, hechos a mano con canvas: ni librerías ni imágenes que descargar,
+  porque esto corre en el portátil que mueve el proyector.
+- Logo de la corp en la cabecera, sacado del destinatario de la campaña — no hay
+  un ajuste nuevo que nadie recuerde poner.
+
+### Añadido — herramientas de prueba
+
+- `manage.py koru_regalos_demo`: monta un sorteo **«PRUEBAS — borrar»** con gente y
+  premios inventados para ensayar la ruleta sin tocar la fiesta. `--gente 30`
+  fuerza la tira, `--sortear` lo deja listo para proyectar y `--borrar` se lo lleva
+  entero sin dejar huérfanos. Repetirlo lo reemplaza, no lo acumula.
+- `manage.py koru_regalos_diagnostico`: **no escribe nada**. Lee los contratos y el
+  diario de cartera de verdad y enseña qué detectaría, qué marcaría y por qué.
+  Sirve para estrenar la rama de contratos sin esperar a que llegue un regalo, y
+  para ver qué tipos de movimiento hay realmente antes de fiarse de los filtros.
+  Con `--valorar` pide además los precios a Jita.
+
 ## [0.13.0] — 2026-10-19
 
 Regalos, R4: **la ruleta**. Pantalla de directo para proyectar en la fiesta.

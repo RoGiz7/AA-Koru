@@ -524,3 +524,25 @@ def anadir_por_nombre(raffle, nombre, motivo, papeletas=1, usuario=None):
         },
     )
     return obj, creado, (not en_auth)
+
+
+def orden_de_revelado(raffle):
+    """
+    En que orden se presentan los premios en la ruleta.
+
+    ★ Importa que esto salga de la SEMILLA y no del orden que puso un humano:
+    si la rueda de premios gira, el publico entiende que el premio tambien sale
+    al azar. Derivandolo de la semilla eso es VERDAD y ademas se reproduce, en
+    vez de ser una animacion bonita sobre una lista decidida a dedo.
+
+    Mismo metodo que el sorteo: sha256 de la semilla con un sufijo distinto,
+    para que el orden no filtre nada del reparto.
+    """
+    draws = list(raffle.draws.all().order_by("orden"))
+    if not raffle.semilla or len(draws) < 2:
+        return draws
+    marcados = sorted(
+        draws,
+        key=lambda d: hashlib.sha256(
+            f"{raffle.semilla}:revelado:{d.prize_id}".encode("utf-8")).hexdigest())
+    return marcados
