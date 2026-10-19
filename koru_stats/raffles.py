@@ -252,7 +252,11 @@ def preview_roster(campaign, spec=None):
     Devuelve los candidatos que saca el filtro, SIN escribir nada.
 
     spec (todo opcional):
-      valor_min        float  — valor aportado minimo
+      valor_min        float  — valor aportado minimo (incluido)
+      valor_max        float  — valor aportado maximo (EXCLUIDO), para tramos
+      rangos           [str]  — nombres de rango: la via limpia para una ruleta
+                                por rango, porque el tramo lo define el propio
+                                GiftTier y no hay que repetir las cifras aqui
       solo_aportantes  bool   — fuera quien no ha aportado nada
       states           [str]  — states de AA ("Miembros Rekium", ...)
       corps            [int]  — corporation_id de EVE
@@ -290,7 +294,9 @@ def preview_roster(campaign, spec=None):
 
     states = set(spec.get("states") or [])
     corps = {int(x) for x in (spec.get("corps") or [])}
+    rangos = set(spec.get("rangos") or [])
     valor_min = spec.get("valor_min")
+    valor_max = spec.get("valor_max")
     excluir = set()
     if spec.get("excluir_ganadores_de"):
         from .models import RaffleDraw
@@ -316,11 +322,17 @@ def preview_roster(campaign, spec=None):
             continue
         if valor_min is not None and valor < valor_min:
             continue
+        # max EXCLUIDO: asi los tramos encajan sin solaparse ni dejar hueco
+        if valor_max is not None and valor >= valor_max:
+            continue
 
         rango = None
         for t in tiers:
             if valor >= t.umbral_min:
                 rango = t
+        if rangos and (rango.nombre if rango else "") not in rangos:
+            continue
+
         out.append({
             "main_char_id": char_id, "main_name": nombre,
             "corporation_id": corp_id, "state": state,

@@ -3,6 +3,22 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.8.0] — 2026-10-19
+
+### Añadido
+
+- `preview_roster` admite **tramos**: `valor_max` (excluido, para que los tramos
+  encajen sin solaparse ni dejar hueco) y `rangos`, que filtra por el nombre del
+  rango calculado.
+
+### Por qué
+
+La estructura de la fiesta son **cuatro ruletas por rango de aportación**, no una
+con papeletas ponderadas: compites solo contra quien aportó lo mismo que tú. Con
+solo `valor_min`, quien aportó 10 B habría salido también en el roster del primer
+rango. Filtrar por `rangos` es la vía limpia, porque el tramo lo define el propio
+`GiftTier` y las cifras no se repiten en dos sitios.
+
 ## [0.7.1] — 2026-10-19
 
 ### Cambiado
