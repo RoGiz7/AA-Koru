@@ -3,6 +3,23 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.5.0] — 2026-10-19
+
+Regalos, R2: la pantalla del piloto.
+
+### Añadido
+
+- **Mi aportación** (`/koru/regalos/mi/`, permiso `gift_access`): lo aportado, cómo
+  se valoró cada ítem, el rango en el que cae y cuánto falta para el siguiente.
+  Página propia y no una pestaña de Mi Dashboard, por el mismo criterio que
+  «Mi Tax Lunar»: son preguntas distintas.
+- **Entrada de menú estacional**: solo existe mientras hay una campaña abierta.
+  Una fiesta son seis semanas al año; en enero desaparece sola.
+- **Tarjeta en Mi Dashboard** con lo aportado y el rango, visible solo durante la
+  campaña. Va como template tag (`{% koru_gift_card %}`) en vez de por contexto de
+  la vista, para no tocar `mi_dashboard` — y si algo fallara, la tarjeta no pinta
+  nada en vez de tumbar el dashboard.
+
 ## [0.4.1] — 2026-10-19
 
 ### Corregido

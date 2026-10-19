@@ -22,6 +22,7 @@ urlpatterns = [
     path("tickets/", views.tickets_dashboard, name="tickets_dashboard"),
     path("tickets/stats/", views.tickets_stats, name="tickets_stats"),
     path("tickets/<int:ticket_id>/", views.ticket_detail, name="ticket_detail"),
+    path("regalos/mi/", views.gift_mi, name="gift_mi"),
     path("export/resumen/", views.export_csv_summary, name="export_csv_summary"),
     path("export/pvp/",     views.export_csv_pvp,     name="export_csv_pvp"),
     path("export/ore/",     views.export_csv_ore,     name="export_csv_ore"),

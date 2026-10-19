@@ -139,6 +139,34 @@ def register_menu_corp_health():
     )
 
 
+class RegalosMenuHook(MenuItemHook):
+    """
+    Estacional: la entrada solo existe mientras haya una campana abierta.
+
+    Una fiesta son seis semanas al ano; una entrada fija que diez meses no
+    enseña nada es ruido en el menu. En enero desaparece sola, sin que nadie
+    tenga que acordarse de quitarla.
+    """
+    def render(self, request):
+        if not request.user.has_perm("koru_stats.gift_access"):
+            return ""
+        from .models import GiftCampaign
+        if not GiftCampaign.objects.filter(estado=GiftCampaign.ESTADO_ABIERTA).exists():
+            return ""
+        return super().render(request)
+
+
+@hooks.register("menu_item_hook")
+def register_menu_regalos():
+    return RegalosMenuHook(
+        "\U0001f381 Koru — Mi aportación",
+        "fas fa-gift fa-fw",
+        "koru_stats:gift_mi",
+        navactive=["koru_stats:gift_mi"],
+        order=1207,
+    )
+
+
 @hooks.register("url_hook")
 def register_urls():
     return UrlHook(urls, "koru_stats", r"^koru/")

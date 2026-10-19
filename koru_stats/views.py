@@ -4248,3 +4248,74 @@ def corp_moons_dashboard(request):
         "kpi_ociosas":  sum(1 for l in lunas if l["ociosa"] and l["coste_dia"]),
     }
     return render(request, "koru_stats/corp_moons_dashboard.html", context)
+
+
+# ---------------------------------------------------------------------------
+# Regalos de la fiesta — R2: "Mi aportacion"
+#
+# Pagina propia y no una pestana de Mi Dashboard, por el mismo criterio que
+# "Mi Tax Lunar": son preguntas distintas. Mi Dashboard responde "como voy este
+# mes"; esto responde "que he dado y en que rango caigo".
+#
+# Pero a diferencia del tax, esto es ESTACIONAL: sin campana abierta, ni la
+# entrada del menu ni la tarjeta del dashboard se pintan.
+# ---------------------------------------------------------------------------
+
+def _gift_mi_ctx(request):
+    """Contexto de la aportacion del usuario. None si no tiene main."""
+    from .models import GiftCampaign, GiftContribution
+
+    try:
+        main = request.user.profile.main_character
+    except Exception:
+        main = None
+    if not main:
+        return None
+
+    campaign = (GiftCampaign.objects
+                .filter(estado=GiftCampaign.ESTADO_ABIERTA)
+                .order_by("-ventana_desde").first())
+    if not campaign:
+        return {"main": main, "campaign": None}
+
+    aportaciones = list(
+        GiftContribution.objects
+        .filter(campaign=campaign, main_char_id=main.character_id)
+        .exclude(estado=GiftContribution.ESTADO_DESCARTADA)
+        .prefetch_related("items")
+        .order_by("-fecha")
+    )
+
+    total = sum((a.valor_final or 0) for a in aportaciones)
+    marcadas = sum(1 for a in aportaciones if a.estado == GiftContribution.ESTADO_REVISAR)
+
+    # Rango actual = el ultimo cuyo umbral se alcanza; siguiente = el primero que no
+    rango = siguiente = None
+    for t in campaign.tiers.order_by("orden"):
+        if total >= t.umbral_min:
+            rango = t
+        elif siguiente is None:
+            siguiente = t
+
+    falta = progreso = None
+    if siguiente:
+        falta = siguiente.umbral_min - total
+        base = rango.umbral_min if rango else 0
+        tramo = siguiente.umbral_min - base
+        progreso = int(min(100, max(0, (total - base) * 100 / tramo))) if tramo else 0
+
+    return {
+        "main": main, "campaign": campaign,
+        "aportaciones": aportaciones, "num": len(aportaciones),
+        "total": total, "marcadas": marcadas,
+        "rango": rango, "siguiente": siguiente, "falta": falta, "progreso": progreso,
+        "destinos": list(campaign.recipients.filter(is_active=True)),
+    }
+
+
+@login_required
+@permission_required("koru_stats.gift_access")
+def gift_mi(request):
+    g = _gift_mi_ctx(request)
+    return render(request, "koru_stats/gift_mi.html",
+                  {"g": g, "sin_main": g is None})

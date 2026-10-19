@@ -1,0 +1,192 @@
+{% extends 'allianceauth/base-bs5.html' %}
+{% load i18n koru_stats_tags %}
+
+{% block title %}Mi aportación — Rekium Stats{% endblock %}
+
+{% block page_title %}Mi aportación{% endblock %}
+
+{% block extra_css %}
+<style>
+.stat-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: #6c757d; }
+.stat-big   { font-size: 1.8rem; font-weight: 700; line-height: 1.1; }
+.gift-card  { border-left: 4px solid #e11d48; }
+.tier-bar   { height: 8px; border-radius: 4px; background: rgba(255,255,255,.1); overflow: hidden; }
+.tier-bar > div { height: 100%; background: #e11d48; transition: width .4s ease; }
+.marcado    { color: #f59e0b; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+
+{% if sin_main %}
+    <div class="row justify-content-center mt-5">
+        <div class="col-md-6 text-center">
+            <div class="aa-callout aa-callout-warning">
+                <i class="fas fa-user-slash fa-3x mb-3 d-block opacity-50"></i>
+                <h5>No tienes un personaje principal configurado</h5>
+                <p class="mb-0">Ve a tu perfil en Alliance Auth y establece tu personaje principal.</p>
+            </div>
+        </div>
+    </div>
+
+{% elif not g.campaign %}
+    <div class="row justify-content-center mt-5">
+        <div class="col-md-6 text-center">
+            <div class="aa-callout aa-callout-info">
+                <div style="font-size:2.5rem">🎁</div>
+                <h5 class="mt-2">No hay ninguna fiesta en marcha</h5>
+                <p class="mb-0">Cuando se abra la próxima, esta página se llena sola.</p>
+            </div>
+        </div>
+    </div>
+
+{% else %}
+
+    {# Cabecera: cuanto llevas y en que rango caes #}
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card gift-card">
+                <div class="card-body d-flex align-items-center gap-4 flex-wrap">
+                    <div style="font-size:2.5rem;line-height:1">🎁</div>
+                    <div>
+                        <div class="stat-label">{{ g.campaign.nombre }} — aportado</div>
+                        <div class="stat-big">{{ g.total|rkisk }}</div>
+                    </div>
+                    {% if g.rango %}
+                    <div>
+                        <div class="stat-label">Tu rango</div>
+                        <div class="stat-big">{{ g.rango.nombre }}</div>
+                    </div>
+                    {% endif %}
+                    <div class="flex-grow-1" style="min-width:240px">
+                        {% if g.siguiente %}
+                            <div class="stat-label">Siguiente rango: {{ g.siguiente.nombre }}</div>
+                            <div class="tier-bar my-1"><div style="width:{{ g.progreso }}%"></div></div>
+                            <div class="small text-muted">Te faltan {{ g.falta|rkisk }}</div>
+                        {% elif g.rango %}
+                            <div class="small text-muted">Estás en el rango más alto.</div>
+                        {% else %}
+                            <div class="small text-muted">Los rangos todavía no están configurados.</div>
+                        {% endif %}
+                    </div>
+                    <a href="{% url 'koru_stats:mi_dashboard' %}" class="btn btn-sm btn-outline-info">
+                        <i class="fas fa-chart-bar me-1"></i>Mi Dashboard
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# Donde aportar #}
+    {% if g.destinos %}
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="aa-callout aa-callout-info">
+                <strong>Dónde aportar:</strong>
+                {% for d in g.destinos %}
+                    <span class="badge bg-secondary">{{ d.entity_name|default:d.entity_id }}</span>
+                    {% if d.acepta_contratos %}<span class="small">contrato de ítems</span>{% endif %}
+                    {% if d.acepta_isk %}<span class="small">· donación de ISK</span>{% endif %}
+                    {% if d.expected_location_name %}<span class="small text-muted">· en {{ d.expected_location_name }}</span>{% endif %}
+                {% endfor %}
+                <div class="small text-muted mt-1">
+                    La ventana va del {{ g.campaign.ventana_desde|date:"d/m/Y" }} al {{ g.campaign.ventana_hasta|date:"d/m/Y" }}.
+                    Se detecta solo: no hace falta avisar a nadie.
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {# Lo aportado #}
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header"><strong>Lo que has aportado</strong></div>
+                <div class="card-body p-0">
+                    {% if g.aportaciones %}
+                    <table class="table table-sm table-hover mb-0 align-middle">
+                        <thead>
+                            <tr>
+                                <th>Fecha</th><th>Qué</th><th class="text-end">Valor</th>
+                                <th>Estado</th><th>Nota</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        {% for a in g.aportaciones %}
+                            <tr>
+                                <td class="text-muted small">{{ a.fecha|date:"d/m/Y H:i" }}</td>
+                                <td>
+                                    {% if a.origen == "isk" %}
+                                        <i class="fas fa-coins text-warning me-1"></i>Donación de ISK
+                                        {% if a.reason %}<span class="text-muted small">«{{ a.reason }}»</span>{% endif %}
+                                    {% else %}
+                                        <i class="fas fa-box-open text-info me-1"></i>Contrato
+                                        <span class="text-muted small">#{{ a.contract_id }}</span>
+                                    {% endif %}
+                                    {% if a.donante_name and a.donante_name != g.main.character_name %}
+                                        <span class="badge bg-dark">vía {{ a.donante_name }}</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end">
+                                    <strong>{{ a.valor_final|rkisk }}</strong>
+                                    {% if a.valor_ajustado is not None %}
+                                        <div class="small text-muted">ajustado por un director</div>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if a.estado == "validada" %}
+                                        <span class="badge bg-success">Validada</span>
+                                    {% elif a.estado == "revisar" %}
+                                        <span class="badge bg-warning text-dark">Por revisar</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">Detectada</span>
+                                    {% endif %}
+                                </td>
+                                <td class="small text-muted">{{ a.aviso }}</td>
+                            </tr>
+                            {% for i in a.items.all %}
+                            <tr>
+                                <td></td>
+                                <td class="small ps-4">
+                                    {{ i.type_name }} <span class="text-muted">×{{ i.quantity|rknum }}</span>
+                                    {% if i.es_bpc %}<span class="badge bg-dark">BPC</span>{% endif %}
+                                </td>
+                                <td class="text-end small">
+                                    {% if i.requiere_valoracion %}
+                                        <span class="marcado">sin precio fiable</span>
+                                    {% else %}
+                                        {{ i.valor_linea|rkisk }}
+                                    {% endif %}
+                                </td>
+                                <td colspan="2" class="small text-muted">
+                                    {% if i.requiere_valoracion %}
+                                        lo valora un director ({{ i.motivo }})
+                                    {% else %}
+                                        {{ i.precio_fuente }}
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <div class="p-4 text-center text-muted">
+                        Todavía no se te ha detectado ninguna aportación.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="small text-muted mt-2">
+                El valor sale del mercado de Jita en el momento en que se detectó la aportación, y una vez
+                validada ya no cambia. Lo que el mercado no sostiene —un BPC, algo sin órdenes— lo valora
+                un director a mano.
+            </div>
+        </div>
+    </div>
+
+{% endif %}
+</div>
+{% endblock %}

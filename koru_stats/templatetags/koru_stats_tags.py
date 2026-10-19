@@ -41,6 +41,29 @@ def rkm3(value):
         return value
 
 
+@register.inclusion_tag("koru_stats/includes/gift_card.html", takes_context=True)
+def koru_gift_card(context):
+    """
+    Tarjeta estacional de la fiesta para Mi Dashboard.
+
+    Va como tag y no por contexto de la vista a proposito: asi `mi_dashboard`
+    no se toca (son 4.000 lineas y un reemplazo por texto ahi es donde se
+    rompen las cosas), y la tarjeta se puede colgar de cualquier plantilla con
+    una sola linea. Si no hay campana abierta no pinta nada.
+    """
+    from ..views import _gift_mi_ctx
+
+    request = context.get("request")
+    if request is None or not request.user.is_authenticated:
+        return {"g": None}
+    if not request.user.has_perm("koru_stats.gift_access"):
+        return {"g": None}
+    try:
+        return {"g": _gift_mi_ctx(request)}
+    except Exception:      # una tarjeta nunca debe tumbar el dashboard
+        return {"g": None}
+
+
 @register.filter
 def dict_key(d, key):
     """Permite acceder a un dict por clave en templates Django."""
