@@ -13,6 +13,7 @@ from .models import (
     GiftCampaign, GiftRecipient, GiftTier,
     GiftContribution, GiftContributionItem,
     Raffle, RaffleEntrant, RafflePrize, RaffleDraw, RaffleRosterFilter,
+    GiftDelivery,
 )
 
 
@@ -535,3 +536,16 @@ class RaffleDrawAdmin(admin.ModelAdmin):
 class RaffleRosterFilterAdmin(admin.ModelAdmin):
     list_display  = ("nombre", "notes", "created_at")
     search_fields = ("nombre",)
+
+
+@admin.register(GiftDelivery)
+class GiftDeliveryAdmin(admin.ModelAdmin):
+    """Para mirar y para arreglar un caso raro. Lo normal se hace en la pantalla."""
+    list_display  = ("draw", "estado", "contract_id", "emparejado_por",
+                     "aceptado_en", "cerrado_en")
+    list_filter   = ("estado", "emparejado_por", "draw__raffle")
+    search_fields = ("draw__entrant__main_name", "draw__prize__descripcion", "nota")
+    readonly_fields = ("draw", "detectado_en", "aceptado_en", "updated_at")
+
+    def has_add_permission(self, request):
+        return False      # La ficha nace con la tirada, no se escribe a mano

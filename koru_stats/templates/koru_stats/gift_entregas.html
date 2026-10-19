@@ -1,0 +1,212 @@
+{% extends 'allianceauth/base-bs5.html' %}
+{% load i18n koru_stats_tags %}
+
+{% block title %}Entregas — Rekium Stats{% endblock %}
+{% block page_title %}Entregas{% endblock %}
+
+{% block extra_css %}
+<style>
+.stat-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: #6c757d; }
+.stat-big   { font-size: 1.5rem; font-weight: 700; line-height: 1.1; }
+.fila-entrega td { vertical-align: middle; }
+.retrato-mini { width: 28px; height: 28px; border-radius: 50%; margin-right: .4rem; }
+.titulo-copia { font-family: monospace; font-size: .78rem; background: rgba(127,127,127,.15);
+                padding: .1rem .4rem; border-radius: 5px; cursor: pointer; }
+.nota-entrega { font-size: .76rem; color: #6c757d; white-space: pre-line; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+
+{% if sin_campana %}
+    <div class="row justify-content-center mt-5">
+        <div class="col-md-6 text-center">
+            <div class="aa-callout aa-callout-info">
+                <div style="font-size:2.5rem">📦</div>
+                <h5 class="mt-2">No hay ninguna campaña</h5>
+                <p class="mb-0">Créala desde el admin: <em>Koru Stats → Regalos — campañas</em>.</p>
+            </div>
+        </div>
+    </div>
+{% else %}
+
+<div class="d-flex align-items-center flex-wrap gap-2 mb-3">
+    <div>
+        <div class="stat-label">{{ campaign.nombre }}</div>
+        <h4 class="mb-0">Entregas</h4>
+    </div>
+    <a href="?sincronizar=1" class="btn btn-sm btn-primary ms-auto">
+        <i class="fas fa-rotate me-1"></i>Mirar los contratos ahora
+    </a>
+</div>
+
+<div class="row g-2 mb-3">
+    <div class="col-6 col-md-3">
+        <div class="card"><div class="card-body py-2">
+            <div class="stat-label">Por mandar</div>
+            <div class="stat-big">{{ resumen.pendiente }}</div>
+        </div></div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card"><div class="card-body py-2">
+            <div class="stat-label">Contrato puesto</div>
+            <div class="stat-big">{{ resumen.puesto }}</div>
+        </div></div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card"><div class="card-body py-2">
+            <div class="stat-label">Aceptado, por cerrar</div>
+            <div class="stat-big">{{ resumen.aceptado }}</div>
+        </div></div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card"><div class="card-body py-2">
+            <div class="stat-label">Entregado</div>
+            <div class="stat-big">{{ resumen.hecho }} <small class="text-muted">de {{ resumen.total }}</small></div>
+        </div></div>
+    </div>
+</div>
+
+<div class="progress mb-3" style="height:8px">
+    <div class="progress-bar bg-success" style="width:{{ resumen.pct }}%"></div>
+</div>
+
+{% comment %}
+★ El aviso del título va arriba del todo y no en la ayuda: es LO que hace que
+esta pantalla funcione sola. Si el director escribe `Yoiul #<id>` al poner el
+contrato, el emparejamiento es exacto y aquí no hay que tocar nada.
+{% endcomment %}
+<div class="aa-callout aa-callout-info py-2 mb-3">
+    <small>
+        Al poner el contrato, copia el título que sale en cada fila
+        (<span class="titulo-copia">Yoiul #…</span>). Con eso el premio se empareja solo.
+        Sin él se intenta por descarte, y si hay dos premios para la misma persona
+        se queda esperando a que lo digas tú: nunca se cierra a ciegas.
+    </small>
+</div>
+
+{% if sueltos %}
+<div class="aa-callout aa-callout-warning py-2 mb-3">
+    <strong>{{ sueltos|length }} contrato{{ sueltos|length|pluralize }} sin emparejar.</strong>
+    Van a gente del sorteo pero no se sabe a qué premio. Apunta el id a mano en la fila que toque:
+    <div class="mt-1">
+        {% for c in sueltos %}
+            <span class="titulo-copia me-1">{{ c.contract_id }}</span>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+{% if filas %}
+<div class="card">
+<div class="table-responsive">
+<table class="table table-sm table-hover mb-0 align-middle">
+    <thead>
+        <tr>
+            <th>Sorteo</th>
+            <th>Premio</th>
+            <th>Para</th>
+            <th>Estado</th>
+            <th>Título del contrato</th>
+            <th class="text-end">Qué hacer</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for f in filas %}
+        <tr class="fila-entrega">
+            <td class="text-muted small">{{ f.draw.raffle.nombre }}</td>
+            <td>
+                {{ f.draw.prize.etiqueta }}
+                {% if f.draw.prize.valor %}<span class="text-muted small">{{ f.draw.prize.valor|rkisk }}</span>{% endif %}
+            </td>
+            <td>
+                <img class="retrato-mini" alt=""
+                     src="https://images.evetech.net/characters/{{ f.draw.entrant.main_char_id }}/portrait?size=32"
+                     onerror="this.style.display='none'">
+                {{ f.draw.entrant.main_name }}
+            </td>
+            <td>
+                {% if f.estado == 'asignado' %}
+                    <span class="badge bg-secondary">Por mandar</span>
+                {% elif f.estado == 'detectado' %}
+                    <span class="badge bg-info text-dark">Contrato puesto</span>
+                {% elif f.estado == 'aceptado' %}
+                    <span class="badge bg-warning text-dark">Aceptado</span>
+                {% elif f.estado == 'cerrado' %}
+                    <span class="badge bg-success">Cerrado</span>
+                {% else %}
+                    <span class="badge bg-success">A mano</span>
+                {% endif %}
+                {% if f.contract_id %}
+                    <div class="nota-entrega">contrato {{ f.contract_id }} · {{ f.emparejado_por }}</div>
+                {% endif %}
+                {% if f.nota %}<div class="nota-entrega">{{ f.nota }}</div>{% endif %}
+            </td>
+            <td><span class="titulo-copia">{{ f.titulo_sugerido }}</span></td>
+            <td class="text-end">
+                {% if f.estado == 'asignado' %}
+                    <form method="post" action="{% url 'koru_stats:gift_entrega_accion' f.pk %}"
+                          class="d-inline-flex gap-1">
+                        {% csrf_token %}
+                        <input type="hidden" name="accion" value="contrato">
+                        <input type="text" name="contract_id" class="form-control form-control-sm"
+                               style="width:9rem" placeholder="id de contrato">
+                        <button class="btn btn-sm btn-outline-primary">Apuntar</button>
+                    </form>
+                    <form method="post" action="{% url 'koru_stats:gift_entrega_accion' f.pk %}"
+                          class="d-inline-flex gap-1 mt-1">
+                        {% csrf_token %}
+                        <input type="hidden" name="accion" value="a_mano">
+                        <input type="text" name="nota" class="form-control form-control-sm"
+                               style="width:11rem" placeholder="cómo se entregó">
+                        <button class="btn btn-sm btn-outline-success">A mano</button>
+                    </form>
+                {% elif f.estado == 'aceptado' %}
+                    <form method="post" action="{% url 'koru_stats:gift_entrega_accion' f.pk %}" class="d-inline">
+                        {% csrf_token %}
+                        <input type="hidden" name="accion" value="cerrar">
+                        <button class="btn btn-sm btn-success">Cerrar</button>
+                    </form>
+                {% elif f.estado == 'detectado' %}
+                    <span class="text-muted small">esperando a que lo acepte</span>
+                {% endif %}
+                {% if f.estado != 'asignado' %}
+                    <form method="post" action="{% url 'koru_stats:gift_entrega_accion' f.pk %}"
+                          class="d-inline-flex gap-1 mt-1">
+                        {% csrf_token %}
+                        <input type="hidden" name="accion" value="reabrir">
+                        <input type="text" name="motivo" class="form-control form-control-sm"
+                               style="width:9rem" placeholder="motivo">
+                        <button class="btn btn-sm btn-outline-danger">Reabrir</button>
+                    </form>
+                {% endif %}
+            </td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+</div>
+</div>
+{% else %}
+<div class="aa-callout aa-callout-info">
+    Todavía no hay nada sorteado en esta campaña, así que no hay nada que entregar.
+</div>
+{% endif %}
+
+{% endif %}
+</div>
+
+<script>
+// Un clic copia el título: en la práctica el director está con EVE delante y
+// alt-tabeando, y escribirlo a mano es justo donde se cuela la errata.
+document.querySelectorAll(".titulo-copia").forEach(function (el) {
+    el.addEventListener("click", function () {
+        navigator.clipboard.writeText(el.textContent.trim());
+        const antes = el.textContent;
+        el.textContent = "copiado";
+        setTimeout(function () { el.textContent = antes; }, 900);
+    });
+});
+</script>
+{% endblock %}

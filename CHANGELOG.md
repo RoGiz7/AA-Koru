@@ -3,6 +3,37 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.18.0] — 2026-10-19
+
+### Añadido
+
+- **R5: entrega y seguimiento.** Pantalla nueva *Koru → Entregas* con toda la
+  campaña en una sola tabla —no una por sorteo, porque la pregunta de verdad es
+  «¿qué me queda por mandar?»— y la máquina de estados
+  `por mandar → contrato puesto → aceptado → cerrado`, más `entregado a mano`
+  para lo que no pasa por un contrato (ISK, un trade, algo dado en fleet).
+  - **El título del contrato es la clave del invento.** Emparejar por contenido
+    es imposible: un premio puede ser un lote suelto, ISK o una nave con su
+    fitting. Lo que sí es fiable es que el director ponga `Yoiul #<id>` en el
+    título; la pantalla lo da hecho y se copia con un clic. Si lo pone, el
+    emparejamiento es exacto; si no, se intenta por descarte **y solo cuando no
+    hay ninguna duda** (un premio pendiente y un contrato libre). Con dos y dos
+    se espera a que lo diga un humano: decirle a alguien que ya cobró cuando no
+    ha cobrado es el error que no se puede cometer aquí.
+  - Se miran las **dos** tablas de corptools (contratos de la corp y de los
+    personajes auditados), deduplicando por `contract_id`: el mismo contrato
+    sale en las dos cuando el director lo manda desde su personaje y encima está
+    auditado.
+  - Se acepta el contrato puesto a **cualquier alt** del ganador: el premio se
+    manda muchas veces al alt que está en la estación, y mirando solo el main
+    media gala quedaría como no entregada.
+  - Un contrato **rechazado o caducado devuelve el premio a pendientes** con
+    nota. Sin eso se quedaría como «puesto» para siempre.
+  - `GiftDelivery` va **aparte** de `RaffleDraw` a propósito: la tirada es un
+    hecho sellado y no se toca nunca; la entrega cambia, se corrige y se reabre.
+  - Tarea `sync_gift_deliveries`, repetible y barata: no toca nada cerrado ni
+    entregado a mano.
+
 ## [0.17.0] — 2026-10-19
 
 ### Añadido

@@ -1558,3 +1558,84 @@ class RaffleDraw(models.Model):
 
     def __str__(self):
         return f"{self.entrant.main_name} ← {self.prize.etiqueta}"
+
+
+class GiftDelivery(models.Model):
+    """
+    La ENTREGA de un premio: lo que pasa despues de que la ruleta pare (R5).
+
+    Va aparte de `RaffleDraw` a proposito. La tirada es un hecho sellado —
+    semilla, hash, orden— y no se toca nunca mas; la entrega es lo contrario:
+    cambia de estado, se corrige, se reabre. Mezclarlas acabaria con alguien
+    editando una fila que presume de ser reproducible.
+
+    LA MAQUINA DE ESTADOS
+
+        asignado ──> detectado ──> aceptado ──> cerrado
+            └──────────> a_mano ───────────────┘
+
+    Los dos pasos del medio NO los teclea nadie: salen de los contratos que ya
+    sincroniza corptools. `a_mano` es la via de escape para lo que no pasa por
+    un contrato (ISK transferido, algo dado en una fleet, un trade directo), y
+    por eso pide motivo.
+
+    ★ EL TITULO DEL CONTRATO ES LA CLAVE. Emparejar por contenido es imposible:
+    un premio puede ser un lote de cosas sueltas, o ISK, o una nave con fitting.
+    Lo que si es fiable es pedirle al director que ponga `Yoiul #<id>` en el
+    titulo del contrato. Si lo pone, el emparejamiento es exacto; si no, se
+    propone por descarte y lo confirma un humano. Nunca se cierra solo a ciegas.
+    """
+    ESTADO_ASIGNADO  = "asignado"
+    ESTADO_DETECTADO = "detectado"
+    ESTADO_ACEPTADO  = "aceptado"
+    ESTADO_CERRADO   = "cerrado"
+    ESTADO_A_MANO    = "a_mano"
+    ESTADOS = [
+        (ESTADO_ASIGNADO,  "Pendiente de enviar"),
+        (ESTADO_DETECTADO, "Contrato puesto"),
+        (ESTADO_ACEPTADO,  "Contrato aceptado"),
+        (ESTADO_CERRADO,   "Cerrado"),
+        (ESTADO_A_MANO,    "Entregado a mano"),
+    ]
+
+    draw = models.OneToOneField(RaffleDraw, on_delete=models.CASCADE, related_name="delivery")
+    estado = models.CharField(max_length=12, choices=ESTADOS, default=ESTADO_ASIGNADO, db_index=True)
+
+    # El contrato que lleva el premio, cuando lo hay
+    contract_id   = models.BigIntegerField(null=True, blank=True, db_index=True)
+    contract_para = models.BigIntegerField(
+        null=True, blank=True,
+        help_text="A que personaje se puso el contrato: puede ser un alt del ganador")
+    # ⚠ Se guarda COMO SE EMPAREJO, no solo que se emparejo: cuando dentro de un
+    # año alguien pregunte por que este premio consta entregado, la respuesta no
+    # puede ser "lo dijo el programa".
+    emparejado_por = models.CharField(
+        max_length=16, blank=True, default="",
+        help_text="titulo | descarte | manual")
+
+    detectado_en = models.DateTimeField(null=True, blank=True)
+    aceptado_en  = models.DateTimeField(null=True, blank=True)
+    cerrado_en   = models.DateTimeField(null=True, blank=True)
+
+    nota = models.TextField(blank=True, default="")
+    por_usuario = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name        = "Regalos — entrega"
+        verbose_name_plural = "Regalos — entregas"
+        ordering            = ["draw"]
+
+    def __str__(self):
+        return f"{self.draw} [{self.get_estado_display()}]"
+
+    @property
+    def titulo_sugerido(self):
+        """Lo que el director debe escribir en el titulo del contrato."""
+        return f"Yoiul #{self.draw_id}"
+
+    @property
+    def entregado(self):
+        return self.estado in (self.ESTADO_CERRADO, self.ESTADO_A_MANO)

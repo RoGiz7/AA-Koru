@@ -4842,6 +4842,110 @@ def _premios_desde_pegado(r, request):
 
 @login_required
 @permission_required("koru_stats.gift_manage")
+def gift_entregas(request):
+    """
+    Que premio ha llegado a su dueño y cual no (R5).
+
+    Una sola pantalla con TODA la campaña, no una por sorteo: la pregunta que se
+    hace de verdad es «¿que me queda por mandar?», y esa no entiende de sorteos.
+    """
+    from . import entregas as motor
+    from .models import GiftDelivery, Raffle
+
+    campaign = _campana_actual()
+    if not campaign:
+        return render(request, "koru_stats/gift_entregas.html", {"sin_campana": True})
+
+    sueltos = []
+    if request.GET.get("sincronizar"):
+        from django.contrib import messages
+        res = motor.sincronizar(campaign)
+        sueltos = res["sueltos"]
+        messages.info(
+            request,
+            f"{res['detectadas']} contratos emparejados, {res['aceptadas']} aceptados"
+            + (f", {res['caidas']} que se cayeron" if res["caidas"] else "")
+            + (f". Quedan {len(sueltos)} contratos sin emparejar" if sueltos else "."))
+
+    # Crear las fichas que falten, para que un sorteo recien hecho aparezca ya
+    for r in Raffle.objects.filter(campaign=campaign, estado=Raffle.ESTADO_SORTEADO):
+        motor.asegurar(r)
+
+    filas = list(
+        GiftDelivery.objects
+        .filter(draw__raffle__campaign=campaign)
+        .select_related("draw", "draw__raffle", "draw__entrant", "draw__prize", "por_usuario")
+        .order_by("draw__raffle__orden", "draw__orden")
+    )
+    # Un sorteo especial no se le enseña a quien no lo lleva
+    if not request.user.has_perm("koru_stats.gift_ceo"):
+        filas = [f for f in filas if f.draw.raffle.tipo != Raffle.TIPO_ESPECIAL]
+
+    E = GiftDelivery
+    resumen = {
+        "total":     len(filas),
+        "pendiente": sum(1 for f in filas if f.estado == E.ESTADO_ASIGNADO),
+        "puesto":    sum(1 for f in filas if f.estado == E.ESTADO_DETECTADO),
+        "aceptado":  sum(1 for f in filas if f.estado == E.ESTADO_ACEPTADO),
+        "hecho":     sum(1 for f in filas if f.entregado),
+    }
+    resumen["pct"] = round(resumen["hecho"] * 100 / resumen["total"]) if resumen["total"] else 0
+
+    return render(request, "koru_stats/gift_entregas.html", {
+        "campaign": campaign,
+        "filas": filas,
+        "resumen": resumen,
+        "sueltos": sueltos,
+        "fondo": _fondo(campaign),
+    })
+
+
+@login_required
+@permission_required("koru_stats.gift_manage")
+def gift_entrega_accion(request, pk):
+    from django.contrib import messages
+    from django.shortcuts import redirect
+    from django.urls import reverse
+
+    from . import entregas as motor
+    from .models import GiftDelivery, Raffle
+
+    destino = reverse("koru_stats:gift_entregas")
+    entrega = (GiftDelivery.objects
+               .select_related("draw__raffle", "draw__prize", "draw__entrant")
+               .filter(pk=pk).first())
+    if not entrega or request.method != "POST":
+        return redirect(destino)
+
+    if (entrega.draw.raffle.tipo == Raffle.TIPO_ESPECIAL
+            and not request.user.has_perm("koru_stats.gift_ceo")):
+        from django.core.exceptions import PermissionDenied
+        raise PermissionDenied("Los sorteos especiales los lleva el CEO")
+
+    accion = request.POST.get("accion") or ""
+    try:
+        if accion == "a_mano":
+            motor.marcar_a_mano(entrega, request.POST.get("nota"), usuario=request.user)
+            messages.success(request, f"Entregado a mano: {entrega.draw.prize.etiqueta}.")
+        elif accion == "cerrar":
+            motor.cerrar(entrega, usuario=request.user)
+            messages.success(request, f"Cerrado: {entrega.draw.prize.etiqueta}.")
+        elif accion == "contrato":
+            motor.asignar_contrato(entrega, request.POST.get("contract_id"), usuario=request.user)
+            messages.success(request, f"Contrato apuntado a {entrega.draw.prize.etiqueta}.")
+        elif accion == "reabrir":
+            motor.reabrir(entrega, request.POST.get("motivo"), usuario=request.user)
+            messages.info(request, f"Reabierta: {entrega.draw.prize.etiqueta}.")
+        else:
+            messages.warning(request, "No sé qué hacer con eso.")
+    except ValueError as e:
+        messages.error(request, str(e))
+
+    return redirect(destino)
+
+
+@login_required
+@permission_required("koru_stats.gift_manage")
 def gift_ruleta(request, pk):
     from .models import Raffle
 

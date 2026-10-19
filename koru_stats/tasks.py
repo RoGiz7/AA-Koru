@@ -3063,6 +3063,30 @@ def _campana_activa(campaign_id=None):
 
 
 @shared_task
+def sync_gift_deliveries(campaign_id=None):
+    """
+    Mira los contratos y mueve las entregas de los premios ya sorteados (R5).
+
+    Barata y repetible: no toca nada cerrado ni entregado a mano, asi que se
+    puede dejar corriendo cada pocas horas sin miedo durante toda la campaña.
+    """
+    from . import entregas as motor
+
+    campaign = _campana_activa(campaign_id)
+    if not campaign:
+        logger.warning("koru sync_gift_deliveries: no hay campana abierta, no hago nada")
+        return 0
+
+    res = motor.sincronizar(campaign)
+    logger.info(
+        "koru sync_gift_deliveries [%s]: %s detectadas, %s aceptadas, %s caidas, "
+        "%s contratos sin emparejar",
+        campaign.nombre, res["detectadas"], res["aceptadas"], res["caidas"],
+        len(res["sueltos"]))
+    return res["detectadas"] + res["aceptadas"]
+
+
+@shared_task
 def sync_gift_contributions(campaign_id=None):
     """
     Detecta las aportaciones de la campana: contratos de items y donaciones de ISK.

@@ -185,7 +185,7 @@ def register_menu_regalos_gestion():
         "fas fa-gifts fa-fw",
         "koru_stats:gift_gestion",
         navactive=["koru_stats:gift_gestion", "koru_stats:gift_sorteos",
-                   "koru_stats:gift_sorteo"],
+                   "koru_stats:gift_sorteo", "koru_stats:gift_entregas"],
         order=1208,
     )
 
