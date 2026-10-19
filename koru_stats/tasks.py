@@ -122,7 +122,7 @@ def _all_pvp_periods():
 ZKILL_BASE    = "https://zkillboard.com/api"
 ZKILL_HEADERS = {
     "Accept-Encoding": "gzip",
-    "User-Agent":      "Rekium koru_stats/1.0 contact:sietehierros@gmail.com",
+    "User-Agent":      "Rekium koru_stats/1.0 contact:119057647+RoGiz7@users.noreply.github.com",
 }
 
 
@@ -970,7 +970,7 @@ def aggregate_character_monthly_summary(periods=None, full=False):
 # ---------------------------------------------------------------------------
 
 ESI_BASE    = "https://esi.evetech.net/latest"
-ESI_HEADERS = {"User-Agent": "Rekium koru_stats/1.0 contact:sietehierros@gmail.com"}
+ESI_HEADERS = {"User-Agent": "Rekium koru_stats/1.0 contact:119057647+RoGiz7@users.noreply.github.com"}
 
 
 def _esi_killmail(killmail_id, kz_hash):
@@ -2719,7 +2719,7 @@ def _reparto_resto_mayor(exacto):
     Redondea un dict {clave: valor_float} al alza en TOTAL, repartiendo el
     sobrante a las claves con mayor parte fraccionaria (Hare).
 
-    Elegido por Zigor sobre el ceil por mineral, que penalizaba hasta un +3,8%
+    Elegido por RoGiz7 sobre el ceil por mineral, que penalizaba hasta un +3,8%
     a quien mina poco y variado.
     """
     import math

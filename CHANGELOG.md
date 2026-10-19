@@ -3,6 +3,16 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.7.1] — 2026-10-19
+
+### Cambiado
+
+- El contacto del User-Agent que se envía a ESI pasa a la dirección noreply de
+  GitHub. Estaba en **dos** sitios de `tasks.py`, no en uno, y viajaba a CCP en
+  cada petición además de estar en el repositorio público.
+- Un comentario de `tasks.py` llevaba el nombre real del autor en vez del alias.
+  Corregido; barrido del repo entero a cero apariciones.
+
 ## [0.7.0] — 2026-10-19
 
 ### Añadido

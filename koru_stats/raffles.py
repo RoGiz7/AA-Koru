@@ -408,8 +408,8 @@ def anadir_por_meritos(raffle, main_char_id, motivo, papeletas=1, usuario=None):
 #
 # ★ LA TRAMPA, verificada en vivo el 2026-10-19: `POST /universe/ids/` NO da
 # error con un nombre que no existe — simplemente lo OMITE de la respuesta.
-#   ["SieteHierros", "Satanax Lefour", "NombreInventado"]
-#   -> {"characters":[{"id":152730148,...},{"id":94707383,...}]}
+#   ["Nombre Real Uno", "Nombre Real Dos", "NombreInventado"]
+#   -> {"characters":[{"id":...,"name":"Nombre Real Uno"},{"id":...}]}
 # Si no se comprueba que el nombre pedido esta en la respuesta, un nombre mal
 # escrito entraria con el id de otro. De ahi el emparejado explicito.
 # ---------------------------------------------------------------------------
