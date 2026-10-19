@@ -1,5 +1,5 @@
 from django import forms
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.utils import timezone
 from allianceauth.eveonline.models import EveCorporationInfo
 
@@ -12,6 +12,7 @@ from .models import (
     MoonAllianceFee, MoonTaxRecipient,
     GiftCampaign, GiftRecipient, GiftTier,
     GiftContribution, GiftContributionItem,
+    Raffle, RaffleEntrant, RafflePrize, RaffleDraw, RaffleRosterFilter,
 )
 
 
@@ -398,3 +399,133 @@ class GiftContributionAdmin(admin.ModelAdmin):
     @admin.display(description="Quién", ordering="main_name")
     def _quien(self, obj):
         return obj.main_name or obj.donante_name or obj.donante_id
+
+
+# ---------------------------------------------------------------------------
+# Regalos — R3: sorteos
+#
+# Mientras no estan las pantallas de gestion (R3b), el admin ES la herramienta:
+# las acciones de cerrar, sortear y verificar estan aqui y hacen lo mismo que
+# haran los botones.
+# ---------------------------------------------------------------------------
+
+class RaffleEntrantInline(admin.TabularInline):
+    model = RaffleEntrant
+    extra = 0
+    fields = ("main_name", "main_char_id", "origen", "papeletas",
+              "rango_nombre", "valor_aportado", "motivo")
+    readonly_fields = ("valor_aportado",)
+    ordering = ("-papeletas", "main_name")
+
+
+class RafflePrizeInline(admin.TabularInline):
+    model = RafflePrize
+    extra = 0
+    fields = ("orden", "origen", "descripcion", "contribution", "valor", "donante_name")
+    ordering = ("orden",)
+
+
+@admin.register(Raffle)
+class RaffleAdmin(admin.ModelAdmin):
+    list_display  = ("nombre", "campaign", "tipo", "estado", "_participantes",
+                     "_premios", "cerrado_en", "sorteado_en")
+    list_filter   = ("campaign", "tipo", "estado")
+    search_fields = ("nombre",)
+    inlines       = (RaffleEntrantInline, RafflePrizeInline)
+    actions       = ("accion_cerrar", "accion_sortear", "accion_verificar")
+    readonly_fields = ("semilla", "semilla_hash", "cerrado_en", "sorteado_en",
+                       "anulado_por", "anulado_en", "creado_por", "created_at")
+    fieldsets = (
+        (None, {"fields": ("campaign", "nombre", "tipo", "orden", "estado")}),
+        ("Reglas", {
+            "fields": ("ponderar_por_rango", "excluir_propio_regalo", "permitir_repetir_ganador"),
+            "description": "Se aplican al sortear. «Excluir el propio regalo» solo tiene efecto "
+                           "en los sorteos comunitarios.",
+        }),
+        ("Limpieza demostrable", {
+            "fields": ("semilla_hash", "semilla", "cerrado_en", "sorteado_en"),
+            "description": "Al cerrar se publica el hash de la semilla; al sortear se revela la "
+                           "semilla. Con eso, el roster y la bolsa, cualquiera reproduce el sorteo.",
+        }),
+        ("Anulación", {"fields": ("anulado_por", "anulado_en", "motivo_anulacion"),
+                       "classes": ("collapse",)}),
+    )
+
+    @admin.display(description="Participantes")
+    def _participantes(self, obj):
+        return obj.entrants.count()
+
+    @admin.display(description="Premios")
+    def _premios(self, obj):
+        return obj.prizes.count()
+
+    @admin.action(description="1) Cerrar y publicar el hash de la semilla")
+    def accion_cerrar(self, request, queryset):
+        from . import raffles
+        for r in queryset:
+            try:
+                h = raffles.cerrar(r)
+                self.message_user(request, f"{r.nombre}: cerrado. Hash {h[:16]}…")
+            except ValueError as exc:
+                self.message_user(request, f"{r.nombre}: {exc}", level=messages.ERROR)
+
+    @admin.action(description="2) Sortear")
+    def accion_sortear(self, request, queryset):
+        from . import raffles
+        for r in queryset:
+            try:
+                res, inc = raffles.sortear(r)
+                msg = f"{r.nombre}: {len(res)} premios repartidos"
+                if inc:
+                    msg += f" · {len(inc)} incidencias: " + "; ".join(inc[:3])
+                self.message_user(request, msg,
+                                  level=messages.WARNING if inc else messages.INFO)
+            except ValueError as exc:
+                self.message_user(request, f"{r.nombre}: {exc}", level=messages.ERROR)
+
+    @admin.action(description="3) Verificar (recomputa desde la semilla)")
+    def accion_verificar(self, request, queryset):
+        from . import raffles
+        for r in queryset:
+            ok, detalles = raffles.verificar(r)
+            self.message_user(request, f"{r.nombre}: " + "; ".join(detalles),
+                              level=messages.INFO if ok else messages.ERROR)
+
+
+@admin.register(RaffleEntrant)
+class RaffleEntrantAdmin(admin.ModelAdmin):
+    list_display  = ("main_name", "raffle", "origen", "papeletas", "rango_nombre",
+                     "valor_aportado", "motivo", "anadido_por")
+    list_filter   = ("raffle", "origen")
+    search_fields = ("main_name", "main_char_id", "motivo")
+
+
+@admin.register(RafflePrize)
+class RafflePrizeAdmin(admin.ModelAdmin):
+    list_display  = ("etiqueta", "raffle", "origen", "valor", "donante_name", "orden")
+    list_filter   = ("raffle", "origen")
+    search_fields = ("descripcion", "donante_name")
+
+
+@admin.register(RaffleDraw)
+class RaffleDrawAdmin(admin.ModelAdmin):
+    list_display  = ("raffle", "orden", "_ganador", "_premio", "created_at")
+    list_filter   = ("raffle",)
+    readonly_fields = ("raffle", "prize", "entrant", "orden", "hash_usado", "created_at")
+
+    def has_add_permission(self, request):
+        return False      # Los resultados salen del sorteo, no se escriben a mano
+
+    @admin.display(description="Ganador")
+    def _ganador(self, obj):
+        return obj.entrant.main_name
+
+    @admin.display(description="Premio")
+    def _premio(self, obj):
+        return obj.prize.etiqueta
+
+
+@admin.register(RaffleRosterFilter)
+class RaffleRosterFilterAdmin(admin.ModelAdmin):
+    list_display  = ("nombre", "notes", "created_at")
+    search_fields = ("nombre",)

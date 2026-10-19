@@ -3,6 +3,39 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.6.0] — 2026-10-19
+
+Regalos, R3a: el motor de sorteos. Sin pantallas todavía — se opera desde el
+admin, donde están las acciones de cerrar, sortear y verificar.
+
+### Añadido
+
+- Modelos `Raffle`, `RaffleEntrant`, `RafflePrize`, `RaffleDraw` y
+  `RaffleRosterFilter` (migración `0028`).
+- Módulo `raffles.py` con el motor. El núcleo (`sortear_core`) es una función
+  **pura**: ni Django ni base de datos, así que se prueba en una mesa.
+- **Limpieza demostrable**: al cerrar se genera una semilla y se publica su
+  SHA-256; al sortear se revela la semilla. Con eso, el roster y la bolsa —los
+  tres congelados— cualquiera reproduce el sorteo. `verificar()` lo recomputa y
+  compara; probado manipulando una fila a mano, y la caza.
+- El sorteo **no usa el `random` de Python**: cada tirada sale de
+  `sha256("<semilla>:<premio>:<intento>")`, reproducible con cualquier
+  herramienta en cualquier lenguaje.
+- Constructor de roster: `preview_roster` (filtra y **enseña** sin escribir),
+  `fijar_roster` (congela filas, no la consulta) y `anadir_por_meritos`, que pide
+  motivo obligatorio y marca al participante como manual.
+- Reglas por sorteo: ponderar por rango, que no te toque tu propio regalo, y si
+  un ganador puede repetir.
+
+### Notas
+
+- **Las ruletas especiales del CEO no necesitaron código propio**: son un sorteo
+  con roster manual y premios de origen `exclusivo`. Ese era el objetivo de
+  separar el sorteo de la aportación.
+- Un regalo solo puede estar en una bolsa (`OneToOne`), o se sortearía dos veces
+  lo mismo.
+- Anular es en bloque y con motivo: nunca se borra una tirada suelta en silencio.
+
 ## [0.5.0] — 2026-10-19
 
 Regalos, R2: la pantalla del piloto.

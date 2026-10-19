@@ -1301,3 +1301,232 @@ class GiftContributionItem(models.Model):
 
     def __str__(self):
         return f"{self.type_name} x{self.quantity:,}"
+
+
+# ---------------------------------------------------------------------------
+# Regalos — R3: sorteos
+#
+# ★ EL PRINCIPIO QUE ORDENA TODO ESTO: el sorteo es INDEPENDIENTE de la
+# aportacion. Un sorteo no es "la lista de quien aporto": es un conjunto de
+# PARTICIPANTES y una bolsa de PREMIOS, y cada uno de los dos se llena por
+# filtro o a mano, indistintamente.
+#
+# Por eso las ruletas especiales del CEO —nombres elegidos por el, regalos
+# exclusivos que no salen de nadie— no necesitan nada aparte: son un sorteo con
+# roster manual y premios de origen `exclusivo`. Si esto se hubiera modelado
+# como "sorteo = los que aportaron", habria que romperlo a martillazos.
+#
+# Y el roster se CONGELA al cerrar: si se recalculara en vivo, alguien que
+# aporte entre dos tiradas apareceria a mitad del sorteo.
+# ---------------------------------------------------------------------------
+
+class RaffleRosterFilter(models.Model):
+    """
+    Preset de filtros para construir un roster, reutilizable entre sorteos.
+
+    `spec` guarda los criterios en JSON (valor minimo aportado, states, corps,
+    PvP del periodo, tax al dia...). El constructor los aplica, ENSEÑA a quien
+    saca, y solo al fijar se escriben las filas de RaffleEntrant.
+    """
+    nombre     = models.CharField(max_length=80, unique=True)
+    spec       = models.JSONField(default=dict)
+    notes      = models.CharField(max_length=200, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name        = "Regalos — filtro de roster"
+        verbose_name_plural = "Regalos — filtros de roster"
+        ordering            = ["nombre"]
+
+    def __str__(self):
+        return self.nombre
+
+
+class Raffle(models.Model):
+    """
+    Un sorteo: participantes congelados x bolsa de premios congelada.
+
+    ★ LIMPIEZA DEMOSTRABLE. Al cerrar se genera una semilla y se publica su
+    HASH; al sortear se guarda la semilla en claro. Cualquiera puede recomputar
+    el resultado desde semilla + roster + bolsa y comprobar que nadie toco nada.
+    Eso vale mas que la animacion: un sorteo discutible es peor que no tenerlo.
+
+    El ganador se decide SIEMPRE en el servidor. La ruleta solo anima un
+    resultado ya decidido; si lo eligiera el navegador, cualquiera con la
+    consola abierta podria discutirlo.
+    """
+    TIPO_COMUNITARIO = "comunitario"
+    TIPO_ESPECIAL    = "especial"
+    TIPOS = [
+        (TIPO_COMUNITARIO, "Comunitario"),
+        (TIPO_ESPECIAL,    "Especial del CEO"),
+    ]
+
+    ESTADO_BORRADOR = "borrador"
+    ESTADO_CERRADO  = "cerrado"
+    ESTADO_SORTEADO = "sorteado"
+    ESTADO_ANULADO  = "anulado"
+    ESTADOS = [
+        (ESTADO_BORRADOR, "Borrador"),
+        (ESTADO_CERRADO,  "Cerrado (semilla publicada)"),
+        (ESTADO_SORTEADO, "Sorteado"),
+        (ESTADO_ANULADO,  "Anulado"),
+    ]
+
+    campaign = models.ForeignKey(GiftCampaign, on_delete=models.CASCADE, related_name="raffles")
+    nombre   = models.CharField(max_length=120)
+    tipo     = models.CharField(max_length=20, choices=TIPOS, default=TIPO_COMUNITARIO, db_index=True)
+    estado   = models.CharField(max_length=20, choices=ESTADOS, default=ESTADO_BORRADOR, db_index=True)
+    orden    = models.PositiveIntegerField(default=0, help_text="Orden en el que se celebran")
+
+    # Reglas, por sorteo
+    ponderar_por_rango = models.BooleanField(
+        default=True, help_text="Mas aportacion = mas papeletas. Desactivado: una por cabeza")
+    excluir_propio_regalo = models.BooleanField(
+        default=True, help_text="Que no te toque lo que tu aportaste (solo aplica a los comunitarios)")
+    permitir_repetir_ganador = models.BooleanField(
+        default=False, help_text="Si una persona puede llevarse mas de un premio del mismo sorteo")
+
+    # Limpieza demostrable
+    semilla      = models.CharField(max_length=64, blank=True, default="",
+                                    help_text="En claro solo despues de sortear")
+    semilla_hash = models.CharField(max_length=64, blank=True, default="",
+                                    help_text="SHA-256 de la semilla, publicado AL CERRAR")
+    cerrado_en   = models.DateTimeField(null=True, blank=True)
+    sorteado_en  = models.DateTimeField(null=True, blank=True)
+
+    anulado_por = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True,
+                                    related_name="raffles_anulados")
+    anulado_en  = models.DateTimeField(null=True, blank=True)
+    motivo_anulacion = models.CharField(max_length=250, blank=True, default="")
+
+    creado_por = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True,
+                                   related_name="raffles_creados")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name        = "Regalos — sorteo"
+        verbose_name_plural = "Regalos — sorteos"
+        ordering            = ["campaign", "orden", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["campaign", "nombre"], name="uniq_raffle_nombre"),
+        ]
+
+    @property
+    def editable(self):
+        """Mientras esta en borrador se puede tocar el roster y la bolsa."""
+        return self.estado == self.ESTADO_BORRADOR
+
+    def __str__(self):
+        return f"{self.nombre} ({self.get_estado_display()})"
+
+
+class RaffleEntrant(models.Model):
+    """
+    Un participante, congelado.
+
+    `origen` distingue quien entro por filtro de quien entro a mano por
+    MERITOS: la transparencia de por que esta cada nombre es lo que evita que
+    el sorteo huela mal, asi que la insignia en pantalla es parte del diseño y
+    no un adorno. El motivo es OBLIGATORIO en los manuales.
+    """
+    ORIGEN_FILTRO = "filtro"
+    ORIGEN_MANUAL = "manual"
+    ORIGENES = [
+        (ORIGEN_FILTRO, "Por filtro"),
+        (ORIGEN_MANUAL, "A mano (méritos)"),
+    ]
+
+    raffle       = models.ForeignKey(Raffle, on_delete=models.CASCADE, related_name="entrants")
+    main_char_id = models.BigIntegerField(db_index=True)
+    main_name    = models.CharField(max_length=100, blank=True, default="")
+    origen       = models.CharField(max_length=10, choices=ORIGENES, default=ORIGEN_FILTRO)
+    motivo       = models.CharField(max_length=200, blank=True, default="",
+                                    help_text="Obligatorio si entra a mano: por que esta aqui")
+    papeletas    = models.PositiveIntegerField(default=1)
+    rango_nombre = models.CharField(max_length=60, blank=True, default="",
+                                    help_text="Rango congelado al fijar el roster")
+    valor_aportado = models.DecimalField(max_digits=22, decimal_places=2, default=0)
+    anadido_por  = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True,
+                                     related_name="raffle_entrants_anadidos")
+    created_at   = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name        = "Regalos — participante"
+        verbose_name_plural = "Regalos — participantes"
+        ordering            = ["main_name"]
+        constraints = [
+            models.UniqueConstraint(fields=["raffle", "main_char_id"], name="uniq_raffle_entrant"),
+        ]
+
+    def __str__(self):
+        return f"{self.main_name} x{self.papeletas}"
+
+
+class RafflePrize(models.Model):
+    """
+    Un premio de la bolsa.
+
+    Dos origenes que conviven en el mismo sorteo:
+      - `aportacion`: sale de una GiftContribution. Arrastra donante y valor.
+        Un regalo solo puede estar en UNA bolsa (de ahi el OneToOne), o se
+        sortearia dos veces lo mismo y quedaria feo en directo.
+      - `exclusivo`: NO viene de ningun miembro. Lo pone el CEO. No requiere
+        contrato previo ni aportacion detectada: es la via de las especiales.
+    """
+    ORIGEN_APORTACION = "aportacion"
+    ORIGEN_EXCLUSIVO  = "exclusivo"
+    ORIGENES = [
+        (ORIGEN_APORTACION, "De una aportación"),
+        (ORIGEN_EXCLUSIVO,  "Exclusivo (del CEO)"),
+    ]
+
+    raffle       = models.ForeignKey(Raffle, on_delete=models.CASCADE, related_name="prizes")
+    origen       = models.CharField(max_length=15, choices=ORIGENES, default=ORIGEN_APORTACION)
+    contribution = models.OneToOneField(GiftContribution, on_delete=models.SET_NULL,
+                                        null=True, blank=True, related_name="prize")
+    descripcion  = models.CharField(max_length=200, blank=True, default="")
+    valor        = models.DecimalField(max_digits=22, decimal_places=2, null=True, blank=True,
+                                       help_text="Opcional en los exclusivos: enseñarlo invita a comparar")
+    donante_name = models.CharField(max_length=100, blank=True, default="")
+    orden        = models.PositiveIntegerField(default=0, help_text="Orden en que se sortea")
+
+    class Meta:
+        verbose_name        = "Regalos — premio"
+        verbose_name_plural = "Regalos — premios"
+        ordering            = ["raffle", "orden", "id"]
+
+    @property
+    def etiqueta(self):
+        if self.descripcion:
+            return self.descripcion
+        if self.contribution_id:
+            return str(self.contribution)
+        return f"Premio #{self.pk}"
+
+    def __str__(self):
+        return self.etiqueta
+
+
+class RaffleDraw(models.Model):
+    """
+    El resultado de una tirada. Reproducible desde la semilla.
+
+    `hash_usado` guarda el SHA-256 de "<semilla>:<premio_id>:<intento>" que
+    decidio esta tirada: con eso, mas el roster y la bolsa congelados,
+    cualquiera reproduce el sorteo entero sin fiarse de nosotros ni de Python.
+    """
+    raffle  = models.ForeignKey(Raffle, on_delete=models.CASCADE, related_name="draws")
+    prize   = models.OneToOneField(RafflePrize, on_delete=models.CASCADE, related_name="draw")
+    entrant = models.ForeignKey(RaffleEntrant, on_delete=models.CASCADE, related_name="draws")
+    orden   = models.PositiveIntegerField(default=0)
+    hash_usado = models.CharField(max_length=64, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name        = "Regalos — resultado de sorteo"
+        verbose_name_plural = "Regalos — resultados de sorteo"
+        ordering            = ["raffle", "orden"]
+
+    def __str__(self):
+        return f"{self.entrant.main_name} ← {self.prize.etiqueta}"
