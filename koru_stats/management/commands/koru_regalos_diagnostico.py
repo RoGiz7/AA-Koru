@@ -145,18 +145,32 @@ class Command(BaseCommand):
                     GROUP BY i.type_name_id
                 """, [rid])
                 items = c.fetchall()
-            avisos = []
-            if cid in tax:                       avisos.append("ES TAX LUNAR, se salta")
-            if (tipo or "") != "item_exchange":  avisos.append(f"tipo {tipo}")
-            if (precio or 0) or (premio or 0):   avisos.append("price/reward != 0")
+            # ⚠ Antes esto solo AVISABA, y la ingesta no hacia caso de los avisos:
+            # un courier o un contrato `deleted` acababan propuestos como regalo.
+            # Ahora los motivos que de verdad descartan se separan de los que son
+            # solo una advertencia, y se dice cual de las dos cosas es.
+            TERMINADOS = ("finished", "finished_issuer", "finished_contractor")
+            descarta, avisos = [], []
+            if cid in tax:                       descarta.append("ES TAX LUNAR")
+            if (tipo or "") != "item_exchange":  descarta.append(f"tipo {tipo}")
+            if (estado or "") not in TERMINADOS: descarta.append(f"estado {estado}: nadie lo aceptó")
+            if (precio or 0):                    descarta.append("tiene precio: es una compra")
+            if not items:                        descarta.append("sin ítems incluidos")
+            if (premio or 0):                    avisos.append("reward != 0")
             if any((raw or 0) < 0 for _, _, raw in items): avisos.append("lleva BPC")
-            if not items:                        avisos.append("sin items")
             tids |= {int(t) for t, _, _ in items if t}
+
+            cola = ""
+            if descarta:
+                cola = self.style.WARNING("· SE SALTA: " + "; ".join(descarta))
+            elif avisos:
+                cola = self.style.NOTICE("· cuenta, ojo con: " + "; ".join(avisos))
+            else:
+                cola = self.style.SUCCESS("· cuenta como regalo")
 
             self.stdout.write(
                 f"    #{cid}  {str(fecha)[:16]}  {(emisor or '?')[:20]:20} "
-                f"{len(items):>3} ítems  {estado:12} "
-                + (self.style.WARNING("· " + "; ".join(avisos)) if avisos else ""))
+                f"{len(items):>3} ítems  {estado:12} " + cola)
 
         if o["valorar"] and tids:
             from koru_stats.tasks import _refresh_jita_prices

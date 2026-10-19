@@ -3,6 +3,35 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.18.1] — 2026-10-19
+
+### Corregido
+
+El diagnóstico contra 365 días de datos reales —la primera vez que la rama de
+contratos veía algo que no fuera una prueba— destapó que la detección proponía
+basura con cara de regalo. Tres filtros que no estaban:
+
+- **Los courier.** A la corp le llegan contratos de logística a diario, y cuatro
+  de ellos iban a nombre del destinatario de regalos. Un courier no es un regalo.
+  Ahora solo cuenta `item_exchange`.
+- **Los que nadie aceptó.** Había contratos en `deleted` y `outstanding` con
+  ítems dentro: cosas que se ofrecieron y se quedaron ahí. Apuntarlos es decirle
+  a alguien que aportó algo que la corp nunca recibió. Ahora solo cuentan los
+  terminados.
+- **Las compras.** En un `item_exchange` el `price` lo paga el destinatario: si
+  hay precio, la corp está comprando, no recibiendo un regalo.
+- Además se saltan los contratos **sin nada incluido** (a precio 0 y vacíos son
+  alguien *pidiendo* cosas a la corp, y salen a puñados): creaban una aportación
+  de 0 ISK por cada uno.
+
+Los filtros van dentro del subselect que deduplica, no fuera: filtrando solo en
+el `SELECT` exterior, el `MIN(id)` podría elegir una fila descartada y el
+contrato se perdería entero.
+
+El propio diagnóstico mentía a medias y también se arregla: avisaba de estas
+cosas pero la ingesta no hacía caso de los avisos. Ahora separa lo que **descarta**
+de lo que es solo una advertencia, y dice de cada contrato si cuenta o se salta.
+
 ## [0.18.0] — 2026-10-19
 
 ### Añadido

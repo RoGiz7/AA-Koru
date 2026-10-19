@@ -3023,6 +3023,20 @@ def _valorar_item(campaign, tid, cantidad, es_bpc, categoria, mercado, average_p
     return (precio, fuente, False, "")
 
 
+# ★ Los tres filtros de abajo salieron del diagnostico contra datos reales, y
+# sin ellos la deteccion proponia basura con cara de regalo:
+#
+#   1. `contract_type = item_exchange`. A la corp le llegan COURIER a diario —
+#      logistica normal— y alguna subasta. Un courier no es un regalo ni aunque
+#      vaya a nombre del destinatario.
+#   2. `status` terminado. Habia contratos `deleted` y `outstanding` con items
+#      dentro: son cosas que se ofrecieron y NADIE acepto. Contarlos es apuntarle
+#      a alguien un regalo que la corp nunca recibio.
+#   3. `price = 0`. En un item_exchange el `price` lo paga el destinatario: si
+#      hay precio, la corp esta COMPRANDO, y una compra no es un regalo.
+#
+# Van dentro del subselect, no fuera: si filtrasen solo en el SELECT exterior,
+# el MIN(id) podria elegir una fila descartada y el contrato se perderia entero.
 SQL_CONTRATOS_REGALO = """
     SELECT c.id, c.contract_id, c.issuer_name_id, c.assignee_id, c.acceptor_name_id,
            c.price, c.reward, c.volume, c.contract_type, c.status,
@@ -3034,6 +3048,9 @@ SQL_CONTRATOS_REGALO = """
         WHERE assignee_id IN ({dest})
           AND date_issued >= %s
           AND date_issued <= %s
+          AND contract_type = 'item_exchange'
+          AND status IN ('finished', 'finished_issuer', 'finished_contractor')
+          AND COALESCE(price, 0) = 0
         GROUP BY contract_id
     ) u ON u.rid = c.id
     ORDER BY c.date_issued DESC
@@ -3215,6 +3232,14 @@ def sync_gift_contributions(campaign_id=None):
     for c in contratos:
         fuente_key = "c:%s" % int(c["contract_id"])
         if fuente_key in validadas:
+            continue
+
+        # ⚠ Un contrato a precio 0 y sin nada incluido existe de verdad y sale a
+        # puñados: es alguien PIDIENDO cosas a la corp (sus lineas son
+        # `is_included = 0`, que ya se descartan al leer los items). Crear una
+        # aportacion de 0 ISK por cada uno llenaria la pantalla del director de
+        # filas que no significan nada.
+        if not items_por_contrato.get(c["id"]):
             continue
 
         destino = por_destino.get(int(c["assignee_id"] or 0))
