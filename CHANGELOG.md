@@ -3,6 +3,42 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.9.0] — 2026-10-19
+
+Regalos, R6: pegado desde el juego y armador de lotes. Módulo `lotes.py`, con el
+núcleo puro igual que `raffles.py`.
+
+### Añadido
+
+- `parse_pegado`: lee el portapapeles de EVE (TSV). Aguanta el inventario
+  completo, nombre+cantidad y nombre suelto, y busca la cantidad como el primer
+  campo entero después del nombre, no por posición fija.
+- `resolver_tipos`: resuelve nombres contra el SDE **en todos los idiomas**.
+- `armar_lotes`: reparte N objetos en K lotes equilibrados (LPT) y nivela con ISK
+  por inundación. Devuelve la dispersión, los avisos y **cuánto ISK faltaría para
+  dejarlos a la par**.
+
+### Las trampas que esto resuelve
+
+- ⚠ **El idioma del cliente.** Si el director tiene EVE en español, el pegado trae
+  nombres en español; buscar solo contra `name` (inglés) no encontraría nada y
+  parecería que el sistema está roto. Las columnas de idioma se descubren por
+  **introspección**: dar por hecho un `name_es` que no existe revienta la consulta.
+- ⚠ **El separador de miles también cambia** (`1.234` / `1,234`). Como la cantidad
+  es siempre entera, se limpian los dos sin ambigüedad.
+- Lo que no se reconoce **se devuelve aparte**, nunca se descarta en silencio.
+
+### Lo que el armador dice en vez de disimular
+
+- Un lote que se dispara, nombrando el objeto que lo arrastra.
+- Que los lotes **no han quedado igualados**, mirando la dispersión y no solo el
+  máximo: un reparto puede no tener ningún lote disparado y aun así estar al 106%
+  porque los de abajo se quedan cortos.
+- Que hay menos objetos que lotes.
+
+Un objeto indivisible muy caro no lo arregla ningún algoritmo. Lo que hace el
+armador es decirlo y ofrecer la cifra para arreglarlo a mano.
+
 ## [0.8.0] — 2026-10-19
 
 ### Añadido
