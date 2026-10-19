@@ -3,6 +3,17 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.4.1] — 2026-10-19
+
+### Corregido
+
+- `sync_gift_contributions` se habría tragado **los pagos del tax lunar como
+  regalos**: van al mismo destinatario, son `item_exchange` y van a precio 0, así
+  que encajan en el filtro uno por uno. Y aquí no se puede filtrar por contenido,
+  porque un regalo es cualquier cosa. Ahora se saltan los contratos que ya están
+  fichados como tax. Lo limpio del todo sigue siendo usar un destinatario
+  distinto para los regalos.
+
 ## [0.4.0] — 2026-10-19
 
 Regalos de la fiesta, R1: el Auth ya detecta y valora lo que aporta cada uno. Sin

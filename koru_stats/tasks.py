@@ -3108,6 +3108,23 @@ def sync_gift_contributions(campaign_id=None):
             cols = [c[0] for c in cursor.description]
             contratos = [dict(zip(cols, r)) for r in cursor.fetchall()]
 
+    # ★ Los contratos del tax lunar van al MISMO destinatario, con el mismo
+    # `item_exchange` a precio 0: encajan en el filtro de un regalo uno por uno.
+    # Y aqui no se puede filtrar por contenido, porque un regalo es cualquier
+    # cosa. Se excluyen los que ya estan fichados como tax; lo limpio del todo
+    # es usar un destinatario distinto para los regalos.
+    if contratos:
+        from .models import MoonTaxContract
+        ya_son_tax = set(
+            MoonTaxContract.objects
+            .filter(contract_id__in=[int(c["contract_id"]) for c in contratos])
+            .values_list("contract_id", flat=True)
+        )
+        if ya_son_tax:
+            contratos = [c for c in contratos if int(c["contract_id"]) not in ya_son_tax]
+            logger.info("koru sync_gift_contributions: %s contratos saltados por ser tax lunar",
+                        len(ya_son_tax))
+
     if contratos:
         row_ids = [c["id"] for c in contratos]
         ph = ",".join(["%s"] * len(row_ids))
