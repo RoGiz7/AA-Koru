@@ -3,6 +3,15 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.18.5] — 2026-10-20
+
+### Corregido
+
+- **El enlace del fondo salía también dentro del sorteo**, donde la bolsa de
+  premios está a medio palmo: un enlace que te saca de donde ya estás es peor
+  que no poner nada. Ahí el texto ahora dice «lo apuntas aquí abajo» y no lleva
+  a ninguna parte. La tarjeta lo decide con `en_sorteo`.
+
 ## [0.18.4] — 2026-10-20
 
 ### Añadido

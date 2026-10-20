@@ -26,9 +26,18 @@
                 La pregunta que se hace justo aquí es «vale, ¿y dónde apunto lo
                 que compré?». Mejor responderla en el sitio donde surge que
                 dejarla para el manual.
+
+                ⚠ Pero NO dentro del propio sorteo: ahí la bolsa de premios está
+                a medio palmo, y un enlace que te saca de donde ya estás es peor
+                que no poner nada. Quien incluya esta tarjeta desde la pantalla
+                de un sorteo pasa `en_sorteo`.
                 {% endcomment %}
-                <a href="{% url 'koru_stats:gift_sorteos' %}">Lo que compres se apunta
-                en la bolsa de premios del sorteo</a>, marcando «sale del fondo».
+                {% if en_sorteo %}
+                    Lo apuntas aquí abajo, en la bolsa de premios, marcando «sale del fondo».
+                {% else %}
+                    <a href="{% url 'koru_stats:gift_sorteos' %}">Lo que compres se apunta
+                    en la bolsa de premios del sorteo</a>, marcando «sale del fondo».
+                {% endif %}
             {% endif %}
         </div>
     </div>
