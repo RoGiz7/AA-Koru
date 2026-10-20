@@ -22,6 +22,13 @@
             {% else %}
                 Lo comprado con el fondo <strong>no suma</strong> al valor de la fiesta: ese ISK ya se
                 contó cuando entró como aportación. Marcarlo es lo que evita contarlo dos veces.
+                {% comment %}
+                La pregunta que se hace justo aquí es «vale, ¿y dónde apunto lo
+                que compré?». Mejor responderla en el sitio donde surge que
+                dejarla para el manual.
+                {% endcomment %}
+                <a href="{% url 'koru_stats:gift_sorteos' %}">Lo que compres se apunta
+                en la bolsa de premios del sorteo</a>, marcando «sale del fondo».
             {% endif %}
         </div>
     </div>

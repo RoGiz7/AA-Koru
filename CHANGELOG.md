@@ -3,6 +3,18 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.18.4] — 2026-10-20
+
+### Añadido
+
+- **Las tres pantallas del módulo, enlazadas entre sí.** El recorrido real es
+  aportaciones → sorteos → entregas, y hasta ahora había que volver al menú
+  lateral entre paso y paso. Gestión lleva ahora a *Sorteos y bolsa de premios* y
+  a *Entregas*.
+- **El fondo responde a la pregunta que provoca.** Mirando el bote, lo siguiente
+  que uno piensa es «vale, ¿y dónde apunto lo que compré?». La tarjeta ahora lo
+  dice y enlaza: en la bolsa de premios del sorteo, marcando «sale del fondo».
+
 ## [0.18.3] — 2026-10-20
 
 ### Añadido

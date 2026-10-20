@@ -43,6 +43,24 @@
     </div></div>
     {% endif %}
 
+    {% comment %}
+    Las tres pantallas del módulo, siempre a la vista. El recorrido real es
+    aportaciones → sorteos → entregas, y hasta ahora había que volver al menú
+    lateral entre paso y paso. La bolsa de premios —donde el CEO apunta lo que
+    compra con el fondo— vive dentro de cada sorteo, así que el enlace a Sorteos
+    es también el camino a eso.
+    {% endcomment %}
+    <div class="d-flex align-items-center gap-2 flex-wrap mb-3">
+        <h4 class="mb-0">Aportaciones</h4>
+        <span class="badge bg-secondary">{{ campaign.get_estado_display }}</span>
+        <a href="{% url 'koru_stats:gift_sorteos' %}" class="btn btn-sm btn-outline-primary ms-auto">
+            <i class="fas fa-dice me-1"></i>Sorteos y bolsa de premios
+        </a>
+        <a href="{% url 'koru_stats:gift_entregas' %}" class="btn btn-sm btn-outline-success">
+            <i class="fas fa-box-open me-1"></i>Entregas
+        </a>
+    </div>
+
     {# KPIs: sobre TODA la campaña, no sobre el filtro #}
     <div class="row g-3 mb-4">
         <div class="col-md-3">
