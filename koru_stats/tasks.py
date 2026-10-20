@@ -1378,60 +1378,6 @@ def run_koru_aggregations(full=False):
         logger.warning("koru run_koru_aggregations: PvP skipped: %s", exc)
         n_pvp = 0
 
-# Alias para compatibilidad con run_koru_aggregations
-aggregate_character_monthly_pvp = fetch_pvp_from_zkillboard
-
-
-# ---------------------------------------------------------------------------
-# Tareas coordinadoras
-# ---------------------------------------------------------------------------
-
-@shared_task
-def run_koru_ore_and_summary(full=False):
-    """
-    Ejecuta solo precios + ore + summary (sin PvP).
-    Diseñada para ejecutarse cada 6 horas para mantener datos frescos.
-    """
-    logger.info("koru run_koru_ore_and_summary START (full=%s)", full)
-
-    try:
-        n_prices = update_ore_prices()
-    except Exception as exc:
-        logger.error("koru ore_and_summary: update_ore_prices fallo: %s\n%s", exc, traceback.format_exc())
-        n_prices = 0
-
-    n_ore     = aggregate_character_monthly_ore(full=full)
-    n_summary = aggregate_character_monthly_summary(full=full)
-
-    logger.info(
-        "koru run_koru_ore_and_summary DONE — prices=%s, ore=%s, summary=%s",
-        n_prices, n_ore, n_summary,
-    )
-    return n_summary
-
-
-@shared_task
-def run_koru_aggregations(full=False):
-    """
-    Ejecuta todas las agregaciones en orden correcto.
-    """
-    logger.info("koru run_koru_aggregations START (full=%s)", full)
-
-    try:
-        n_prices = update_ore_prices()
-    except Exception as exc:
-        logger.error("koru run_koru_aggregations: update_ore_prices fallo: %s\n%s", exc, traceback.format_exc())
-        n_prices = 0
-
-    n_ore     = aggregate_character_monthly_ore(full=full)
-    n_summary = aggregate_character_monthly_summary(full=full)
-
-    try:
-        n_pvp = aggregate_character_monthly_pvp(full=full)
-    except Exception as exc:
-        logger.warning("koru run_koru_aggregations: PvP skipped: %s", exc)
-        n_pvp = 0
-
     logger.info(
         "koru run_koru_aggregations DONE — prices=%s, ore=%s, summary=%s, pvp=%s",
         n_prices, n_ore, n_summary, n_pvp,
@@ -1863,7 +1809,18 @@ def update_market_prices():
 
 @shared_task
 def snapshot_character_values():
-    """Foto diaria de patrimonio (assets * precio) + balance líquido por personaje en corps rastreadas."""
+    """
+    Foto diaria de patrimonio (assets * precio) + balance liquido por personaje.
+
+    ★ LAS COPIAS DE PLANO VALEN 0. Un BPC comparte typeID con su BPO, asi que
+    preguntar el precio por typeID le pone el precio del ORIGINAL. Un plano de
+    investigacion que en el mercado no vale nada contaba aqui como si fuera el
+    BPO: esto mismo inflo 610 B el patrimonio en koru-desktop, y la rama de
+    regalos ya lo trataba bien mientras esta foto seguia mintiendo.
+
+    Los BPO si se valoran: su `average_price` es el precio del original, que es
+    justo lo que son.
+    """
     from datetime import date
     from .models import CharacterValueSnapshot
     corp_ids = _get_active_corp_ids()
@@ -1876,7 +1833,8 @@ def snapshot_character_values():
             "SELECT ec.character_id AS char_eve, "
             "       MAX(main_ec.character_id) AS main_eve, "
             "       MAX(cau.balance) AS balance, "
-            "       COALESCE(SUM(ca.quantity * COALESCE(kp.average_price, 0)), 0) AS asset_value, "
+            "       COALESCE(SUM(ca.quantity * CASE WHEN ca.blueprint_copy = 1 "
+            "               THEN 0 ELSE COALESCE(kp.average_price, 0) END), 0) AS asset_value, "
             "       COUNT(ca.id) AS item_count "
             "FROM eveonline_evecharacter ec "
             "JOIN authentication_characterownership co ON co.character_id = ec.id "

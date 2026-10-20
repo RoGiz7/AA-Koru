@@ -3,6 +3,29 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.18.2] — 2026-10-20
+
+### Corregido
+
+- **El patrimonio diario contaba las copias de plano como si fueran el
+  original.** Un BPC comparte `typeID` con su BPO, así que preguntar el precio
+  por `typeID` devuelve el precio del original: un plano de investigación que en
+  el mercado no vale nada sumaba como un BPO entero. Es exactamente el fallo que
+  infló 610 B el patrimonio en koru-desktop, y la rama de regalos ya lo trataba
+  bien mientras esta foto seguía mintiendo. Ahora `blueprint_copy = 1` vale 0;
+  los BPO se siguen valorando, porque su precio sí es el suyo.
+  - **La historia anterior no se puede rehacer**: los assets son estado actual,
+    no hay forma de saber qué había hace tres meses. Las fotos viejas se quedan
+    con su número inflado, así que en la gráfica habrá un **escalón hacia abajo**
+    el día que esto entre. No es una caída de patrimonio: es el día que dejó de
+    mentir.
+- **`run_koru_ore_and_summary` y `run_koru_aggregations` estaban definidas dos
+  veces.** Un pegado duplicado, con la primera copia de `run_koru_aggregations`
+  cortada a media función. Python se quedaba con la segunda, así que el
+  comportamiento era el correcto, pero quien leyera el fichero leía código
+  muerto. Fuera la copia, y el docstring bueno —que se había quedado en la
+  muerta— recuperado.
+
 ## [0.18.1] — 2026-10-19
 
 ### Corregido
