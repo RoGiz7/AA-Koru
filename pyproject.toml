@@ -7,6 +7,7 @@ name = "koru-stats"
 dynamic = ["version"]
 description = "Rekium Corp Statistics App for Alliance Auth"
 readme = "README.md"
+license = { file = "LICENSE" }
 requires-python = ">=3.10"
 authors = [{ name = "RoGiz7" }]
 keywords = ["allianceauth", "eveonline", "rekium", "koru"]
@@ -37,4 +38,6 @@ where = ["."]
 include = ["koru_stats*"]
 
 [tool.setuptools.package-data]
-koru_stats = ["templates/**/*", "static/**/*"]
+# El `*.md` es para que el LEEME de la carpeta de la ruleta viaje con el
+# paquete: explica donde dejar el fondo propio, y sin el nadie lo encontraria.
+koru_stats = ["templates/**/*", "static/**/*", "static/**/*.md"]

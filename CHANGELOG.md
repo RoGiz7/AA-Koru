@@ -3,6 +3,25 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.18.3] — 2026-10-20
+
+### Añadido
+
+- **`LICENSE`**, que faltaba. Dice lo mismo que ya decía el README —código
+  interno de Rekium, todos los derechos reservados— pero donde se busca, y
+  declarado en `pyproject.toml`.
+- **Sitio para el fondo propio de la ruleta**, con su LEEME:
+  `koru_stats/static/koru_stats/ruleta/`. Explica que el fichero va en la carpeta
+  de estáticos recogidos y **no** en la del paquete dentro del `venv`, donde lo
+  borraría el siguiente `pip install --upgrade`.
+- **El README al día**: las cinco pantallas de regalos, sus tres permisos, las
+  tres tareas nuevas, y una sección contando las cuatro ideas que sostienen el
+  módulo, cómo se valora, por qué el sorteo es reproducible y de qué va lo del
+  título del contrato.
+- **Nota sobre Package Monitor**: lo ve como «Unknown» porque comprueba versiones
+  contra PyPI y `koru-stats` se instala desde git. No está roto; es que no se
+  publica. Queda escrito para que nadie lo investigue dos veces.
+
 ## [0.18.2] — 2026-10-20
 
 ### Corregido

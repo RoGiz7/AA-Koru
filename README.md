@@ -23,6 +23,11 @@ Chart.js. Sin Grafana, sin Metabase, sin ingesta propia de ESI salvo donde se di
 | Auditor | `/koru/auditor/` | Detección de patrones de comportamiento |
 | Dirección | `/koru/auditor/corp/` | Salud de corp, reclutamiento, social y rentabilidad de lunas |
 | Tickets | `/koru/tickets/` | Tickets de reclutamiento, dirección, AA e IT |
+| Mi aportación | `/koru/regalos/mi/` | Lo que ha aportado el piloto a la fiesta y en qué rango cae |
+| Gestión de regalos | `/koru/regalos/gestion/` | Aportaciones detectadas, valoración y validación |
+| Sorteos | `/koru/regalos/sorteos/` | Roster, bolsa de premios y motor de sorteo con semilla |
+| Ruleta | `/koru/regalos/sorteos/<id>/ruleta/` | Pantalla de proyección para la gala |
+| Entregas | `/koru/regalos/entregas/` | Qué premio ha llegado a su dueño y qué falta |
 | Export CSV | `/koru/export/{resumen,pvp,ore}/` | Descarga con BOM UTF-8 para Excel |
 
 El prefijo de URL lo registra el `UrlHook` como `^koru/`.
@@ -44,6 +49,9 @@ Todos cuelgan del modelo `General` (`koru_stats.*`):
 | `auditor_corp_health` | Panel de Salud de Corp (Directores/CEO) |
 | `tickets_reclutamiento` · `tickets_directores` · `tickets_asuntos_internos` · `tickets_it` | Cada tipo de ticket |
 | `tickets_admin` | Todos los tipos de ticket |
+| `gift_access` | Mi aportación |
+| `gift_manage` | Aportaciones, sorteos y entregas |
+| `gift_ceo` | Los sorteos especiales del CEO |
 
 ## Requisitos
 
@@ -112,6 +120,60 @@ Se programan desde el admin de Django (django-celery-beat). Las principales:
 | `rebuild_moon_tax_ledger` | Recalcula el libro de saldos del tax lunar |
 | `snapshot_moon_fuel` | Combustible de las estructuras de luna |
 | `sync_tickets` | Tickets desde el ecosistema n8n/Baserow |
+| `sync_gift_contributions` | Aportaciones de la fiesta: contratos e ISK (lee `corptools`, sin ESI) |
+| `sync_gift_deliveries` | Entregas: empareja los contratos de premio y avanza su estado |
+| `snapshot_character_values` | Foto diaria de patrimonio y saldo por personaje |
+
+## Regalos de la fiesta
+
+Un módulo entero para la fiesta de Navidad, de la aportación al premio entregado.
+Cuatro ideas lo sostienen:
+
+1. **Detectar propone, el director dispone.** Nada cuenta hasta que una persona
+   lo valida; ahí es cuando se congela la foto del valor.
+2. **El valor se congela al validar.** Recalcular después sería mentir sobre lo
+   que se decidió entonces.
+3. **Todo se resuelve al main**, venga de donde venga el alt.
+4. **El sorteo es independiente de la aportación.** El roster se construye con
+   filtros, se congela, y se puede completar a mano por méritos.
+
+Lo que conviene saber antes de usarlo:
+
+- **Valoración**: Jita sell por percentil, nunca el mínimo pelado. Lo que el
+  mercado no sostiene se **marca para valorar a mano**, no se descarta ni se
+  inventa. Un BPC jamás hereda el precio de su BPO: comparten `typeID`.
+- **El sorteo es reproducible.** Al cerrar se publica el hash de la semilla y al
+  sortear se revela: con el roster y la bolsa congelados, cualquiera reproduce el
+  resultado sin fiarse de nadie. Las tiradas salen de
+  `sha256("<semilla>:<premio_id>:<intento>")`, no de `random`.
+- **La entrega se empareja por el título del contrato** (`Yoiul #<id>`, que la
+  pantalla da hecho y se copia con un clic). Sin título se intenta por descarte y
+  **solo cuando no hay ninguna duda**: decirle a alguien que ya cobró cuando no ha
+  cobrado es el error que no se puede cometer ahí.
+- **El fondo de la ruleta** se puede sustituir por una imagen propia dejándola
+  en `/var/www/myauth/static/koru_stats/ruleta/fondo.jpg` (en la carpeta de
+  estáticos recogidos, **no** en la del paquete dentro del `venv`: ahí la borra
+  el siguiente `pip install --upgrade`). Detalles en
+  `koru_stats/static/koru_stats/ruleta/LEEME.md`.
+
+Antes de una campaña, `python manage.py koru_regalos_diagnostico --dias 365`
+enseña qué detectaría sin escribir nada. Y `koru_regalos_demo` monta un sorteo de
+pruebas con pilotos reales del Auth, para ensayar la gala.
+
+## Package Monitor lo ve como «Unknown»
+
+Es normal y no está roto. `aa-package-monitor` comprueba versiones preguntando a
+**PyPI**, y `koru-stats` se instala desde git porque es una app interna de Rekium
+que no se publica. Al no encontrar el paquete en PyPI, no sabe decir si hay una
+versión más nueva.
+
+Para saber qué versión está puesta:
+
+```bash
+pip show koru-stats | head -2
+```
+
+Y para ver si hay algo nuevo, el [CHANGELOG](CHANGELOG.md) y los tags del repo.
 
 ## Versionado
 
