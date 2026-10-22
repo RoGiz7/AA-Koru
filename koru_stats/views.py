@@ -3415,8 +3415,11 @@ def _ficheros_de(ticket):
     # coger el primer fichero y meterlo en el iframe enseñaba una foto en vez de
     # la charla. La conversacion es el que es HTML; el resto son adjuntos.
     def _es_conversacion(nombre, url):
+        # ⚠ El PDF cuenta. Los tickets viejos no tienen texto: la conversacion
+        # es un PDF o una captura que generaba MEE6 y se archivaba a mano. Si se
+        # queda fuera, esos tickets pierden su transcripcion de la vista.
         bajo = (str(nombre) + " " + str(url)).lower()
-        return any(e in bajo for e in (".html", ".htm", ".txt"))
+        return any(e in bajo for e in (".html", ".htm", ".txt", ".pdf"))
 
     for clave in ("Transcripción", "Transcripción Auditoría", "Archivo"):
         val = extra.get(clave)

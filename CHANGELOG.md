@@ -3,6 +3,15 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.29.2] — 2026-10-22
+
+### Corregido
+
+- **Los tickets antiguos perdían su transcripción.** Al separar la conversación
+  de los adjuntos (0.28.1) solo se aceptaron `.html` y `.txt`, pero los tickets
+  de antes no tienen texto: su conversación es un **PDF** que generaba MEE6 y se
+  archivaba a mano. Esos caían a «Adjuntos» y dejaban de verse en el recuadro.
+
 ## [0.29.1] — 2026-10-22
 
 ### Corregido
