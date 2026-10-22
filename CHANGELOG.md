@@ -3,6 +3,29 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.19.0] — 2026-10-22
+
+### Añadido
+
+- **Regalos recibidos en el personaje del CEO.** Un contrato asignado a la corp
+  lo puede aceptar cualquiera, así que los regalos se mandan al CEO. Un
+  destinatario válido puede ser ahora un **personaje**: se leen sus contratos
+  (`corptools_contract`) y sus donaciones de ISK (diario de cartera del
+  personaje). Necesita que ese personaje esté auditado en corptools con
+  contratos y cartera; si no lo está, el sync lo avisa en el log.
+- **Todo lo que llega a un personaje entra como «Por revisar»** con la marca
+  *personal*, y **no cuenta** para rangos, bote ni premios hasta que alguien lo
+  valida: al CEO le llegan también ventas, pagos y traspasos, y es él quien
+  elige qué es de la fiesta. Lo que se manda a sí mismo desde un alt ni aparece.
+- **«Anotar a…» al validar**: el regalo se apunta al main de otro piloto
+  (por nombre o id de cualquiera de sus personajes). Pide nota.
+
+### Corregido
+
+- **Las aportaciones descartadas resucitaban** en el siguiente sync: solo se
+  protegían las validadas. Ahora el programa no toca nada que haya decidido una
+  persona.
+
 ## [0.18.5] — 2026-10-20
 
 ### Corregido

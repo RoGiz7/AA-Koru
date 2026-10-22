@@ -4279,9 +4279,8 @@ def _gift_mi_ctx(request):
         return {"main": main, "campaign": None}
 
     aportaciones = list(
-        GiftContribution.objects
-        .filter(campaign=campaign, main_char_id=main.character_id)
-        .exclude(estado=GiftContribution.ESTADO_DESCARTADA)
+        GiftContribution.que_cuentan(
+            GiftContribution.objects.filter(campaign=campaign, main_char_id=main.character_id))
         .prefetch_related("items")
         .order_by("-fecha")
     )
@@ -4364,7 +4363,9 @@ def _gift_gestion_ctx(request, campaign):
     # filtrar por "revisar" el total aportado bajaria y pareceria que se ha
     # perdido dinero.
     todas = list(GiftContribution.objects.filter(campaign=campaign).prefetch_related("items"))
-    vivas = [a for a in todas if a.estado != GiftContribution.ESTADO_DESCARTADA]
+    # Lo personal sin validar NO es vivo: es lo que le llego al CEO, no lo que
+    # se regalo. Si contase, un pago cualquiera metería a alguien en un rango.
+    vivas = [a for a in todas if a.cuenta]
 
     por_main = {}
     for a in vivas:
@@ -4393,7 +4394,7 @@ def _gift_gestion_ctx(request, campaign):
             "total": sum((a.valor_final or 0) for a in vivas),
             "aportantes": len(por_main),
             "entregas": len(vivas),
-            "por_revisar": sum(1 for a in vivas if a.estado == GiftContribution.ESTADO_REVISAR),
+            "por_revisar": sum(1 for a in todas if a.estado == GiftContribution.ESTADO_REVISAR),
             "validadas": sum(1 for a in vivas if a.estado == GiftContribution.ESTADO_VALIDADA),
             "sin_valorar": sum(1 for a in vivas for i in a.items.all() if i.requiere_valoracion),
             "sin_main": sum(1 for a in vivas if a.sin_main),
@@ -4401,6 +4402,24 @@ def _gift_gestion_ctx(request, campaign):
         "estados": GiftContribution.ESTADOS,
         "origenes": GiftContribution.ORIGENES,
     }
+
+
+def _gift_buscar_main(texto):
+    """(main_char_id, main_name) a partir del nombre o el id de CUALQUIER personaje suyo."""
+    from django.db import connection
+
+    from .tasks import _resolve_mains
+
+    t = (texto or "").strip()
+    with connection.cursor() as c:
+        if t.isdigit():
+            c.execute("SELECT character_id FROM eveonline_evecharacter WHERE character_id = %s", [int(t)])
+        else:
+            c.execute("SELECT character_id FROM eveonline_evecharacter WHERE character_name = %s", [t])
+        fila = c.fetchone()
+    if not fila:
+        return None
+    return _resolve_mains([int(fila[0])]).get(int(fila[0]))
 
 
 def _fondo(campaign):
@@ -4416,9 +4435,8 @@ def _fondo(campaign):
 
     from .models import GiftContribution, RafflePrize
 
-    entrado = (GiftContribution.objects
-               .filter(campaign=campaign, origen=GiftContribution.ORIGEN_ISK)
-               .exclude(estado=GiftContribution.ESTADO_DESCARTADA)
+    entrado = (GiftContribution.que_cuentan(
+                   GiftContribution.objects.filter(campaign=campaign, origen=GiftContribution.ORIGEN_ISK))
                .aggregate(t=Sum("valor_estimado"))["t"] or 0)
 
     comprometido = (RafflePrize.objects
@@ -4500,6 +4518,22 @@ def gift_validar(request, pk):
         messages.info(request, "Reabierta: volverá a entrar en el siguiente sync.")
         return redirect(reverse("koru_stats:gift_gestion"))
 
+    # ★ Anotarselo a OTRA persona: el regalo llega al CEO en nombre de alguien,
+    # o desde un personaje que no esta en el Auth. Se busca por nombre o id de
+    # cualquier personaje suyo y se apunta a su main.
+    persona = (request.POST.get("persona") or "").strip()
+    reasignar = None
+    if persona:
+        reasignar = _gift_buscar_main(persona)
+        if not reasignar:
+            messages.error(request, f"No encuentro a «{persona}» en el Auth (ni a ningún personaje suyo).")
+            return redirect(reverse("koru_stats:gift_gestion"))
+        if reasignar[0] == a.main_char_id:
+            reasignar = None
+        elif not nota:
+            messages.error(request, "Anotárselo a otra persona pide una nota explicando por qué.")
+            return redirect(reverse("koru_stats:gift_gestion"))
+
     # validar, con ajuste de valor opcional
     if valor:
         from decimal import InvalidOperation
@@ -4516,11 +4550,17 @@ def gift_validar(request, pk):
                 return redirect(reverse("koru_stats:gift_gestion"))
             a.valor_ajustado = nuevo
 
+    campos = ["valor_ajustado", "estado", "nota", "validado_por", "validado_en"]
+    if reasignar:
+        a.main_char_id, a.main_name = reasignar
+        a.sin_main = False
+        campos += ["main_char_id", "main_name", "sin_main"]
+
     a.estado = GiftContribution.ESTADO_VALIDADA
     a.nota = nota or a.nota
     a.validado_por = request.user
     a.validado_en = timezone.now()
-    a.save(update_fields=["valor_ajustado", "estado", "nota", "validado_por", "validado_en"])
+    a.save(update_fields=campos)
     messages.success(request, f"Validada la aportación de {a.main_name or a.donante_name}.")
     return redirect(reverse("koru_stats:gift_gestion"))
 
@@ -4606,9 +4646,8 @@ def gift_sorteo(request, pk):
         preview = motor.preview_roster(r.campaign, spec)
 
     # Aportaciones que aun no son premio en ningun sorteo
-    libres = (GiftContribution.objects
-              .filter(campaign=r.campaign, origen=GiftContribution.ORIGEN_CONTRATO)
-              .exclude(estado=GiftContribution.ESTADO_DESCARTADA)
+    libres = (GiftContribution.que_cuentan(
+                  GiftContribution.objects.filter(campaign=r.campaign, origen=GiftContribution.ORIGEN_CONTRATO))
               .filter(prize__isnull=True)
               .order_by("-valor_estimado"))
 

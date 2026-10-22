@@ -1232,6 +1232,12 @@ class GiftContribution(models.Model):
     sin_main            = models.BooleanField(default=False, help_text="El donante no resuelve a ningun main")
     aviso               = models.CharField(max_length=250, blank=True, default="")
 
+    # ★ Llego al PERSONAJE de alguien (el CEO), no a la corp. A esa persona le
+    # llega de todo —ventas, pagos, traspasos—, asi que no cuenta para rangos,
+    # bote ni premios hasta que un director la valida a mano.
+    personal            = models.BooleanField(default=False, db_index=True,
+                                              help_text="Recibido en un personaje, no en la corp: no cuenta hasta validarlo")
+
     validado_por = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True,
                                      related_name="gift_contributions_validadas")
     validado_en  = models.DateTimeField(null=True, blank=True)
@@ -1259,6 +1265,25 @@ class GiftContribution(models.Model):
     @property
     def tiene_anomalias(self):
         return any([self.requiere_valoracion, self.ubicacion_rara, self.cobra_isk, self.sin_main])
+
+    @property
+    def cuenta(self):
+        """Si suma para rangos, bote y premios."""
+        if self.estado == self.ESTADO_DESCARTADA:
+            return False
+        return (not self.personal) or self.estado == self.ESTADO_VALIDADA
+
+    @classmethod
+    def que_cuentan(cls, qs):
+        """
+        El mismo criterio que `cuenta`, para un queryset.
+
+        ★ Usar SIEMPRE esto y no `.exclude(estado=DESCARTADA)` a pelo: lo
+        personal sin validar es «lo que le llego al CEO», no «lo que se regalo».
+        """
+        from django.db.models import Q
+        return (qs.exclude(estado=cls.ESTADO_DESCARTADA)
+                  .filter(Q(personal=False) | Q(estado=cls.ESTADO_VALIDADA)))
 
     def __str__(self):
         quien = self.main_name or self.donante_name or self.donante_id

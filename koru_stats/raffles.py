@@ -273,9 +273,7 @@ def preview_roster(campaign, spec=None):
 
     # Lo aportado por main, que es sobre lo que se mide el rango
     aportado = {}
-    for g in (GiftContribution.objects
-              .filter(campaign=campaign)
-              .exclude(estado=GiftContribution.ESTADO_DESCARTADA)):
+    for g in GiftContribution.que_cuentan(GiftContribution.objects.filter(campaign=campaign)):
         if g.main_char_id:
             aportado[g.main_char_id] = aportado.get(g.main_char_id, 0) + (g.valor_final or 0)
 

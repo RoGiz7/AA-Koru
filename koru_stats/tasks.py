@@ -3030,6 +3030,70 @@ SQL_DONACIONES_REGALO = """
 """
 
 
+# ★ PERSONAL (2026-10-22). Un contrato a la corp lo puede aceptar cualquiera,
+# asi que los regalos se mandan al personaje del CEO. corptools guarda sus
+# contratos y su cartera en las tablas de PERSONAJE, que —al contrario que las
+# de corp— SI traen `issuer_id` relleno.
+#
+# `ec.character_id = c.assignee_id`: solo la copia de la fila que esta en la
+# auditoria del PROPIO destinatario. El mismo contrato sale tambien en la del
+# que lo manda si esta auditado, y esa copia puede no tener items (corptools
+# solo los pide cuando el contrato es nuevo para ese personaje).
+SQL_CONTRATOS_REGALO_PERSONAL = """
+    SELECT c.id, c.contract_id, c.issuer_id AS issuer_name_id, c.assignee_id,
+           c.acceptor_id AS acceptor_name_id,
+           c.price, c.reward, c.volume, c.contract_type, c.status,
+           c.start_location_id, c.date_issued, c.date_accepted
+    FROM corptools_contract c
+    JOIN corptools_characteraudit cau ON cau.id = c.character_id
+    JOIN eveonline_evecharacter    ec ON ec.id  = cau.character_id
+    WHERE c.assignee_id IN ({dest})
+      AND ec.character_id = c.assignee_id
+      AND c.date_issued >= %s
+      AND c.date_issued <= %s
+      AND c.contract_type = 'item_exchange'
+      AND c.status IN ('finished', 'finished_issuer', 'finished_contractor')
+      AND COALESCE(c.price, 0) = 0
+    ORDER BY c.date_issued DESC
+"""
+
+SQL_DONACIONES_REGALO_PERSONAL = """
+    SELECT wj.entry_id, wj.first_party_id, wj.amount, wj.date, wj.reason,
+           ec.character_id AS receptor_id
+    FROM corptools_characterwalletjournalentry wj
+    JOIN corptools_characteraudit cau ON cau.id = wj.character_id
+    JOIN eveonline_evecharacter    ec ON ec.id  = cau.character_id
+    WHERE wj.ref_type = 'player_donation'
+      AND wj.amount > 0
+      AND wj.date >= %s
+      AND wj.date <= %s
+      AND ec.character_id IN ({dest})
+    ORDER BY wj.date DESC
+"""
+
+
+def _destinos_personales(entity_ids):
+    """
+    {character_id: auditado} de los destinatarios que son PERSONAJES.
+
+    Un id que no esta en `eveonline_evecharacter` es una corp. Uno que esta pero
+    sin auditoria de corptools es un personaje del que NO se ve nada: hay que
+    avisarlo, porque si no la campaña pareceria vacia sin motivo.
+    """
+    if not entity_ids:
+        return {}
+    ph = ",".join(["%s"] * len(entity_ids))
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT ec.character_id, cau.id "
+            "FROM eveonline_evecharacter ec "
+            "LEFT JOIN corptools_characteraudit cau ON cau.character_id = ec.id "
+            "WHERE ec.character_id IN (" + ph + ")",
+            list(entity_ids),
+        )
+        return {int(cid): aud is not None for cid, aud in cursor.fetchall()}
+
+
 def _campana_activa(campaign_id=None):
     from .models import GiftCampaign
     if campaign_id:
@@ -3070,7 +3134,14 @@ def sync_gift_contributions(campaign_id=None):
     director validando, que es cuando se congela la foto.
 
     Las filas ya VALIDADAS no se tocan: su precio es el del momento en que se
-    aporto, y recalcularlo seria mentir sobre lo que se decidio entonces.
+    aporto, y recalcularlo seria mentir sobre lo que se decidio entonces. Las
+    DESCARTADAS tampoco: si no, el siguiente sync las resucitaria y el director
+    tendria que descartar lo mismo cada hora.
+
+    ★ Un destinatario puede ser un PERSONAJE (el CEO, desde 2026-10-22). Lo que
+    entra por ahi es todo lo que le llega a esa persona, asi que nunca se da por
+    bueno solo: entra como «Revisar» con `personal=True` y no cuenta hasta que
+    alguien lo valida (y quien valida puede anotarselo a otra persona).
     """
     from django.db.models import Q
 
@@ -3097,15 +3168,27 @@ def sync_gift_contributions(campaign_id=None):
     por_destino = {int(d.entity_id): d for d in destinos}
     guardados = 0
 
+    # --- 0. Corp o personaje -------------------------------------------------
+    personales = _destinos_personales(list(por_destino))
+    sin_auditar = [e for e, ok in personales.items() if not ok]
+    if sin_auditar:
+        logger.warning("koru sync_gift_contributions: destinatarios personaje SIN auditoria "
+                       "de corptools %s: no se ve nada de lo que les llega", sin_auditar)
+    corp_ids = [e for e in por_destino if e not in personales]
+    pers_ids = [e for e, ok in personales.items() if ok]
+
+    # Lo que el destinatario se manda a si mismo desde un alt no es un regalo
+    mains_destino = {m for m, _ in _resolve_mains(pers_ids).values()} if pers_ids else set()
+
     # --- 1. Contratos de items ---------------------------------------------
-    dest_contratos = [e for e, d in por_destino.items() if d.acepta_contratos]
+    dest_contratos = [e for e in corp_ids if por_destino[e].acepta_contratos]
     contratos, items_por_contrato = [], {}
     if dest_contratos:
         sql = SQL_CONTRATOS_REGALO.format(dest=",".join(["%s"] * len(dest_contratos)))
         with connection.cursor() as cursor:
             cursor.execute(sql, dest_contratos + [desde, hasta])
             cols = [c[0] for c in cursor.description]
-            contratos = [dict(zip(cols, r)) for r in cursor.fetchall()]
+            contratos = [dict(zip(cols, r), _personal=False) for r in cursor.fetchall()]
 
     # ★ Los contratos del tax lunar van al MISMO destinatario, con el mismo
     # `item_exchange` a precio 0: encajan en el filtro de un regalo uno por uno.
@@ -3124,31 +3207,57 @@ def sync_gift_contributions(campaign_id=None):
             logger.info("koru sync_gift_contributions: %s contratos saltados por ser tax lunar",
                         len(ya_son_tax))
 
-    if contratos:
-        row_ids = [c["id"] for c in contratos]
+    pers_contratos = [e for e in pers_ids if por_destino[e].acepta_contratos]
+    if pers_contratos:
+        sql = SQL_CONTRATOS_REGALO_PERSONAL.format(dest=",".join(["%s"] * len(pers_contratos)))
+        ya_vistos = {int(c["contract_id"]) for c in contratos}
+        with connection.cursor() as cursor:
+            cursor.execute(sql, pers_contratos + [desde, hasta])
+            cols = [c[0] for c in cursor.description]
+            for r in cursor.fetchall():
+                d = dict(zip(cols, r), _personal=True)
+                if int(d["contract_id"]) not in ya_vistos:
+                    ya_vistos.add(int(d["contract_id"]))
+                    contratos.append(d)
+
+    # Items: cada tabla de contratos tiene la suya, y los `id` son cadenas que
+    # podrian repetirse entre las dos. Por eso la clave lleva la tabla delante.
+    for personal, tabla_items in ((False, "corptools_corporatecontractitem"),
+                                  (True,  "corptools_contractitem")):
+        row_ids = [c["id"] for c in contratos if c["_personal"] == personal]
+        if not row_ids:
+            continue
         ph = ",".join(["%s"] * len(row_ids))
         with connection.cursor() as cursor:
             # MIN(raw_quantity) < 0 delata que hay copia de blueprint
             cursor.execute(
                 "SELECT i.contract_id, i.type_name_id, SUM(i.quantity), MIN(i.raw_quantity) "
-                "FROM corptools_corporatecontractitem i "
+                "FROM " + tabla_items + " i "
                 "WHERE i.contract_id IN (" + ph + ") AND i.is_included = 1 "
                 "GROUP BY i.contract_id, i.type_name_id",
                 row_ids,
             )
             for rid, tid, qty, raw in cursor.fetchall():
-                items_por_contrato.setdefault(rid, []).append(
+                items_por_contrato.setdefault((personal, rid), []).append(
                     (int(tid or 0), int(qty or 0), int(raw) if raw is not None else None))
 
     # --- 2. Donaciones de ISK ----------------------------------------------
-    dest_isk = [e for e, d in por_destino.items() if d.acepta_isk]
+    dest_isk = [e for e in corp_ids if por_destino[e].acepta_isk]
     donaciones = []
     if dest_isk:
         sql = SQL_DONACIONES_REGALO.format(dest=",".join(["%s"] * len(dest_isk)))
         with connection.cursor() as cursor:
             cursor.execute(sql, [desde, hasta] + dest_isk)
             cols = [c[0] for c in cursor.description]
-            donaciones = [dict(zip(cols, r)) for r in cursor.fetchall()]
+            donaciones = [dict(zip(cols, r), _personal=False) for r in cursor.fetchall()]
+
+    pers_isk = [e for e in pers_ids if por_destino[e].acepta_isk]
+    if pers_isk:
+        sql = SQL_DONACIONES_REGALO_PERSONAL.format(dest=",".join(["%s"] * len(pers_isk)))
+        with connection.cursor() as cursor:
+            cursor.execute(sql, [desde, hasta] + pers_isk)
+            cols = [c[0] for c in cursor.description]
+            donaciones += [dict(zip(cols, r), _personal=True) for r in cursor.fetchall()]
 
     if not contratos and not donaciones:
         logger.info("koru sync_gift_contributions: nada nuevo en la ventana de '%s'", campaign.nombre)
@@ -3180,32 +3289,43 @@ def sync_gift_contributions(campaign_id=None):
             )
             nombres = {int(i): n or "" for i, n in cursor.fetchall()}
 
-    validadas = set(
+    # Lo que ya decidio una persona no lo toca el programa
+    cerradas = set(
         GiftContribution.objects
-        .filter(campaign=campaign, estado=GiftContribution.ESTADO_VALIDADA)
+        .filter(campaign=campaign,
+                estado__in=[GiftContribution.ESTADO_VALIDADA, GiftContribution.ESTADO_DESCARTADA])
         .values_list("fuente_key", flat=True)
     )
+
+    def _aviso_personal(destino):
+        quien = (destino.entity_name if destino else "") or "un personaje"
+        return "llegó al personal de %s: ¿es de la fiesta?" % quien
 
     # --- 5. Contratos -> aportaciones --------------------------------------
     for c in contratos:
         fuente_key = "c:%s" % int(c["contract_id"])
-        if fuente_key in validadas:
+        if fuente_key in cerradas:
             continue
+
+        es_personal = c["_personal"]
+        items = items_por_contrato.get((es_personal, c["id"]))
 
         # ⚠ Un contrato a precio 0 y sin nada incluido existe de verdad y sale a
         # puñados: es alguien PIDIENDO cosas a la corp (sus lineas son
         # `is_included = 0`, que ya se descartan al leer los items). Crear una
         # aportacion de 0 ISK por cada uno llenaria la pantalla del director de
         # filas que no significan nada.
-        if not items_por_contrato.get(c["id"]):
+        if not items:
             continue
 
         destino = por_destino.get(int(c["assignee_id"] or 0))
         donante = int(c["issuer_name_id"] or 0)
         main_id, main_name = mains.get(donante, (None, ""))
+        if es_personal and main_id is not None and main_id in mains_destino:
+            continue
 
         detalle, valor_total, hay_que_valorar = [], 0, False
-        for tid, qty, raw in items_por_contrato.get(c["id"], []):
+        for tid, qty, raw in items:
             nombre, gid, cat = catalogo.get(tid, ("", None, None))
             es_bpc = bool(raw is not None and raw < 0)
             precio, fuente, requiere, motivo = _valorar_item(
@@ -3233,6 +3353,7 @@ def sync_gift_contributions(campaign_id=None):
         )
 
         avisos = []
+        if es_personal:      avisos.append(_aviso_personal(destino))
         if hay_que_valorar:  avisos.append("hay items sin precio fiable")
         if ubicacion_rara:   avisos.append("entregado fuera de la ubicacion esperada")
         if cobra_isk:        avisos.append("price/reward distinto de cero")
@@ -3269,6 +3390,7 @@ def sync_gift_contributions(campaign_id=None):
                 "ubicacion_rara": ubicacion_rara,
                 "cobra_isk":      cobra_isk,
                 "sin_main":       main_id is None,
+                "personal":       es_personal,
                 "aviso":          "; ".join(avisos)[:250],
             },
         )
@@ -3279,20 +3401,30 @@ def sync_gift_contributions(campaign_id=None):
 
     # --- 6. Donaciones -> aportaciones -------------------------------------
     for d in donaciones:
-        fuente_key = "w:%s" % int(d["entry_id"])
-        if fuente_key in validadas:
-            continue
-
-        destino = por_destino.get(int(d["corp_eve_id"] or 0))
-        # Si el destinatario fija division, una donacion a otra no cuenta
-        if destino and destino.wallet_division is not None \
-                and int(d["division"] or 0) != int(destino.wallet_division):
+        es_personal = d["_personal"]
+        # El entry_id es de cada diario: el de un personaje y el de la corp no
+        # comparten espacio, asi que no pueden compartir clave.
+        fuente_key = ("wp:%s" if es_personal else "w:%s") % int(d["entry_id"])
+        if fuente_key in cerradas:
             continue
 
         donante = int(d["first_party_id"] or 0)
         main_id, main_name = mains.get(donante, (None, ""))
 
+        if es_personal:
+            destino = por_destino.get(int(d["receptor_id"] or 0))
+            if main_id is not None and main_id in mains_destino:
+                continue
+        else:
+            destino = por_destino.get(int(d["corp_eve_id"] or 0))
+            # Si el destinatario fija division, una donacion a otra no cuenta
+            if destino and destino.wallet_division is not None \
+                    and int(d["division"] or 0) != int(destino.wallet_division):
+                continue
+
         avisos = []
+        if es_personal:
+            avisos.append(_aviso_personal(destino))
         if main_id is None:
             avisos.append("el donante no resuelve a ningun main")
 
@@ -3305,7 +3437,7 @@ def sync_gift_contributions(campaign_id=None):
                 "main_char_id": main_id,
                 "main_name":    main_name,
                 "entry_id":        int(d["entry_id"]),
-                "wallet_division": int(d["division"] or 0),
+                "wallet_division": None if es_personal else int(d["division"] or 0),
                 # Se enseña, no filtra: medio mundo lo deja vacio
                 "reason":          (d["reason"] or "")[:500],
                 "fecha":           _aware(d["date"]),
@@ -3315,6 +3447,7 @@ def sync_gift_contributions(campaign_id=None):
                 "estado": (GiftContribution.ESTADO_REVISAR if avisos
                            else GiftContribution.ESTADO_DETECTADA),
                 "sin_main": main_id is None,
+                "personal": es_personal,
                 "aviso":    "; ".join(avisos)[:250],
             },
         )
