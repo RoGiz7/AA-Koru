@@ -67,9 +67,9 @@
             <td>{{ t.tipo }}</td>
             <td class="text-end">{{ t.total }}</td>
             <td class="text-end">{{ t.cerrados }} <span class="text-muted small">({{ t.pct_cerrado }}%)</span></td>
-            <td class="text-end">{% if t.mediana != None %}{{ t.mediana }} d{% else %}—{% endif %}</td>
-            <td class="text-end">{% if t.p90 != None %}{{ t.p90 }} d{% else %}—{% endif %}</td>
-            <td class="text-end text-muted">{% if t.media != None %}{{ t.media }} d{% else %}—{% endif %}</td>
+            <td class="text-end">{% if t.mediana != None %}{{ t.mediana }} {{ t.unidad }}{% else %}—{% endif %}</td>
+            <td class="text-end">{% if t.p90 != None %}{{ t.p90 }} {{ t.unidad }}{% else %}—{% endif %}</td>
+            <td class="text-end text-muted">{% if t.media != None %}{{ t.media }} {{ t.unidad }}{% else %}—{% endif %}</td>
           </tr>
           {% if t.raros %}
           <tr><td colspan="6" class="small text-warning">
@@ -86,7 +86,8 @@
       abierto seis meses porque nadie lo cerró arrastra la media y hace parecer
       que se tarda el triple. El <strong>P90</strong> dice cómo son los peores.
       «it» y «soporte» no tienen fecha de cierre en Baserow, así que no hay
-      tiempo que medir.
+      tiempo que medir. <strong>«asuntos» se mide en minutos</strong>, no en
+      días: una auditoría se hace del tirón, y en días todas valdrían 0.
     </div>
   </div></div>
   {% endif %}
@@ -165,7 +166,9 @@
     function hbar(id, labels, data, color){
         var el = document.getElementById(id); if(!el) return;
         new Chart(el, {type:'bar', data:{labels:labels, datasets:[{data:data, backgroundColor:color||'#3b82f6'}]},
-            options:{indexAxis:'y', plugins:{legend:{display:false}}, scales:{x:{beginAtZero:true}}}});
+            // Son tickets: no existe medio ticket, asi que nada de 0,2 en el eje
+            options:{indexAxis:'y', plugins:{legend:{display:false}},
+                     scales:{x:{beginAtZero:true, ticks:{precision:0}}}}});
     }
 
     var porTipo = {{ por_tipo_json|safe }};

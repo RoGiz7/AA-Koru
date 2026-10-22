@@ -3,6 +3,18 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.21.2] — 2026-10-22
+
+### Corregido
+
+- **Las auditorías salían con mediana 0 d**, que era cierto e inútil: una
+  auditoría se hace del tirón —los checks van de las 0:42 a las 0:48— así que
+  en días siempre vale cero. La hora venía en el mismo texto del check y se
+  estaba tirando. Ahora `asuntos` se mide en **minutos** y cada fila de la tabla
+  lleva su unidad.
+- Los ejes de las barras salían con decimales (0,2 · 0,4) cuando lo que cuentan
+  son tickets. No existe medio ticket.
+
 ## [0.21.1] — 2026-10-22
 
 ### Corregido

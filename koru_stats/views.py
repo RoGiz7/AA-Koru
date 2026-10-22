@@ -3503,12 +3503,58 @@ def tickets_stats(request):
     # ⚠ Los dias NEGATIVOS (cierre anterior a la apertura) se apartan y se
     # cuentan: no son tiempos, son datos mal metidos, y mezclarlos con los
     # buenos solo sirve para que el numero salga mas bonito de lo que es.
+    def _minutos_auditoria(extra):
+        """
+        Minutos entre el primer y el ultimo «Check …» de una auditoria.
+
+        ★ En DIAS esto siempre daba 0, y con razon: una auditoria se hace del
+        tiron —los checks van de las 0:42 a las 0:48— asi que la unica unidad
+        que dice algo aqui son los minutos. La hora viene en el mismo texto del
+        check, solo habia que dejar de tirarla.
+        """
+        import re as _re
+        from datetime import datetime as _dt
+        vistos = []
+        for k, val in (extra or {}).items():
+            if not k.startswith("Check ") or not isinstance(val, str):
+                continue
+            m = _re.search(r"(\d{1,2})/(\d{1,2})/(\d{4}),?\s+(\d{1,2}):(\d{2}):(\d{2})", val)
+            if not m:
+                continue
+            try:
+                vistos.append(_dt(int(m.group(3)), int(m.group(2)), int(m.group(1)),
+                                  int(m.group(4)), int(m.group(5)), int(m.group(6))))
+            except ValueError:
+                continue
+        if len(vistos) < 2:
+            return None
+        return (max(vistos) - min(vistos)).total_seconds() / 60.0
+
     tiempos = []
     for tipo in sorted(allowed):
         qs = Ticket.objects.filter(tipo=tipo)
         tot = qs.count()
         if not tot:
             continue
+
+        # ⚠ Las auditorias se miden en MINUTOS, no en dias: en dias todas valen
+        # 0 y la fila entera no dice nada. Van por su camino.
+        if tipo == "asuntos":
+            mins = [m for m in (_minutos_auditoria(e)
+                                for e in qs.values_list("extra", flat=True)) if m is not None]
+            mins.sort()
+            n = len(mins)
+            tiempos.append({
+                "tipo": tipo, "total": tot, "cerrados": n,
+                "pct_cerrado": round(n * 100 / tot, 1),
+                "unidad": "min",
+                "mediana": round(mins[n // 2]) if n else None,
+                "p90": round(mins[min(n - 1, int(n * 0.9))]) if n else None,
+                "media": round(sum(mins) / n, 1) if n else None,
+                "raros": 0,
+            })
+            continue
+
         dias, raros = [], 0
         for f, fc in (qs.exclude(fecha__isnull=True).exclude(fecha_cierre__isnull=True)
                         .values_list("fecha", "fecha_cierre")):
@@ -3522,6 +3568,7 @@ def tickets_stats(request):
         tiempos.append({
             "tipo": tipo, "total": tot, "cerrados": n,
             "pct_cerrado": round(n * 100 / tot, 1),
+            "unidad": "d",
             "mediana": dias[n // 2] if n else None,
             "p90": dias[min(n - 1, int(n * 0.9))] if n else None,
             "media": round(sum(dias) / n, 1) if n else None,
