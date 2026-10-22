@@ -1990,37 +1990,54 @@ def sync_tickets():
                 out[k] = val
         return out
 
-    def _fecha_cierre(tipo, row):
+    def _fechas_checks(row):
         """
-        La fecha en que el ticket se dio por terminado, venga como venga.
+        (primera, ultima) de los «Check …» de una auditoria, o (None, None).
 
-        ⚠ Cada tabla la llama de una forma distinta, y la de auditorias NO la
-        tiene: hay que deducirla del ULTIMO «Check …», que es texto libre del
-        estilo «Superion Maximus · 21/10/2026, 0:48:07». Por eso esto existe en
-        vez de leer un campo y ya.
+        Son texto libre del estilo «Superion Maximus · 21/10/2026, 0:48:07», asi
+        que la fecha se saca con una expresion regular. El primero marca cuando
+        el auditor se puso; el ultimo, cuando acabo.
         """
+        vistas = []
+        for k, val in row.items():
+            if not k.startswith("Check ") or not isinstance(val, str):
+                continue
+            m = re.search(r"(\d{1,2})/(\d{1,2})/(\d{4})", val)
+            if not m:
+                continue
+            try:
+                vistas.append(date(int(m.group(3)), int(m.group(2)), int(m.group(1))))
+            except ValueError:
+                continue
+        return (min(vistas), max(vistas)) if vistas else (None, None)
+
+    def _fecha_apertura(tipo, row):
+        """
+        ⚠ La tabla de AUDITORIAS no tiene campo «Fecha». Sin fecha de apertura
+        no hay intervalo que medir, asi que las 73 auditorias se caian enteras
+        de los tiempos y ni siquiera salian en el volumen por mes.
+        Se usa el PRIMER «Check …»: no es cuando nacio el ticket, es cuando el
+        auditor se puso con el, que para medir cuanto dura una auditoria es
+        justo lo que interesa.
+        """
+        f = _pdate(row.get("Fecha"))
+        if f:
+            return f
+        if tipo == "asuntos":
+            primera, _ = _fechas_checks(row)
+            if primera:
+                return primera
+        return _pdate(row.get("Última modificación"))
+
+    def _fecha_cierre(tipo, row):
+        """La fecha en que el ticket se dio por terminado, venga como venga."""
         if tipo == "reclutamiento":
             return _pdate(row.get("Fecha cierre"))
         if tipo == "directores":
             return _pdate(row.get("Fecha resolución"))
         if tipo == "asuntos":
-            # El check mas tardio marca el final de la auditoria
-            ultima = None
-            for k, val in row.items():
-                if not k.startswith("Check ") or not isinstance(val, str):
-                    continue
-                m = re.search(r"(\d{1,2})/(\d{1,2})/(\d{4})", val)
-                if not m:
-                    continue
-                try:
-                    d = date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
-                except ValueError:
-                    continue
-                if ultima is None or d > ultima:
-                    ultima = d
-            if ultima:
-                return ultima
-            return _pdate(row.get("Última modificación"))
+            _, ultima = _fechas_checks(row)
+            return ultima or _pdate(row.get("Última modificación"))
         return None
 
     all_rows = []  # (tid, tipo, row_id, parsed_dict, main_name, claim_name)
@@ -2042,7 +2059,7 @@ def sync_tickets():
                 parsed = dict(
                     numero=str(row.get("Nº") or row.get("Número") or ""),
                     discord_ticket=str(row.get("Nº Ticket Discord") or ""),
-                    fecha=_pdate(row.get("Fecha")),
+                    fecha=_fecha_apertura(tipo, row),
                     estado=_sel(row.get("Estado")),
                     tipo_detalle=(_multisel(row.get("Tipo")) or _sel(row.get("Tipo")))[:100],
                     asunto=str(row.get("Asunto") or "")[:5000],

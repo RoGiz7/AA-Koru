@@ -3,6 +3,33 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.21.1] — 2026-10-22
+
+### Corregido
+
+Las gráficas de T2, con los datos reales delante, enseñaron dos huecos:
+
+- **Las 73 auditorías salían con 0 cerradas.** No es que no se cierren: la tabla
+  de Asuntos Internos **no tiene campo `Fecha`**, y sin fecha de apertura no hay
+  intervalo que medir, así que se caían enteras de los tiempos y ni siquiera
+  aparecían en el volumen por mes. Ahora la apertura se toma del **primer
+  `Check …`**: no es cuando nació el ticket, es cuando el auditor se puso con
+  él, que para medir cuánto dura una auditoría es justo lo que interesa.
+- **El embudo mentía por omisión.** Sumaba 165 de 573 solicitudes, porque la
+  mayoría no tiene `Fase` rellena y no se pintaban; y mezclaba «Archivado»,
+  «Completado» y «Rechazado» —que son finales, no fases— con «Con
+  Reclutadores», aplastando la escala y escondiendo lo único accionable: cuánta
+  gente está esperando ahora mismo. Ahora el gráfico enseña **solo las fases
+  vivas**, con el total en curso en la cabecera, y las terminadas más las «(sin
+  fase anotada)» van debajo como etiquetas, para que las partes sumen el total.
+
+### Nota sobre los datos
+
+`directores` solo tiene fecha de resolución en el **9,6%** de sus tickets, así
+que su mediana sale de 34 de 353. Eso no es un fallo del código: es que nadie
+rellena *Fecha resolución* en Baserow. Mientras siga así, ese número se lee con
+pinzas.
+
 ## [0.21.0] — 2026-10-22
 
 ### Añadido

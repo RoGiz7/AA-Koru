@@ -3529,16 +3529,37 @@ def tickets_stats(request):
         })
 
     # --- Embudo de reclutamiento: en que fase esta cada uno ------------------
-    fases = []
+    #
+    # ⚠ Dos cosas hacian que este grafico mintiera por omision:
+    #
+    #   1. La mayoria de solicitudes NO tiene «Fase» —se rellena desde cierto
+    #      punto del proceso— y al no pintarlas el embudo parecia casi vacio.
+    #      Ahora hay una barra «(sin fase)» para que las partes sumen el total.
+    #   2. «Archivado», «Completado» y «Rechazado» no son fases, son FINALES.
+    #      Mezclados con «Con Reclutadores» aplastan la escala y esconden lo
+    #      unico accionable: cuanta gente hay esperando ahora mismo.
+    #
+    # Se separan en dos listas: las vivas, que es donde se actua, y las
+    # terminadas, que son historia.
+    fases, fases_fin, fases_vivas_n = [], [], 0
+    TERMINALES = ("archivad", "completad", "rechazad", "se marcho", "fue a otra")
     if "reclutamiento" in allowed:
         fc_counter = Counter()
+        sin_fase = 0
         for e in Ticket.objects.filter(tipo="reclutamiento").values_list("extra", flat=True):
             v = (e or {}).get("Fase")
             if isinstance(v, dict):
                 v = v.get("value")
             if v:
                 fc_counter[str(v)[:40]] += 1
-        fases = [{"fase": k, "n": v} for k, v in fc_counter.most_common(12)]
+            else:
+                sin_fase += 1
+        for k, n in fc_counter.most_common(20):
+            destino = fases_fin if any(t in k.lower() for t in TERMINALES) else fases
+            destino.append({"fase": k, "n": n})
+        fases_vivas_n = sum(f["n"] for f in fases)
+        if sin_fase:
+            fases_fin.append({"fase": "(sin fase anotada)", "n": sin_fase})
 
     recl = None
     if "reclutamiento" in allowed:
@@ -3603,6 +3624,8 @@ def tickets_stats(request):
         "tiempos": tiempos,
         "fases_json": _to_json(fases),
         "fases": fases,
+        "fases_fin": fases_fin,
+        "fases_vivas_n": fases_vivas_n,
         "recl": recl,
         "recl_charts_json": _to_json(recl_charts) if recl_charts else "null",
     }

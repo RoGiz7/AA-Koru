@@ -91,10 +91,29 @@
   </div></div>
   {% endif %}
 
-  {% if fases %}
+  {% if fases or fases_fin %}
   <div class="card mb-3"><div class="card-body">
-    <h6 class="card-title">Embudo de reclutamiento — en qué fase está cada solicitud</h6>
-    <canvas id="chFases" height="110"></canvas>
+    <h6 class="card-title">
+      Embudo de reclutamiento — quién está esperando ahora mismo
+      <span class="badge bg-primary ms-1">{{ fases_vivas_n }} en curso</span>
+    </h6>
+    {% if fases %}
+      <canvas id="chFases" height="110"></canvas>
+    {% else %}
+      <p class="text-muted small mb-0">No hay ninguna solicitud en curso: todas están terminadas.</p>
+    {% endif %}
+    {% if fases_fin %}
+      <div class="small text-muted mt-2">
+        Ya terminadas:
+        {% for f in fases_fin %}<span class="badge bg-secondary me-1">{{ f.fase }}: {{ f.n }}</span>{% endfor %}
+      </div>
+      <div class="small text-muted mt-1">
+        Se separan a propósito: «Archivado», «Completado» o «Rechazado» no son
+        fases, son finales, y mezclados con «Con Reclutadores» aplastan la escala
+        y esconden lo único accionable. «(sin fase anotada)» son las que no
+        tienen el campo relleno, y están aquí para que las partes sumen el total.
+      </div>
+    {% endif %}
   </div></div>
   {% endif %}
 
