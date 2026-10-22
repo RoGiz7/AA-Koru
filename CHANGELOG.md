@@ -3,6 +3,30 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.20.0] — 2026-10-22
+
+### Añadido
+
+- **T2 — los tickets de un piloto, dentro del Auditor.** Este era el premio de
+  tener el espejo: ver los Asuntos Internos de alguien **al lado de su riesgo**,
+  no en otra pantalla y buscándolo por nombre, que es justo el momento en que se
+  deja de mirar. La tarjeta va arriba, antes del ciclo de vida, porque lo
+  primero que uno quiere saber al abrir una ficha es si ya hubo una auditoría.
+  Los de Asuntos Internos salen en rojo.
+  - Se respeta el **mismo permiso** que en la pantalla de tickets: estar en el
+    Auditor no da derecho a leer Asuntos Internos. Sin permiso no se consulta
+    siquiera, para que no se pueda deducir nada por lo que falta.
+  - Se buscan por **todos los personajes** del piloto, no solo por el main: el
+    campo Main de Baserow lleva a veces el alt con el que se abrió el ticket.
+
+### Corregido
+
+- **El botón «Ficha Auditor» de un ticket llevaba a una ficha vacía** cuando el
+  ticket estaba a nombre de un alt: mandaba a `/auditor/piloto/<id del
+  personaje>/` y el Auditor espera el id del **main**. Ahora se resuelve antes
+  de pintar el enlace. Y la URL se construye por su nombre en vez de pegada a
+  mano, así que un cambio de prefijo ya no la rompe en silencio.
+
 ## [0.19.1] — 2026-10-22
 
 ### Corregido

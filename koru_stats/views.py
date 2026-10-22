@@ -3240,9 +3240,32 @@ def auditor_pilot(request, main_id):
                  .order_by("-fecha").values(
                      "fecha", "evento", "character_name", "estado_anterior", "estado_nuevo", "notas")[:50])
 
+    # --- Tickets del piloto (T2) --------------------------------------------
+    # ★ Este era el premio de tener el espejo de tickets: ver los Asuntos
+    # Internos de un piloto AL LADO de su riesgo. Hasta ahora había que abrir
+    # otra pantalla y buscarlo por nombre, que es justo el momento en el que se
+    # deja de mirar.
+    #
+    # ⚠ Se respeta el mismo permiso que en la pantalla de tickets: estar en el
+    # Auditor no da derecho a leer Asuntos Internos. Sin permiso no se consulta
+    # siquiera, para que no haya forma de deducir nada por lo que falta.
+    tickets_piloto, tickets_resumen = [], []
+    permitidos = _tickets_allowed(request.user)
+    if permitidos:
+        from .models import Ticket
+        # ★ Por TODOS sus personajes, no solo el main: el campo Main de Baserow
+        # lleva a veces el alt con el que abrió el ticket.
+        ids_piloto = [a["character_id"] for a in alts] or [main_id]
+        qs = (Ticket.objects
+              .filter(main_character_id__in=ids_piloto, tipo__in=permitidos)
+              .order_by("-fecha", "-baserow_row_id"))
+        tickets_piloto = list(qs[:40])
+        tickets_resumen = list(qs.values("tipo").annotate(n=Count("id")).order_by("-n"))
+
     context = {
         "main_id": main_id, "main_name": main_name, "corp_id": corp_id,
         "alts": alts, "cobertura": cobertura,
+        "tickets_piloto": tickets_piloto, "tickets_resumen": tickets_resumen,
         "latest": latest, "radar_json": _to_json(radar) if radar else "null",
         "risk_hist": risk_hist, "risk_hist_json": _to_json(risk_hist),
         "alerts": alerts,
@@ -3396,6 +3419,24 @@ def ticket_detail(request, ticket_id):
         if isinstance(cd.get("v"), str):
             cd["v"] = _sub_discord(cd["v"])
 
+    # ⚠ El boton «Ficha Auditor» mandaba a /auditor/piloto/<main_character_id>/,
+    # pero ese id es el del personaje que figura en Baserow, que MUCHAS VECES es
+    # un alt. El Auditor espera el id del MAIN, asi que el enlace llevaba a una
+    # ficha vacia y parecia que el piloto no tenia historial. Se resuelve aqui.
+    auditor_main_id = 0
+    if t.main_character_id:
+        with connection.cursor() as cur:
+            cur.execute(
+                "SELECT main_ec.character_id "
+                "FROM eveonline_evecharacter ec "
+                "JOIN authentication_characterownership co ON co.character_id = ec.id "
+                "JOIN authentication_userprofile        up ON up.user_id      = co.user_id "
+                "JOIN eveonline_evecharacter       main_ec ON main_ec.id      = up.main_character_id "
+                "WHERE ec.character_id = %s", [t.main_character_id])
+            fila = cur.fetchone()
+        # Si no se resuelve, se deja el que habia: peor es no ofrecer el enlace
+        auditor_main_id = int(fila[0]) if fila else t.main_character_id
+
     context = {
         "t": t,
         "campos": campos,
@@ -3403,6 +3444,7 @@ def ticket_detail(request, ticket_id):
         "transcripcion_files": transcripcion_files,
         "notas": notas,
         "transcripcion_texto": transcripcion_texto,
+        "auditor_main_id": auditor_main_id,
     }
     return render(request, "koru_stats/ticket_detail.html", context)
 

@@ -49,8 +49,10 @@
           {% if t.tipo == 'directores' %}· {% if t.visible_piloto %}<span class="badge bg-success">Visible para el piloto</span>{% else %}<span class="badge bg-secondary">Oculto al piloto</span>{% endif %}{% endif %}
         </div>
       </div>
-      {% if t.main_character_id %}
-      <a href="/koru/auditor/piloto/{{ t.main_character_id }}/" class="btn btn-sm btn-outline-warning"><i class="fas fa-user-shield me-1"></i>Ficha Auditor</a>
+      {% if auditor_main_id %}
+      {# La URL por su nombre, no pegada a mano: si el prefijo cambia, esto se entera #}
+      <a href="{% url 'koru_stats:auditor_pilot' auditor_main_id %}"
+         class="btn btn-sm btn-outline-warning"><i class="fas fa-user-shield me-1"></i>Ficha Auditor</a>
       {% endif %}
     </div>
   </div>
