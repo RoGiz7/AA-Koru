@@ -3,6 +3,22 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.21.4] — 2026-10-22
+
+### Corregido
+
+- **Dos comentarios de Django se estaban imprimiendo en pantalla.** El
+  comentario corto `{# … #}` es de UNA línea, y escrito en dos sale tal cual.
+  Uno era de la 0.21.3 y salía en la ficha del ticket; el otro llevaba meses
+  ahí, en `mi_tax_lunar.html`, imprimiéndose en la pantalla del tax lunar de
+  cada piloto sin que nadie lo notara. Los dos pasan a `{% comment %}`, y se
+  revisaron todas las plantillas del plugin: no quedan más.
+- **Las miniaturas de la transcripción dejaban un pie de texto huérfano.** Los
+  enlaces de Discord caducan —ese `?ex=…` es la fecha de expiración— así que en
+  una transcripción de hace semanas no carga ninguna, y quedaba la explicación
+  flotando sin nada encima. Ahora el bloque nace oculto y solo aparece si alguna
+  imagen llega a cargar.
+
 ## [0.21.3] — 2026-10-22
 
 ### Corregido

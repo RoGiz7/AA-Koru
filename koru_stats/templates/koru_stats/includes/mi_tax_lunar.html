@@ -1,6 +1,8 @@
 {% load i18n koru_stats_tags %}
-{# Requiere `mt` en contexto (ver _moon_tax_mi_ctx). Compartido por la pantalla
-   propia /koru/lunas/mi/ y la pestaña del dashboard personal. #}
+{% comment %}
+Requiere `mt` en contexto (ver _moon_tax_mi_ctx). Compartido por la pantalla
+propia /koru/lunas/mi/ y la pestaña del dashboard personal.
+{% endcomment %}
 
 {% if not mt %}
     <div class="alert alert-warning">
