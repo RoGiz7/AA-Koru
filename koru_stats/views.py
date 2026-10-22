@@ -2813,7 +2813,11 @@ import csv as _csv
 from django.http import HttpResponse as _HttpResponse
 
 
+# ⚠ El CSV lleva LOS MISMOS DATOS que su pantalla, asi que pide EL MISMO
+# permiso. Sin esto el permiso se saltaba usando la URL de al lado: la pantalla
+# exigia su permiso y el export, pegado a ella, solo pedia estar logueado.
 @login_required
+@permission_required("koru_stats.basic_access")
 def export_csv_summary(request):
     mes, anio, inicio, fin, periodo_sel = _parse_periodo(request)
     corp_ids = _get_active_corp_ids()
@@ -2845,7 +2849,11 @@ def export_csv_summary(request):
     return response
 
 
+# ⚠ El CSV lleva LOS MISMOS DATOS que su pantalla, asi que pide EL MISMO
+# permiso. Sin esto el permiso se saltaba usando la URL de al lado: la pantalla
+# exigia su permiso y el export, pegado a ella, solo pedia estar logueado.
 @login_required
+@permission_required("koru_stats.pvp_access")
 def export_csv_pvp(request):
     mes, anio, inicio, fin, periodo_sel = _parse_periodo(request)
     corp_ids = _get_active_corp_ids()
@@ -2878,7 +2886,11 @@ def export_csv_pvp(request):
     return response
 
 
+# ⚠ El CSV lleva LOS MISMOS DATOS que su pantalla, asi que pide EL MISMO
+# permiso. Sin esto el permiso se saltaba usando la URL de al lado: la pantalla
+# exigia su permiso y el export, pegado a ella, solo pedia estar logueado.
 @login_required
+@permission_required("koru_stats.basic_access")
 def export_csv_ore(request):
     mes, anio, inicio, fin, periodo_sel = _parse_periodo(request)
     corp_ids = _get_active_corp_ids()

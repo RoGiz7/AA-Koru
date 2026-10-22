@@ -3,6 +3,24 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.23.1] — 2026-10-22
+
+### Corregido
+
+- **Los tres export CSV se saltaban el permiso de su propia pantalla.** Solo
+  pedían estar logueado, y vuelcan la tabla entera de la corp: cada piloto con
+  su minería, sus bounties y su PvP. La pantalla equivalente sí exigía permiso
+  —`dashboard` pide `basic_access`, `pvp_dashboard` pide `pvp_access`— así que
+  bastaba con usar la URL de al lado para saltárselo. Cualquier usuario del
+  Auth, incluido un recluta sin permisos de Koru, podía descargárselo todo.
+  Ahora cada CSV pide **el mismo permiso que su pantalla**.
+
+  Encontrado barriendo todas las vistas expuestas en `urls.py` contra sus
+  decoradores. De paso quedó comprobado que las demás están bien: las que solo
+  llevan `permission_required` no necesitan `login_required`, porque ese
+  decorador ya manda al login a los anónimos; y las de tickets filtran por
+  permiso dentro, con `_tickets_allowed`.
+
 ## [0.23.0] — 2026-10-22
 
 ### Añadido
