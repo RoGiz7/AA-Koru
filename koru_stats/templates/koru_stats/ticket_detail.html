@@ -17,6 +17,19 @@
 .kv-table th { width:34%; white-space:nowrap; vertical-align:top; color:#9aa0a6; font-weight:600; }
 .transcript { white-space:pre-wrap; font-size:.85rem; background:rgba(0,0,0,.2); border-radius:8px; padding:1rem; max-height:480px; overflow:auto; }
 .lvl-tag{font-weight:600}
+
+/* La conversación. El piloto a la izquierda, el staff a la derecha. */
+.koru-chat { max-height:560px; overflow:auto; padding:.5rem .25rem; display:flex; flex-direction:column; gap:.4rem; }
+.koru-msg { display:flex; }
+.koru-msg.izq { justify-content:flex-start; }
+.koru-msg.der { justify-content:flex-end; }
+.koru-msg .burbuja { max-width:min(78%, 620px); padding:.45rem .7rem; border-radius:12px;
+                     background:rgba(255,255,255,.07); font-size:.87rem; }
+.koru-msg.der .burbuja { background:rgba(13,110,253,.18); }
+.koru-msg .quien { font-weight:600; font-size:.78rem; opacity:.85; margin-bottom:.1rem; }
+.koru-msg .cuerpo { white-space:pre-wrap; overflow-wrap:anywhere; }
+.koru-msg .adj { display:block; font-size:.8rem; margin-top:.25rem; }
+.koru-msg .cuando { font-size:.7rem; opacity:.5; text-align:right; margin-top:.15rem; }
 </style>
 {% endblock %}
 
@@ -97,7 +110,44 @@
       </div></div>
       {% endif %}
 
-      {% if transcripcion_texto %}
+      {% if conversacion %}
+      <div class="card mb-3"><div class="card-body">
+        <h6 class="card-title">Conversación</h6>
+{% comment %}
+La charla se pinta aquí en vez de meter el fichero del bot en un iframe: se lee
+mejor y, sobre todo, deja de haber HTML de fuera dentro de la ficha.
+
+El piloto va a la izquierda y el staff a la derecha. Los adjuntos enlazan la
+copia que guardamos nosotros cuando existe; el enlace de Discord caduca a las
+pocas horas, así que en una transcripción vieja está muerto.
+{% endcomment %}
+        <div class="koru-chat">
+          {% for m in conversacion %}
+          <div class="koru-msg {% if m.del_piloto %}izq{% else %}der{% endif %}">
+            <div class="burbuja">
+              <div class="quien">{{ m.autor }}</div>
+              {% if m.texto %}<div class="cuerpo">{{ m.texto|urlizetrunc:60|linebreaksbr }}</div>{% endif %}
+              {% for a in m.adjuntos %}
+                {% if a.url %}
+                  <a href="{{ a.url }}" target="_blank" rel="noopener" class="adj">
+                    <i class="fas fa-paperclip me-1"></i>{{ a.name }}{% if not a.copia %}
+                    <span class="text-muted">(enlace de Discord, puede haber caducado)</span>{% endif %}
+                  </a>
+                {% else %}
+                  <span class="adj text-muted"><i class="fas fa-paperclip me-1"></i>{{ a.name }}</span>
+                {% endif %}
+              {% endfor %}
+              <div class="cuando">{{ m.dia }} · {{ m.hora }}</div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        <details class="mt-2">
+          <summary class="small text-muted" style="cursor:pointer">Ver el texto tal cual lo guardó el bot</summary>
+          <div class="transcript mt-2">{{ transcripcion_texto|urlizetrunc:60 }}</div>
+        </details>
+      </div></div>
+      {% elif transcripcion_texto %}
       <div class="card mb-3"><div class="card-body">
         <h6 class="card-title">Transcripción (texto)</h6>
 {% comment %}

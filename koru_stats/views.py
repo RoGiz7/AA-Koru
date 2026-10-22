@@ -3652,6 +3652,59 @@ def ticket_detail(request, ticket_id):
         if isinstance(cd.get("v"), str):
             cd["v"] = _sub_discord(cd["v"])
 
+    # --- La conversacion, pintada aqui -------------------------------------
+    #
+    # ★ Hasta ahora la charla se enseñaba metiendo el fichero del bot en un
+    # iframe: HTML ajeno dentro de nuestra pagina, y encima mal formateado. Pero
+    # la conversacion tambien viene en texto, con un formato muy regular:
+    #
+    #     [20/10/2026, 19:31:28] equinoxprox: hola
+    #     [20/10/2026, 19:31:28] ultramaxed: [ADJUNTO: image.png] https://cdn…
+    #
+    # Asi que se parsea y se pinta con las plantillas de Koru. Se gana el
+    # formato, y se pierde el iframe: deja de haber HTML de fuera en la ficha.
+    #
+    # ⚠ Los nombres ya vienen pasados por `_sub_discord`, asi que donde el Auth
+    # conoce al usuario sale su MAIN y no su alias de Discord.
+    LINEA_MSG = _re.compile(
+        r"^\[(\d{1,2}/\d{1,2}/\d{4}),\s*(\d{1,2}:\d{2}(?::\d{2})?)\]\s*([^:]{1,60}?):\s?(.*)$")
+    ADJUNTO = _re.compile(r"\[ADJUNTO:\s*([^\]]+)\]\s*(\S+)?")
+
+    # ⚠ Los enlaces de Discord CADUCAN —acaban en «?ex=…&is=…&hm=…» y mueren a
+    # las pocas horas—, asi que en una transcripcion de hace meses estan todos
+    # muertos. Pero W5 guardo una copia de cada adjunto en el ticket: si el
+    # nombre casa, se enlaza NUESTRA copia, que ni caduca ni se sirve sin permiso.
+    copias = {}
+    for f in ficheros:
+        copias.setdefault(str(f["name"]).strip().lower(), f["url"])
+
+    conversacion = []
+    if transcripcion_texto:
+        quien_pide = (t.main_character_name or "").strip().lower()
+        for linea in transcripcion_texto.splitlines():
+            m = LINEA_MSG.match(linea)
+            if not m:
+                # Una linea que no empieza por fecha es continuacion de la
+                # anterior: los mensajes de varias lineas llegan asi.
+                if conversacion and linea.strip():
+                    conversacion[-1]["texto"] += "\n" + linea
+                continue
+            dia, hora, autor, cuerpo = m.groups()
+            autor = autor.strip()
+            adj = []
+            for nombre, url in ADJUNTO.findall(cuerpo):
+                nombre = nombre.strip()
+                adj.append({"name": nombre,
+                            "url": copias.get(nombre.lower()) or url or "",
+                            "copia": nombre.lower() in copias})
+            cuerpo = ADJUNTO.sub("", cuerpo).strip()
+            conversacion.append({
+                "autor": autor, "dia": dia, "hora": hora, "texto": cuerpo,
+                "adjuntos": adj,
+                # El piloto a un lado y el staff al otro, como una conversacion.
+                "del_piloto": bool(quien_pide and autor.lower() == quien_pide),
+            })
+
     # ★ Las imagenes que viven DENTRO del texto de la transcripcion. Discord las
     # pega como una URL cruda larguisima, que ocupaba dos lineas y no se podia
     # ni pinchar; siendo la prueba de la auditoria, merece verse.
@@ -3697,6 +3750,7 @@ def ticket_detail(request, ticket_id):
         "transcripcion_files": transcripcion_files,
         "notas": notas,
         "transcripcion_texto": transcripcion_texto,
+        "conversacion": conversacion,
         "trans_imgs": trans_imgs,
         "auditor_main_id": auditor_main_id,
         # El boton solo se ofrece si hay webhook puesto y el ticket no esta ya

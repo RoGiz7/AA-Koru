@@ -3,6 +3,29 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.29.0] — 2026-10-22
+
+### Añadido
+
+- **La conversación se pinta en la ficha, como un chat.** El piloto a un lado y
+  el staff al otro, con la hora de cada mensaje. Sale del texto que ya guardaba
+  Baserow (`[20/10/2026, 19:31:28] usuario: mensaje`), que estaba ahí sin usar
+  mientras la ficha enseñaba el fichero del bot en un iframe.
+- **Los adjuntos de dentro de la charla enlazan nuestra copia.** Los enlaces de
+  Discord caducan a las pocas horas —ese `?ex=…` es la fecha de expiración—, así
+  que en una transcripción de hace meses están todos muertos. W5 guardó una
+  copia de cada adjunto en el ticket: si el nombre casa, se enlaza esa, que ni
+  caduca ni se sirve sin permiso. Cuando no casa, se avisa de que puede estar
+  caducado en vez de dar un enlace roto sin más.
+- Debajo queda un desplegable con el texto tal cual lo guardó el bot, por si
+  hace falta leerlo en crudo.
+
+### Seguridad
+
+- Al pintar la conversación nosotros **desaparece el HTML ajeno de la ficha**.
+  Donde había un iframe con un fichero generado por un bot a partir de lo que la
+  gente pegó en un canal, ahora hay texto escapado por Django.
+
 ## [0.28.1] — 2026-10-22
 
 ### Corregido
