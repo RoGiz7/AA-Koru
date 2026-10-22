@@ -3,6 +3,25 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.19.1] — 2026-10-22
+
+### Corregido
+
+- **Tickets huérfanos por una letra.** El cruce ticket → piloto se rompía con
+  cualquier diferencia de mayúsculas: `Kimuxl muxia` no casaba con
+  `kimuxl muxia`, ni `Tricky hunterz` con `Tricky Hunterz`. Lo curioso es
+  **dónde** estaba el fallo: la consulta SQL sí casa sin mayúsculas —la
+  colación de MariaDB es case-insensitive— y traía la fila correcta; lo que
+  perdía el dato era el diccionario de Python, indexado con la grafía de la base
+  y preguntado con la de Baserow. El nombre existía, la consulta lo encontraba,
+  y se tiraba al guardarlo. Ahora se indexa normalizado por los dos lados.
+- **Campos con dos nombres dentro** (`Kilyadent / Kilya_JDC`) ya no se descartan:
+  se prueba el campo entero y luego cada trozo.
+- El ticket guarda ahora la **grafía canónica de EVE**, no la que tecleó quien lo
+  abrió, así que la pantalla enseña siempre el mismo nombre.
+- `sync_tickets` dice al terminar **cuántos nombres no pudo casar**. Antes no
+  había forma de saber que esto pasaba sin ir a buscarlo a mano.
+
 ## [0.19.0] — 2026-10-22
 
 ### Añadido

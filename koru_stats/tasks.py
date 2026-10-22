@@ -2024,7 +2024,27 @@ def sync_tickets():
             page += 1
 
     # Resolver main_character_name -> character_id de EVE (para cruzar con el Auditor)
-    nombres = sorted({mn for *_rest, mn in all_rows if mn})
+    #
+    # ⚠ Aqui habia un fallo que dejaba tickets huerfanos por UNA LETRA. La
+    # consulta SQL si casa sin mayusculas —la colacion de MariaDB es
+    # case-insensitive— pero el diccionario de Python NO: se indexaba con la
+    # grafia de la base («kimuxl muxia») y se preguntaba con la de Baserow
+    # («Kimuxl muxia»). El nombre existia, la consulta lo traia, y se perdia al
+    # guardarlo. Se indexa normalizado por los dos lados.
+    #
+    # ★ Y hay campos con dos nombres dentro: «Kilyadent / Kilya_JDC». Se prueba
+    # el campo entero primero y luego cada trozo, de izquierda a derecha.
+    def _clave(s):
+        return " ".join(str(s or "").split()).casefold()
+
+    def _variantes(nombre):
+        bruto = str(nombre or "").strip()
+        fuera = [bruto] if bruto else []
+        if "/" in bruto:
+            fuera += [p.strip() for p in bruto.split("/") if p.strip()]
+        return fuera
+
+    nombres = sorted({v for *_rest, mn in all_rows if mn for v in _variantes(mn)})
     name_to_id = {}
     if nombres:
         ph = ",".join(["%s"] * len(nombres))
@@ -2033,19 +2053,32 @@ def sync_tickets():
                 f"SELECT character_name, character_id FROM eveonline_evecharacter "
                 f"WHERE character_name IN ({ph})", nombres)
             for nm, cid in c.fetchall():
-                name_to_id[nm] = cid
+                name_to_id[_clave(nm)] = (cid, nm)
 
     total = 0
+    sin_casar = 0
     for tid, tipo, rid, parsed, main_name in all_rows:
         if rid is None:
             continue
-        parsed["main_character_id"] = name_to_id.get(main_name, 0)
+        hit = None
+        for v in _variantes(main_name):
+            hit = name_to_id.get(_clave(v))
+            if hit:
+                break
+        parsed["main_character_id"] = hit[0] if hit else 0
+        if hit:
+            # Se guarda la grafia CANONICA de EVE, no la que tecleo quien abrio
+            # el ticket: asi la pantalla enseña siempre el mismo nombre.
+            parsed["main_character_name"] = hit[1][:100]
+        elif main_name:
+            sin_casar += 1
         Ticket.objects.update_or_create(
             baserow_table_id=tid, baserow_row_id=rid,
             defaults=dict(tipo=tipo, **parsed),
         )
         total += 1
-    logger.info("koru sync_tickets: %s tickets sincronizados", total)
+    logger.info("koru sync_tickets: %s tickets sincronizados, %s con nombre sin casar",
+                total, sin_casar)
     return total
 
 
