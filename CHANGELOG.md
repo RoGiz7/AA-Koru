@@ -3,6 +3,16 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.25.1] — 2026-10-22
+
+### Corregido
+
+- **Las gráficas ocupaban media pantalla.** Chart.js, si le dejas, estira las
+  barras hasta llenar el contenedor: el embudo, con una sola barra, salía como
+  un rectángulo azul gigante. Ahora el alto se ata al **número de barras** (34 px
+  cada una, entre 90 y 520) y se apaga `maintainAspectRatio`, que es quien
+  provocaba el estirón. Los donuts y el volumen mensual quedan a 300 px.
+
 ## [0.25.0] — 2026-10-22
 
 ### Corregido
