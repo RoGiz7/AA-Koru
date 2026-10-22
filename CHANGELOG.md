@@ -3,6 +3,17 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.25.2] — 2026-10-22
+
+### Corregido
+
+- **El arreglo de la 0.25.1 rompió el pie de dos tarjetas.** El alto se fijaba
+  en el `parentNode` del canvas, que en varias tarjetas es el `card-body`
+  entero — con sus etiquetas y su texto explicativo debajo. Al darle 90 px, lo
+  de abajo se salía y se montaba encima del bloque siguiente: en el embudo,
+  «Ya terminadas» aparecía pisando el título de Reclutamiento. Ahora el canvas
+  se envuelve en su propia caja y el alto va ahí.
+
 ## [0.25.1] — 2026-10-22
 
 ### Corregido

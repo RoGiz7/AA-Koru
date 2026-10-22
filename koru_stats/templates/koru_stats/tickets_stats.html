@@ -199,8 +199,7 @@
         var el = document.getElementById(id); if(!el) return;
         // Mismo motivo que en hbar: sin alto fijo, el donut crece con el ancho
         // de la tarjeta y acaba ocupando una pantalla entera.
-        el.parentNode.style.height = '300px';
-        el.parentNode.style.position = 'relative';
+        caja(el, 300);
         new Chart(el, {type:'doughnut', data:{labels:labels, datasets:[{data:data, backgroundColor:PAL}]},
             options:{responsive:true, maintainAspectRatio:false,
                      plugins:{legend:{position:'right', labels:{boxWidth:12, font:{size:11}}}}}});
@@ -211,10 +210,25 @@
     // quien provoca el estiron.
     function altoPara(n){ return Math.max(90, Math.min(520, n * 34 + 46)); }
 
+    // ⚠ El alto NO puede ir en parentNode: en varias tarjetas el padre del
+    // canvas es el card-body entero, con su pie de texto y sus etiquetas
+    // debajo. Al fijarle 90px, lo de abajo se salia y se montaba encima del
+    // bloque siguiente. Se envuelve solo el canvas.
+    function caja(el, alto){
+        var w = el.parentNode;
+        if (!w.classList || !w.classList.contains('koru-chart')) {
+            w = document.createElement('div');
+            w.className = 'koru-chart';
+            el.parentNode.insertBefore(w, el);
+            w.appendChild(el);
+        }
+        w.style.position = 'relative';
+        w.style.height = alto + 'px';
+    }
+
     function hbar(id, labels, data, color){
         var el = document.getElementById(id); if(!el) return;
-        el.parentNode.style.height = altoPara(data.length) + 'px';
-        el.parentNode.style.position = 'relative';
+        caja(el, altoPara(data.length));
         new Chart(el, {type:'bar', data:{labels:labels, datasets:[{data:data, backgroundColor:color||'#3b82f6'}]},
             // Son tickets: no existe medio ticket, asi que nada de 0,2 en el eje
             options:{indexAxis:'y', responsive:true, maintainAspectRatio:false,
@@ -227,7 +241,7 @@
 
     var porMes = {{ por_mes_json|safe }};
     (function(){ var el=document.getElementById('chMes'); if(!el)return;
-        el.parentNode.style.height = '300px'; el.parentNode.style.position = 'relative';
+        caja(el, 300);
         new Chart(el,{type:'bar',data:{labels:porMes.map(function(x){return x.mes;}),datasets:[{label:'Tickets',data:porMes.map(function(x){return x.n;}),backgroundColor:'#0dcaf0'}]},
             options:{responsive:true, maintainAspectRatio:false,
                      plugins:{legend:{display:false}},scales:{y:{beginAtZero:true, ticks:{precision:0}}}}}); })();
