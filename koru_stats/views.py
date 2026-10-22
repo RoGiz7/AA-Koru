@@ -3460,6 +3460,8 @@ def ticket_detail(request, ticket_id):
     # pero ese id es el del personaje que figura en Baserow, que MUCHAS VECES es
     # un alt. El Auditor espera el id del MAIN, asi que el enlace llevaba a una
     # ficha vacia y parecia que el piloto no tenia historial. Se resuelve aqui.
+    from . import tickets_write
+
     auditor_main_id = 0
     if t.main_character_id:
         with connection.cursor() as cur:
@@ -3486,6 +3488,8 @@ def ticket_detail(request, ticket_id):
         # El boton solo se ofrece si hay webhook puesto y el ticket no esta ya
         # reclamado: un boton que no va a funcionar es peor que no tenerlo.
         "puede_reclamar": bool(_webhook_puesto()) and not t.claim_name,
+        # Los estados los dice Baserow, no nosotros; sin webhook no se ofrecen
+        "estados": tickets_write.estados_posibles(t) if _webhook_puesto() else [],
     }
     return render(request, "koru_stats/ticket_detail.html", context)
 
@@ -3523,6 +3527,41 @@ def ticket_reclamar(request, ticket_id):
             request,
             f"Pedido a n8n: el ticket queda a nombre de {quien}. "
             f"Aparecerá aquí en la próxima sincronización.")
+    except tickets_write.SinConfigurar as e:
+        messages.warning(request, str(e))
+    except ValueError as e:
+        messages.error(request, str(e))
+
+    return redirect(destino)
+
+
+@login_required
+def ticket_estado(request, ticket_id):
+    """Cambiar el estado de un ticket desde la web (T3)."""
+    from django.contrib import messages
+    from django.http import HttpResponseForbidden, Http404
+    from django.shortcuts import redirect
+    from django.urls import reverse
+
+    from . import tickets_write
+    from .models import Ticket
+
+    t = Ticket.objects.filter(id=ticket_id).first()
+    if not t:
+        raise Http404("Ticket no encontrado")
+    if t.tipo not in _tickets_allowed(request.user):
+        return HttpResponseForbidden("No tienes permiso para este tipo de ticket.")
+
+    destino = reverse("koru_stats:ticket_detail", args=[t.id])
+    if request.method != "POST":
+        return redirect(destino)
+
+    try:
+        estado = tickets_write.cambiar_estado(t, request.POST.get("estado"), request.user)
+        messages.success(
+            request,
+            f"Pedido a n8n: el ticket pasa a «{estado}». "
+            f"Se verá aquí en la próxima sincronización.")
     except tickets_write.SinConfigurar as e:
         messages.warning(request, str(e))
     except ValueError as e:

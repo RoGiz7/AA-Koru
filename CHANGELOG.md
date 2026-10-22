@@ -3,6 +3,31 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.24.0] — 2026-10-22
+
+### Añadido
+
+- **Cambiar el estado de un ticket desde la web.** Selector en la ficha, junto a
+  «Reclamar», que pide a n8n el cambio por el mismo webhook y el mismo secreto —
+  una acción más, no configuración nueva.
+  - **Los estados los dice Baserow, no nosotros.** `sync_tickets` lee las
+    opciones del campo `Estado` de cada tabla y las guarda. Una lista escrita a
+    mano se desincronizaría el día que alguien añada un estado allí, y el fallo
+    saldría al guardar, en la cara del director y sin que nadie entienda por
+    qué. Si esa lectura falla, el sync no se rompe: los estados son un extra.
+  - **Solo tres tablas tienen `Estado`**: reclutamiento, directores y soporte.
+    En IT y Asuntos Internos no aparece el selector porque el campo no existe.
+  - **Esto NO cierra el ticket, y lo dice.** Cerrar de verdad es lo que hace W5
+    desde Discord: vuelca la transcripción, sube el fichero y archiva. Desde la
+    web solo cambia la etiqueta. La confirmación lo avisa, porque si no, alguien
+    marcará «Archivado» creyendo que ha cerrado y se quedará sin transcripción.
+  - En Discord queda una línea diciendo quién lo cambió y que fue desde la web.
+    Si ese aviso falla, la ejecución **no** falla: el estado ya está escrito y
+    sería dar un error por algo que sí se hizo.
+
+Los nodos para n8n están en `documentacion/n8n/K1 v2 - nodos nuevos (estado).json`,
+con las instrucciones dentro.
+
 ## [0.23.2] — 2026-10-22
 
 ### Corregido

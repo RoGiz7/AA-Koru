@@ -164,3 +164,74 @@ def reclamar(ticket, user):
     logger.info("koru tickets_write: %s reclama el ticket %s/%s",
                 nombre, ticket.tipo, ticket.numero or ticket.baserow_row_id)
     return nombre
+
+
+def estados_posibles(ticket):
+    """
+    Los estados que admite la tabla de este ticket, segun Baserow.
+
+    Vacio si esa tabla no tiene campo `Estado` —IT y Asuntos Internos no lo
+    tienen— o si el sync aun no los ha leido.
+    """
+    try:
+        cfg = _config()
+    except SinConfigurar:
+        return []
+    tabla = TABLA_POR_TIPO.get(ticket.tipo)
+    return list((cfg.estados_por_tabla or {}).get(str(tabla), []))
+
+
+def cambiar_estado(ticket, estado, user):
+    """
+    Pide a n8n que ponga este ticket en `estado`.
+
+    ⚠ ESTO NO CIERRA EL TICKET. Cerrar de verdad es lo que hace W5 desde
+    Discord: vuelca la transcripcion, sube el fichero y archiva. Aqui solo se
+    cambia la ETIQUETA. Poner «Archivado» desde la web y creer que el ticket
+    quedo cerrado te deja sin transcripcion, que es justo lo que luego hace
+    falta cuando alguien pregunta que paso.
+    """
+    cfg = _config()
+
+    estado = (estado or "").strip()
+    posibles = estados_posibles(ticket)
+    if not posibles:
+        raise ValueError(
+            f"Los tickets de «{ticket.tipo}» no tienen campo Estado en Baserow")
+    # ★ Se valida contra lo que Baserow dice que admite, no contra una lista
+    # nuestra: un select rechaza cualquier valor que no sea una de SUS opciones,
+    # y el error saldria de Baserow, feo y a destiempo.
+    if estado not in posibles:
+        raise ValueError(f"«{estado}» no es un estado válido ahí. Son: {', '.join(posibles)}")
+    if estado == (ticket.estado or ""):
+        raise ValueError(f"El ticket ya está en «{estado}»")
+
+    nombre, uid = _quien(user)
+    carga = {
+        "accion": "estado",
+        "tipo": ticket.tipo,
+        "tabla": TABLA_POR_TIPO.get(ticket.tipo),
+        "row_id": ticket.baserow_row_id,
+        "estado": estado,
+        "quien_personaje": nombre,
+        "quien_discord_uid": uid,
+        "canal_discord": canal_de(ticket),
+        "origen": "koru",
+    }
+
+    try:
+        r = requests.post(
+            cfg.n8n_webhook_url, json=carga,
+            headers={"X-Koru-Token": cfg.n8n_webhook_secret}, timeout=TIEMPO_MAX)
+    except requests.RequestException as exc:
+        logger.error("koru tickets_write estado: no se pudo llamar a n8n: %s", exc)
+        raise ValueError(f"No se pudo hablar con n8n: {exc}")
+
+    if r.status_code >= 400:
+        logger.error("koru tickets_write estado: n8n devolvio %s — %s",
+                     r.status_code, r.text[:300])
+        raise ValueError(f"n8n respondió {r.status_code}. Mira la ejecución en n8n.")
+
+    logger.info("koru tickets_write: %s pone el ticket %s/%s en «%s»",
+                nombre or user, ticket.tipo, ticket.numero or ticket.baserow_row_id, estado)
+    return estado

@@ -590,6 +590,14 @@ class TicketsConfig(models.Model):
         max_length=200, blank=True, default="",
         help_text="Se manda en la cabecera X-Koru-Token; el webhook lo comprueba")
 
+    # ★ Los estados que admite cada tabla NO se escriben a mano aqui: los lee
+    # `sync_tickets` de Baserow. Un select de Baserow solo acepta sus propias
+    # opciones, asi que una lista escrita a mano se desincroniza el dia que
+    # alguien añada un estado alli — y el fallo saldria al guardar, en la cara
+    # del director, sin que nadie entienda por que.
+    # Forma: {"503": ["Pendiente", "Resuelto", ...], ...}
+    estados_por_tabla = models.JSONField(default=dict, blank=True)
+
     enabled          = models.BooleanField(default=True)
     updated_at       = models.DateTimeField(auto_now=True)
 

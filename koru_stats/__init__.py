@@ -1,3 +1,3 @@
 """Koru Stats — app de estadísticas de Rekium para Alliance Auth."""
 
-__version__ = "0.23.2"
+__version__ = "0.24.0"

@@ -2155,6 +2155,33 @@ def sync_tickets():
             defaults=dict(tipo=tipo, **parsed),
         )
         total += 1
+    # --- Que estados admite cada tabla -------------------------------------
+    # ★ Se leen de Baserow en vez de escribirlos a mano. Un select solo acepta
+    # sus propias opciones: una lista escrita aqui se desincronizaria el dia que
+    # alguien añada un estado alli, y el fallo saldria al guardar, en la cara
+    # del director, sin que nadie entienda por que.
+    #
+    # ⚠ Si esto falla NO se rompe el sync: los tickets ya estan guardados y los
+    # estados son un extra para la pantalla. Se queda lo que hubiera.
+    estados = dict(cfg.estados_por_tabla or {})
+    for tid, _tipo in tablas:
+        try:
+            r = http_requests.get(f"{base}/api/database/fields/table/{tid}/",
+                                  headers=headers, timeout=20)
+            r.raise_for_status()
+            campo = next((c for c in r.json()
+                          if c.get("name") == "Estado" and c.get("type") == "single_select"), None)
+            if campo:
+                estados[str(tid)] = [o["value"] for o in campo.get("select_options", []) if o.get("value")]
+            else:
+                estados.pop(str(tid), None)      # esa tabla no tiene Estado
+        except Exception as exc:
+            logger.warning("koru sync_tickets: no pude leer los estados de la tabla %s: %s", tid, exc)
+    if estados != (cfg.estados_por_tabla or {}):
+        cfg.estados_por_tabla = estados
+        cfg.save(update_fields=["estados_por_tabla", "updated_at"])
+        logger.info("koru sync_tickets: estados actualizados para %s tablas", len(estados))
+
     logger.info("koru sync_tickets: %s tickets sincronizados, %s con nombre sin casar",
                 total, sin_casar)
     return total

@@ -49,6 +49,21 @@
           {% if t.tipo == 'directores' %}· {% if t.visible_piloto %}<span class="badge bg-success">Visible para el piloto</span>{% else %}<span class="badge bg-secondary">Oculto al piloto</span>{% endif %}{% endif %}
         </div>
       </div>
+      {% if estados %}
+      <form method="post" action="{% url 'koru_stats:ticket_estado' t.id %}"
+            class="d-inline-flex gap-1 align-items-center me-2">
+        {% csrf_token %}
+        <select name="estado" class="form-select form-select-sm" style="width:11rem">
+          {% for e in estados %}
+            <option value="{{ e }}"{% if e == t.estado %} selected{% endif %}>{{ e }}</option>
+          {% endfor %}
+        </select>
+        <button class="btn btn-sm btn-outline-secondary"
+                onclick="return confirm('Esto cambia SOLO la etiqueta de estado. No cierra el ticket ni guarda la transcripción: eso lo hace el botón Cerrar de Discord. ¿Seguir?')">
+          Cambiar estado
+        </button>
+      </form>
+      {% endif %}
       {% if puede_reclamar %}
       <form method="post" action="{% url 'koru_stats:ticket_reclamar' t.id %}" class="d-inline">
         {% csrf_token %}
