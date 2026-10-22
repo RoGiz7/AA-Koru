@@ -1990,6 +1990,10 @@ def sync_tickets():
                 out[k] = val
         return out
 
+    # Antes de esto no habia tickets en Baserow, asi que cualquier «Fecha»
+    # anterior es un error de tecleo, no un ticket antiguo.
+    FECHA_MINIMA_TICKET = date(2022, 1, 1)
+
     def _fechas_checks(row):
         """
         (primera, ultima) de las marcas de tiempo de una auditoria.
@@ -2032,6 +2036,13 @@ def sync_tickets():
         justo lo que interesa.
         """
         f = _pdate(row.get("Fecha"))
+        # ⚠ Hay quien escribio su fecha de NACIMIENTO en la columna «Fecha»
+        # de la tabla 502: 1976, 1987, 1994… Son 9 filas de 573, pero cada una
+        # mete cuarenta anyos en la media de antiguedad, y entre todas inflaban
+        # el promedio del embudo unos cinco meses. Un dato imposible es mejor
+        # nulo que falso: se descarta y se cae a la ultima modificacion.
+        if f and f < FECHA_MINIMA_TICKET:
+            f = None
         if f:
             return f
         if tipo == "asuntos":

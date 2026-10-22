@@ -3,6 +3,18 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.26.1] — 2026-10-22
+
+### Corregido
+
+- **Nueve fechas de nacimiento se colaban como fecha de apertura.** En la
+  columna «Fecha» de la tabla de reclutamiento hay quien escribió su año de
+  nacimiento: 1976, 1987, 1994… Son 9 filas de 573, pero cada una mete cuarenta
+  años en la media, y entre todas inflaban la antigüedad media del embudo unos
+  cinco meses. Ahora se descarta cualquier fecha anterior a 2022 —antes no
+  había tickets en Baserow— y se cae a la última modificación. Un dato
+  imposible es mejor nulo que falso.
+
 ## [0.26.0] — 2026-10-22
 
 ### Añadido
