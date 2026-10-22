@@ -45,7 +45,58 @@
   <div class="card mb-3"><div class="card-body">
     <h6 class="card-title">Carga por staff (tickets reclamados)</h6>
     <canvas id="chClaim" height="120"></canvas>
+    <div class="small text-muted mt-1">
+      Agrupado por persona, no por personaje: quien reclama con dos personajes
+      cuenta una sola vez. Lo que salga como «sin casar» es un Claim que el Auth
+      no reconoce.
+    </div>
   </div></div>
+
+  {% if tiempos %}
+  <div class="card mb-3"><div class="card-body">
+    <h6 class="card-title">Cuánto se tarda en cerrar</h6>
+    <div class="table-responsive">
+      <table class="table table-sm mb-0">
+        <thead><tr>
+          <th>Tipo</th><th class="text-end">Tickets</th><th class="text-end">Cerrados</th>
+          <th class="text-end">Mediana</th><th class="text-end">P90</th><th class="text-end">Media</th>
+        </tr></thead>
+        <tbody>
+        {% for t in tiempos %}
+          <tr>
+            <td>{{ t.tipo }}</td>
+            <td class="text-end">{{ t.total }}</td>
+            <td class="text-end">{{ t.cerrados }} <span class="text-muted small">({{ t.pct_cerrado }}%)</span></td>
+            <td class="text-end">{% if t.mediana != None %}{{ t.mediana }} d{% else %}—{% endif %}</td>
+            <td class="text-end">{% if t.p90 != None %}{{ t.p90 }} d{% else %}—{% endif %}</td>
+            <td class="text-end text-muted">{% if t.media != None %}{{ t.media }} d{% else %}—{% endif %}</td>
+          </tr>
+          {% if t.raros %}
+          <tr><td colspan="6" class="small text-warning">
+            ⚠ {{ t.raros }} ticket{{ t.raros|pluralize }} de «{{ t.tipo }}» con fecha de cierre
+            anterior a la de apertura. No cuentan en los tiempos: son datos mal metidos en Baserow.
+          </td></tr>
+          {% endif %}
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="small text-muted mt-2">
+      La <strong>mediana</strong> es el número honesto: un ticket que se quedó
+      abierto seis meses porque nadie lo cerró arrastra la media y hace parecer
+      que se tarda el triple. El <strong>P90</strong> dice cómo son los peores.
+      «it» y «soporte» no tienen fecha de cierre en Baserow, así que no hay
+      tiempo que medir.
+    </div>
+  </div></div>
+  {% endif %}
+
+  {% if fases %}
+  <div class="card mb-3"><div class="card-body">
+    <h6 class="card-title">Embudo de reclutamiento — en qué fase está cada solicitud</h6>
+    <canvas id="chFases" height="110"></canvas>
+  </div></div>
+  {% endif %}
 
   {% if recl %}
   <h5 class="mt-4 mb-2"><i class="fas fa-user-plus me-2"></i>Reclutamiento</h5>
@@ -108,6 +159,11 @@
 
     var porClaim = {{ por_claim_json|safe }};
     hbar('chClaim', porClaim.map(function(x){return x.claim;}), porClaim.map(function(x){return x.n;}), '#a855f7');
+
+    var fases = {{ fases_json|safe }};
+    if (fases && fases.length) {
+        hbar('chFases', fases.map(function(x){return x.fase;}), fases.map(function(x){return x.n;}), '#0d6efd');
+    }
 
     var rc = {{ recl_charts_json|safe }};
     if (rc) {

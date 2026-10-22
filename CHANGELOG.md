@@ -3,6 +3,36 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.21.0] — 2026-10-22
+
+### Añadido
+
+- **T2 completo: tiempos de resolución y embudo.**
+  - **Cuánto se tarda en cerrar**, por tipo: mediana, P90, media y porcentaje de
+    cerrados. Se da la **mediana** como número principal porque un ticket que se
+    quedó abierto seis meses sin que nadie lo cerrara arrastra la media y hace
+    parecer que se tarda el triple; el P90 cuenta cómo son los peores. `it` y
+    `soporte` no tienen fecha de cierre en Baserow, así que ahí no se inventa
+    ningún número.
+  - **Embudo de reclutamiento** por `Fase`: cuántas solicitudes hay con
+    Reclutadores, en Asuntos Internos y en Directores.
+  - Los tickets con **fecha de cierre anterior a la de apertura** se apartan, se
+    cuentan y se avisan. No son tiempos, son datos mal metidos, y mezclarlos
+    solo serviría para que el número saliera más bonito de lo que es.
+- **La carga por staff se agrupa por PERSONA, no por personaje.** Quien reclama
+  con dos personajes distintos aparecía como dos personas y su carga real salía
+  partida por la mitad. El Claim se resuelve ahora al main contra el Auth, y lo
+  que no se puede resolver se enseña aparte con su nombre crudo en vez de
+  esconderse: eso es justo lo que delata un Claim mal escrito.
+  - **El rol no se guarda.** Quién puede coger qué ticket lo decide AA con sus
+    grupos; duplicarlo en una tabla a mano solo garantiza que los dos registros
+    se desincronicen en cuanto alguien cambie de puesto. El ticket guarda
+    **quién**, no **con qué permiso**.
+- **`fecha_cierre` sale a columna** en vez de quedarse en el JSON, porque cada
+  tabla la llama distinto —«Fecha cierre», «Fecha resolución», y en auditorías
+  no existe: hay que deducirla del último `Check …`, que es texto libre— y
+  agregar tiempos escarbando un JSON por fila ni escala ni se puede indexar.
+
 ## [0.20.0] — 2026-10-22
 
 ### Añadido

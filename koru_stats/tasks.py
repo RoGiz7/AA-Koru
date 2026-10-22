@@ -1944,6 +1944,7 @@ def detect_lifecycle_events():
 @shared_task
 def sync_tickets():
     """Sincroniza los tickets de Baserow (espejo read-only) a la tabla Ticket."""
+    import re
     from datetime import date
     from .models import TicketsConfig, Ticket
 
@@ -1989,7 +1990,40 @@ def sync_tickets():
                 out[k] = val
         return out
 
-    all_rows = []  # (tid, tipo, row_id, parsed_dict, main_name)
+    def _fecha_cierre(tipo, row):
+        """
+        La fecha en que el ticket se dio por terminado, venga como venga.
+
+        ⚠ Cada tabla la llama de una forma distinta, y la de auditorias NO la
+        tiene: hay que deducirla del ULTIMO «Check …», que es texto libre del
+        estilo «Superion Maximus · 21/10/2026, 0:48:07». Por eso esto existe en
+        vez de leer un campo y ya.
+        """
+        if tipo == "reclutamiento":
+            return _pdate(row.get("Fecha cierre"))
+        if tipo == "directores":
+            return _pdate(row.get("Fecha resolución"))
+        if tipo == "asuntos":
+            # El check mas tardio marca el final de la auditoria
+            ultima = None
+            for k, val in row.items():
+                if not k.startswith("Check ") or not isinstance(val, str):
+                    continue
+                m = re.search(r"(\d{1,2})/(\d{1,2})/(\d{4})", val)
+                if not m:
+                    continue
+                try:
+                    d = date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+                except ValueError:
+                    continue
+                if ultima is None or d > ultima:
+                    ultima = d
+            if ultima:
+                return ultima
+            return _pdate(row.get("Última modificación"))
+        return None
+
+    all_rows = []  # (tid, tipo, row_id, parsed_dict, main_name, claim_name)
     for tid, tipo in tablas:
         page = 1
         while True:
@@ -2016,9 +2050,11 @@ def sync_tickets():
                     claim_name=_link1(row.get("Claim"))[:100],
                     alerta_peligro=bool(row.get("Alerta/Peligro")),
                     visible_piloto=bool(row.get("Visible para piloto")),
+                    fecha_cierre=_fecha_cierre(tipo, row),
                     extra=_clean_extra(row),
                 )
-                all_rows.append((tid, tipo, row.get("id"), parsed, main_name))
+                all_rows.append((tid, tipo, row.get("id"), parsed, main_name,
+                                 parsed["claim_name"]))
             if not data.get("next"):
                 break
             page += 1
@@ -2044,7 +2080,13 @@ def sync_tickets():
             fuera += [p.strip() for p in bruto.split("/") if p.strip()]
         return fuera
 
-    nombres = sorted({v for *_rest, mn in all_rows if mn for v in _variantes(mn)})
+    # ★ Se resuelven de una tacada los nombres del Main Y los del Claim: quien
+    # coge un ticket es gente de la corp, asi que sale del mismo indice y no
+    # cuesta una segunda consulta.
+    nombres = sorted({v
+                      for *_rest, mn, cn in all_rows
+                      for bruto in (mn, cn) if bruto
+                      for v in _variantes(bruto)})
     name_to_id = {}
     if nombres:
         ph = ",".join(["%s"] * len(nombres))
@@ -2055,17 +2097,25 @@ def sync_tickets():
             for nm, cid in c.fetchall():
                 name_to_id[_clave(nm)] = (cid, nm)
 
-    total = 0
-    sin_casar = 0
-    for tid, tipo, rid, parsed, main_name in all_rows:
-        if rid is None:
-            continue
-        hit = None
-        for v in _variantes(main_name):
+    def _resolver(nombre):
+        for v in _variantes(nombre):
             hit = name_to_id.get(_clave(v))
             if hit:
-                break
+                return hit
+        return None
+
+    total = 0
+    sin_casar = 0
+    for tid, tipo, rid, parsed, main_name, claim_name in all_rows:
+        if rid is None:
+            continue
+        hit = _resolver(main_name)
         parsed["main_character_id"] = hit[0] if hit else 0
+
+        # El claim se guarda al MAIN de quien lo cogio, no al personaje suelto:
+        # asi la carga de trabajo junta los alts de la misma persona.
+        claim_hit = _resolver(claim_name)
+        parsed["claim_main_id"] = claim_hit[0] if claim_hit else 0
         if hit:
             # Se guarda la grafia CANONICA de EVE, no la que tecleo quien abrio
             # el ticket: asi la pantalla enseña siempre el mismo nombre.

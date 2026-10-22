@@ -3469,10 +3469,76 @@ def tickets_stats(request):
     meses = sorted(mes_counter.keys())[-12:]
     por_mes = [{"mes": m, "n": mes_counter[m]} for m in meses]
 
+    # --- Carga por staff, resuelta a la PERSONA ------------------------------
+    # ★ Antes se agrupaba por el nombre tal cual salia del Claim, asi que quien
+    # coge tickets con dos personajes distintos aparecia como dos personas y su
+    # carga real quedaba partida por la mitad. Ahora se agrupa por el main.
     claim_counter = Counter()
-    for cn in base.exclude(claim_name="").values_list("claim_name", flat=True):
-        claim_counter[cn] += 1
-    por_claim = [{"claim": k, "n": v} for k, v in claim_counter.most_common(15)]
+    sin_resolver = Counter()
+    for mid, cn in base.exclude(claim_name="").values_list("claim_main_id", "claim_name"):
+        if mid:
+            claim_counter[mid] += 1
+        else:
+            sin_resolver[cn] += 1
+
+    nombres_claim = {}
+    if claim_counter:
+        ph = ",".join(["%s"] * len(claim_counter))
+        with connection.cursor() as cur:
+            cur.execute("SELECT character_id, character_name FROM eveonline_evecharacter "
+                        "WHERE character_id IN (" + ph + ")", list(claim_counter))
+            nombres_claim = {int(i): n for i, n in cur.fetchall()}
+    por_claim = [{"claim": nombres_claim.get(mid, f"#{mid}"), "n": n}
+                 for mid, n in claim_counter.most_common(15)]
+    # Los que no se pudieron resolver NO se esconden: se enseñan aparte con su
+    # nombre crudo, que es lo que delata un Claim mal escrito en Baserow.
+    por_claim += [{"claim": cn + " (sin casar)", "n": n} for cn, n in sin_resolver.most_common(5)]
+    por_claim.sort(key=lambda x: -x["n"])
+
+    # --- Tiempos de resolucion (T2) ------------------------------------------
+    # ★ Se da la MEDIANA, no la media. Un ticket que se quedo abierto seis meses
+    # porque nadie lo cerro en Baserow arrastra la media y hace parecer que se
+    # tarda el triple de lo que se tarda. La mediana aguanta esa basura.
+    #
+    # ⚠ Los dias NEGATIVOS (cierre anterior a la apertura) se apartan y se
+    # cuentan: no son tiempos, son datos mal metidos, y mezclarlos con los
+    # buenos solo sirve para que el numero salga mas bonito de lo que es.
+    tiempos = []
+    for tipo in sorted(allowed):
+        qs = Ticket.objects.filter(tipo=tipo)
+        tot = qs.count()
+        if not tot:
+            continue
+        dias, raros = [], 0
+        for f, fc in (qs.exclude(fecha__isnull=True).exclude(fecha_cierre__isnull=True)
+                        .values_list("fecha", "fecha_cierre")):
+            d = (fc - f).days
+            if d < 0:
+                raros += 1
+            else:
+                dias.append(d)
+        dias.sort()
+        n = len(dias)
+        tiempos.append({
+            "tipo": tipo, "total": tot, "cerrados": n,
+            "pct_cerrado": round(n * 100 / tot, 1),
+            "mediana": dias[n // 2] if n else None,
+            "p90": dias[min(n - 1, int(n * 0.9))] if n else None,
+            "media": round(sum(dias) / n, 1) if n else None,
+            "raros": raros,
+        })
+
+    # --- Embudo de reclutamiento: en que fase esta cada uno ------------------
+    fases = []
+    if "reclutamiento" in allowed:
+        fc_counter = Counter()
+        for e in Ticket.objects.filter(tipo="reclutamiento").values_list("extra", flat=True):
+            v = (e or {}).get("Fase")
+            if isinstance(v, dict):
+                v = v.get("value")
+            if v:
+                fc_counter[str(v)[:40]] += 1
+        fases = [{"fase": k, "n": v} for k, v in fc_counter.most_common(12)]
 
     recl = None
     if "reclutamiento" in allowed:
@@ -3534,6 +3600,9 @@ def tickets_stats(request):
         "por_tipo_json": _to_json(por_tipo),
         "por_mes_json": _to_json(por_mes),
         "por_claim_json": _to_json(por_claim),
+        "tiempos": tiempos,
+        "fases_json": _to_json(fases),
+        "fases": fases,
         "recl": recl,
         "recl_charts_json": _to_json(recl_charts) if recl_charts else "null",
     }

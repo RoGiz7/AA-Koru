@@ -612,6 +612,18 @@ class Ticket(models.Model):
     main_character_id   = models.IntegerField(default=0, db_index=True)           # resuelto vía AA
     claim_name          = models.CharField(max_length=100, blank=True, default="")
 
+    # ★ Quien lo cogio, resuelto al MAIN contra el Auth. El rol no se guarda
+    # aqui a proposito: quien puede coger que ticket lo decide AA con sus
+    # grupos, y duplicarlo en una tabla a mano solo garantiza que los dos
+    # registros se desincronicen en cuanto alguien cambie de puesto.
+    claim_main_id       = models.IntegerField(default=0, db_index=True)
+
+    # ⚠ La fecha de cierre se saca a columna en vez de dejarla en `extra`
+    # porque CADA TABLA la llama distinto —«Fecha cierre» en reclutamiento,
+    # «Fecha resolución» en directores, el ultimo «Check …» en auditorias— y
+    # agregar tiempos escarbando un JSON por fila no escala ni se puede indexar.
+    fecha_cierre        = models.DateField(null=True, blank=True, db_index=True)
+
     alerta_peligro   = models.BooleanField(default=False)
     visible_piloto   = models.BooleanField(default=False)  # flag "Visible para piloto" (solo Directores)
 
