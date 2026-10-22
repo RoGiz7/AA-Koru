@@ -26,6 +26,9 @@ urlpatterns = [
     path("tickets/<int:ticket_id>/", views.ticket_detail, name="ticket_detail"),
     path("tickets/<int:ticket_id>/reclamar/", views.ticket_reclamar, name="ticket_reclamar"),
     path("tickets/<int:ticket_id>/estado/", views.ticket_estado, name="ticket_estado"),
+    # ⚠ Índice, NO una URL: una vista que acepte direcciones es un proxy abierto.
+    path("tickets/<int:ticket_id>/fichero/<int:idx>/", views.ticket_fichero,
+         name="ticket_fichero"),
     path("regalos/mi/", views.gift_mi, name="gift_mi"),
     path("regalos/gestion/", views.gift_gestion, name="gift_gestion"),
     path("regalos/gestion/validar/<int:pk>/", views.gift_validar, name="gift_validar"),

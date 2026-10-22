@@ -3,6 +3,30 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.28.0] — 2026-10-22
+
+### Seguridad
+
+- **Las transcripciones y los adjuntos ya no se sirven sin permiso.** Vivían en
+  la media de Baserow, y esa URL la abre cualquiera que la tenga: una
+  transcripción de Asuntos Internos reenviada por error se leía entera desde un
+  navegador anónimo. La ficha comprobaba el permiso; el fichero que enlazaba,
+  no. Ahora pasan por `ticket_fichero`, que exige **el mismo permiso que la
+  ficha**, y la URL de Baserow ya no llega a la plantilla.
+- La vista acepta **un índice dentro de los ficheros de ese ticket, nunca una
+  URL**. Una vista que aceptara direcciones sería un proxy abierto: cualquiera
+  le pediría que trajese lo que fuera, con la IP del servidor.
+- Las transcripciones son HTML, así que servirlas desde nuestro dominio
+  convertiría un problema de lectura en uno de ejecución. Van con
+  `Content-Security-Policy: sandbox`, `X-Content-Type-Options: nosniff` y
+  `Cache-Control: private, no-store`, y el iframe de la ficha lleva `sandbox`.
+
+### Notas
+
+- El almacén no cambia: los ficheros siguen en Baserow. Esto es el punto 1 de la
+  migración —quién los SIRVE—, que se hace primero a propósito: el día que se
+  mueva el almacén solo cambia de dónde lee esta vista.
+
 ## [0.27.1] — 2026-10-22
 
 ### Corregido

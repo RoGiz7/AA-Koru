@@ -3374,6 +3374,127 @@ def auditor_abrir_auditoria(request, main_id):
 # Koru — Tickets (staff, por rol)
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Ficheros de un ticket — servidos CON permiso
+# ---------------------------------------------------------------------------
+#
+# ★ EL PROBLEMA: los adjuntos y las transcripciones viven en la media de
+# Baserow, y esa URL la abre CUALQUIERA que la tenga, sin pasar por ningun
+# permiso. Una transcripcion de Asuntos Internos reenviada por error se lee
+# entera desde un navegador anonimo. La ficha comprueba el permiso; el fichero
+# que la ficha enlaza, no.
+#
+# ⚠ LA VISTA NO ACEPTA UNA URL. Acepta el ID del ticket y un INDICE dentro de
+# los ficheros de ESE ticket. Si aceptara una URL seria un proxy abierto: le
+# pasas cualquier direccion y mi servidor te la trae, con mi IP y saltandose lo
+# que haya delante.
+#
+# ⚠ Y LAS TRANSCRIPCIONES SON HTML. Servirlas desde auth.everekium.com sin mas
+# convierte un agujero de lectura en uno de ejecucion: el javascript que
+# llevaran dentro correria con NUESTRO origen, con la sesion del que mira. Por
+# eso toda respuesta sale con `Content-Security-Policy: sandbox`, que obliga al
+# navegador a tratarla como de un origen aislado.
+
+FICHEROS_MAX = 25 * 1024 * 1024        # mas que esto no lo sube nadie por Discord
+FICHEROS_ESPERA = 20                   # segundos
+
+
+def _ficheros_de(ticket):
+    """
+    Los ficheros de un ticket, SIEMPRE en el mismo orden.
+
+    El orden es el contrato entre la ficha y la descarga: la plantilla enlaza
+    por indice y la vista resuelve por indice. Por eso vive en una sola
+    funcion y no copiada en dos sitios.
+    """
+    extra = ticket.extra or {}
+    fuera = []
+    for clave in ("Transcripción", "Transcripción Auditoría", "Archivo"):
+        val = extra.get(clave)
+        if isinstance(val, list):
+            for f in val:
+                if isinstance(f, dict) and f.get("url"):
+                    fuera.append({"name": f.get("name") or clave, "url": f["url"],
+                                  "clave": clave, "transcripcion": clave != "Archivo"})
+    for clave, val in extra.items():
+        if clave in ("Transcripción", "Transcripción Auditoría", "Archivo"):
+            continue
+        if isinstance(val, list) and val and isinstance(val[0], dict) and "url" in val[0]:
+            for f in val:
+                if f.get("url"):
+                    fuera.append({"name": f.get("name") or clave, "url": f["url"],
+                                  "clave": clave, "transcripcion": False})
+    for i, f in enumerate(fuera):
+        bajo = (f["name"] + " " + f["url"]).lower()
+        f["idx"] = i
+        f["is_img"] = any(e in bajo for e in (".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"))
+    return fuera
+
+
+@login_required
+def ticket_fichero(request, ticket_id, idx):
+    """Sirve el fichero `idx` de ese ticket, si quien lo pide puede verlo."""
+    import mimetypes
+
+    import requests
+
+    from django.http import (Http404, HttpResponseForbidden,
+                             HttpResponseServerError, StreamingHttpResponse)
+
+    from .models import Ticket
+
+    t = Ticket.objects.filter(id=ticket_id).first()
+    if not t:
+        raise Http404("Ticket no encontrado")
+    # ★ El MISMO permiso que la ficha. Si no puedes ver el ticket, no puedes
+    # ver lo que cuelga de el; era justo esa diferencia la que abria el agujero.
+    if t.tipo not in _tickets_allowed(request.user):
+        return HttpResponseForbidden("No tienes permiso para ver este tipo de ticket.")
+
+    ficheros = _ficheros_de(t)
+    try:
+        f = ficheros[int(idx)]
+    except (ValueError, IndexError):
+        raise Http404("Ese ticket no tiene ese fichero")
+
+    try:
+        r = requests.get(f["url"], stream=True, timeout=FICHEROS_ESPERA)
+    except requests.RequestException as exc:
+        logger.error("koru ticket_fichero: no se pudo traer %s: %s", f["url"], exc)
+        return HttpResponseServerError("No se pudo recuperar el fichero.")
+    if r.status_code >= 400:
+        logger.warning("koru ticket_fichero: el origen devolvio %s", r.status_code)
+        raise Http404("El fichero ya no esta disponible")
+
+    tipo_mime = (mimetypes.guess_type(f["name"])[0]
+                 or r.headers.get("Content-Type", "application/octet-stream")).split(";")[0]
+
+    def _trozos():
+        enviado = 0
+        for trozo in r.iter_content(64 * 1024):
+            enviado += len(trozo)
+            if enviado > FICHEROS_MAX:
+                logger.warning("koru ticket_fichero: %s pasa de %s bytes, se corta",
+                               f["name"], FICHEROS_MAX)
+                break
+            yield trozo
+        r.close()
+
+    resp = StreamingHttpResponse(_trozos(), content_type=tipo_mime)
+    # Las transcripciones e imagenes se ven dentro de la ficha; lo demas se baja.
+    verlo_dentro = f["is_img"] or tipo_mime in ("text/html", "text/plain", "application/pdf")
+    nombre = f["name"].replace('"', "")
+    resp["Content-Disposition"] = (
+        'inline' if verlo_dentro else 'attachment') + f'; filename="{nombre}"'
+    # ★ Las tres que importan: sandbox aisla el HTML del adjunto de nuestro
+    # origen, nosniff impide que el navegador lo reinterprete, y no-store evita
+    # que una transcripcion de Asuntos Internos quede en la cache de un proxy.
+    resp["Content-Security-Policy"] = "sandbox"
+    resp["X-Content-Type-Options"] = "nosniff"
+    resp["Cache-Control"] = "private, no-store"
+    return resp
+
+
 def _webhook_puesto():
     """¿Esta configurado el webhook de n8n? Si no, la web no escribe."""
     from .models import TicketsConfig
@@ -3474,13 +3595,16 @@ def ticket_detail(request, ticket_id):
             v = v.get("value", str(v))
         campos.append({"k": k, "v": v})
 
-    transcripcion_files = []
-    for tk in TRANSCRIPT_KEYS:
-        val = extra.get(tk)
-        if isinstance(val, list):
-            for f in val:
-                if isinstance(f, dict) and f.get("url"):
-                    transcripcion_files.append({"name": f.get("name") or tk, "url": f["url"]})
+    # ★ Ni la transcripcion ni los adjuntos se enlazan ya a Baserow: van por
+    # `ticket_fichero`, que comprueba el permiso. La URL cruda no llega a la
+    # plantilla, asi que no puede acabar en el historial del navegador ni
+    # copiada en un mensaje.
+    from django.urls import reverse as _reverse
+    ficheros = _ficheros_de(t)
+    for f in ficheros:
+        f["url"] = _reverse("koru_stats:ticket_fichero", args=[t.id, f["idx"]])
+    transcripcion_files = [f for f in ficheros if f["transcripcion"]]
+    adjuntos = [f for f in ficheros if not f["transcripcion"]]
 
     notas = extra.get("Notas", "") or ""
     transcripcion_texto = extra.get("Transcripción texto") or extra.get("Transcripción Auditoría") or ""
