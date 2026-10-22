@@ -3,6 +3,29 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.30.0] — 2026-10-22
+
+### Cambiado
+
+- **Quién va a cada lado del chat, decidido con datos y no con suposiciones.**
+  La regla anterior era «si el Auth lo conoce, es de los nuestros», y se cayó en
+  cuanto apareció un solicitante que ya estaba registrado: sus dos
+  interlocutores acababan del mismo lado. Lo que de verdad distingue a un
+  reclutador es que **reclama tickets, decenas**; quien abre uno, ninguno. Esa
+  lista ya estaba en el espejo, así que no hay nada que mantener aparte y se
+  actualiza sola cuando alguien deja el puesto.
+- **La conversación se busca por formato, no por campo.** En Soporte la charla
+  acaba dentro de «Notas», no en «Transcripción texto», así que esos tickets se
+  quedaban con el volcado crudo. Ahora, si las líneas empiezan por
+  `[fecha, hora] alguien:`, es una conversación venga del campo que venga —con
+  dos mensajes como mínimo, para no pintar una nota suelta como un chat.
+
+### Corregido
+
+- Las menciones salían como `<@Reclutador>`: se sustituía el id pero quedaban
+  los símbolos de Discord. Ahora **@Reclutador**, y los emojis propios
+  (`<:nombre:861047786…>`) se quedan en `:nombre:`.
+
 ## [0.29.2] — 2026-10-22
 
 ### Corregido

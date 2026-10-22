@@ -3694,18 +3694,37 @@ def ticket_detail(request, ticket_id):
         x = unicodedata.normalize("NFKD", str(x or "").strip().lower())
         return "".join(c for c in x if not unicodedata.combining(c))
 
-    conocidos = {_llano(v) for v in dmap.values() if v}
+    # ★ QUIEN ES STAFF, sacado de los datos en vez de adivinado. La primera
+    # regla fue «si el Auth lo conoce, es de los nuestros», y se cayo en cuanto
+    # aparecio un solicitante que YA estaba registrado: sus dos interlocutores
+    # acababan del mismo lado.
+    #
+    # Lo que de verdad distingue a un reclutador de quien abre el ticket es que
+    # el reclutador RECLAMA tickets, decenas; el solicitante, ninguno. Esa lista
+    # ya esta en el espejo, asi que no hay que mantener ninguna aparte: se cae
+    # sola cuando alguien deja el puesto.
+    plantilla = cache.get("koru_tickets_staff")
+    if plantilla is None:
+        plantilla = {_llano(c) for c in Ticket.objects
+                     .exclude(claim_name="")
+                     .values_list("claim_name", flat=True).distinct() if c}
+        cache.set("koru_tickets_staff", plantilla, 900)
 
-    conversacion = []
-    if transcripcion_texto:
+    # ⚠ NO SIEMPRE VIENE EN EL MISMO CAMPO. En Soporte la charla acaba en
+    # «Notas», no en «Transcripción texto», asi que mirar solo un campo dejaba
+    # esos tickets con el volcado crudo. Se decide por el FORMATO, no por el
+    # nombre del campo: si las lineas empiezan por «[fecha, hora] alguien:», es
+    # una conversacion venga de donde venga.
+    def _parsear(texto):
         quien_pide = _llano(t.main_character_name)
-        for linea in transcripcion_texto.splitlines():
+        fuera = []
+        for linea in (texto or "").splitlines():
             m = LINEA_MSG.match(linea)
             if not m:
                 # Una linea que no empieza por fecha es continuacion de la
                 # anterior: los mensajes de varias lineas llegan asi.
-                if conversacion and linea.strip():
-                    conversacion[-1]["texto"] += "\n" + linea
+                if fuera and linea.strip():
+                    fuera[-1]["texto"] += "\n" + linea
                 continue
             dia, hora, autor, cuerpo = m.groups()
             autor = autor.strip()
@@ -3716,13 +3735,35 @@ def ticket_detail(request, ticket_id):
                             "url": copias.get(nombre.lower()) or url or "",
                             "copia": nombre.lower() in copias})
             cuerpo = ADJUNTO.sub("", cuerpo).strip()
-            conversacion.append({
+            # Restos del formato de Discord: la mencion queda «<@Reclutador>»
+            # porque se sustituye el id pero no los simbolos, y los emojis
+            # propios vienen como «<:nombre:861047786194731008>».
+            cuerpo = _re.sub(r"<@!?&?([^>]{1,60})>", r"@\1", cuerpo)
+            cuerpo = _re.sub(r"<a?:([A-Za-z0-9_]{1,40}):\d+>", r":\1:", cuerpo)
+            fuera.append({
                 "autor": autor, "dia": dia, "hora": hora, "texto": cuerpo,
                 "adjuntos": adj,
                 # El piloto a un lado y el staff al otro, como una conversacion.
+                # Quien figura como piloto del ticket va siempre a su lado,
+                # aunque ademas sea staff —en una auditoria lo es—. Luego, el
+                # que reclama tickets es de los nuestros. Y a quien no sabemos
+                # situar se le trata como el que viene de fuera: si nos
+                # equivocamos ahi, al menos no le colocamos en el mostrador.
                 "del_piloto": (_llano(autor) == quien_pide
-                               or _llano(autor) not in conocidos),
+                               or (_llano(autor) != _llano(t.claim_name)
+                                   and _llano(autor) not in plantilla)),
             })
+        return fuera
+
+    conversacion = _parsear(transcripcion_texto)
+    # ★ Dos mensajes como minimo antes de dar unas notas por conversacion: una
+    # nota suelta que empiece por una fecha no lo es, y pintarla como un chat de
+    # un solo globo seria peor que dejarla como esta.
+    conversacion_de_notas = False
+    if len(conversacion) < 2:
+        desde_notas = _parsear(notas)
+        if len(desde_notas) >= 2:
+            conversacion, conversacion_de_notas = desde_notas, True
 
     # ★ Las imagenes que viven DENTRO del texto de la transcripcion. Discord las
     # pega como una URL cruda larguisima, que ocupaba dos lineas y no se podia
@@ -3770,6 +3811,7 @@ def ticket_detail(request, ticket_id):
         "notas": notas,
         "transcripcion_texto": transcripcion_texto,
         "conversacion": conversacion,
+        "conversacion_de_notas": conversacion_de_notas,
         "trans_imgs": trans_imgs,
         "auditor_main_id": auditor_main_id,
         # El boton solo se ofrece si hay webhook puesto y el ticket no esta ya

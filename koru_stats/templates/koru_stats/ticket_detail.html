@@ -103,7 +103,12 @@
       </div></div>
       {% endif %}
 
-      {% if notas %}
+{% comment %}
+En Soporte la conversación acaba dentro de «Notas», no en el campo de
+transcripción. Cuando es así se pinta arriba como chat, y repetirla aquí en
+crudo sería enseñar dos veces lo mismo.
+{% endcomment %}
+      {% if notas and not conversacion_de_notas %}
       <div class="card mb-3"><div class="card-body">
         <h6 class="card-title">Notas internas</h6>
         <div class="transcript">{{ notas }}</div>
@@ -144,7 +149,9 @@ pocas horas, así que en una transcripción vieja está muerto.
         </div>
         <details class="mt-2">
           <summary class="small text-muted" style="cursor:pointer">Ver el texto tal cual lo guardó el bot</summary>
-          <div class="transcript mt-2">{{ transcripcion_texto|urlizetrunc:60 }}</div>
+          <div class="transcript mt-2">
+            {% if conversacion_de_notas %}{{ notas|urlizetrunc:60 }}{% else %}{{ transcripcion_texto|urlizetrunc:60 }}{% endif %}
+          </div>
         </details>
       </div></div>
       {% elif transcripcion_texto %}
