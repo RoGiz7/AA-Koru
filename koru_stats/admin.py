@@ -265,8 +265,16 @@ class TicketsConfigAdmin(admin.ModelAdmin):
             "fields": ("tag", "enabled", "updated_at"),
         }),
         ("Baserow", {
-            "description": "URL base y token de SOLO LECTURA de Baserow para el sync de tickets.",
+            "description": "URL base y token de SOLO LECTURA de Baserow para el sync de tickets. "
+                           "Esto es para LEER: la web no escribe aquí nunca.",
             "fields": ("baserow_base_url", "baserow_token"),
+        }),
+        ("n8n — acciones desde la web", {
+            "description": "Koru NO escribe en Baserow: le pide a n8n que escriba, y así Discord "
+                           "se entera del cambio. Pon aquí el webhook del workflow «K1 Claim desde "
+                           "Koru» y el mismo secreto que en su credencial Header Auth. "
+                           "Vacíos, el botón «Reclamar» ni aparece.",
+            "fields": ("n8n_webhook_url", "n8n_webhook_secret"),
         }),
     )
 

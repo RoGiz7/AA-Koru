@@ -3,6 +3,19 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.23.2] — 2026-10-22
+
+### Corregido
+
+- **Los campos del webhook de n8n no salían en el admin.** La 0.23.0 los añadió
+  al modelo y creó su columna, pero `TicketsConfigAdmin` define `fieldsets`
+  explícitos y no se incluyeron: el formulario los ocultaba. Resultado práctico:
+  no había dónde poner la URL, y el sitio que más se le parecía era el campo de
+  Baserow — que es justo donde no van. Ahora tienen su propia sección,
+  **«n8n — acciones desde la web»**, con la explicación de para qué es.
+- De paso, la sección de Baserow dice ahora explícitamente que es **para leer**,
+  para que no se confunda con la otra.
+
 ## [0.23.1] — 2026-10-22
 
 ### Corregido
