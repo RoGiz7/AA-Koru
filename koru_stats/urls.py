@@ -15,6 +15,8 @@ urlpatterns = [
     path("pvp/", views.pvp_dashboard, name="pvp_dashboard"),
     path("auditor/", views.auditor_dashboard, name="auditor_dashboard"),
     path("auditor/piloto/<int:main_id>/", views.auditor_pilot, name="auditor_pilot"),
+    path("auditor/piloto/<int:main_id>/auditar/", views.auditor_abrir_auditoria,
+         name="auditor_abrir_auditoria"),
     path("auditor/corp/", views.corp_health_dashboard, name="corp_health_dashboard"),
     path("auditor/corp/reclutamiento/", views.corp_recruitment_dashboard, name="corp_recruitment_dashboard"),
     path("auditor/corp/social/", views.corp_social_dashboard, name="corp_social_dashboard"),

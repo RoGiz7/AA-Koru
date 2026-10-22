@@ -3274,10 +3274,25 @@ def auditor_pilot(request, main_id):
         tickets_piloto = list(qs[:40])
         tickets_resumen = list(qs.values("tipo").annotate(n=Count("id")).order_by("-n"))
 
+    # --- Abrir auditoria desde aqui (K2) ------------------------------------
+    # ★ El boton cierra el bucle: el Auditor DETECTA y desde la misma pantalla
+    # se ABRE el caso. Hasta ahora habia que irse a Discord, acordarse del
+    # comando y volver a escribir el nombre a mano.
+    #
+    # ⚠ Hace falta permiso de Asuntos Internos, no solo del Auditor: ver el
+    # riesgo de alguien y abrirle un expediente no son la misma autoridad.
+    auditoria_abierta = None
+    puede_auditar = "asuntos" in permitidos and _webhook_puesto()
+    if puede_auditar:
+        auditoria_abierta = next(
+            (t for t in tickets_piloto
+             if t.tipo == "asuntos" and not t.fecha_cierre), None)
+
     context = {
         "main_id": main_id, "main_name": main_name, "corp_id": corp_id,
         "alts": alts, "cobertura": cobertura,
         "tickets_piloto": tickets_piloto, "tickets_resumen": tickets_resumen,
+        "puede_auditar": puede_auditar, "auditoria_abierta": auditoria_abierta,
         "latest": latest, "radar_json": _to_json(radar) if radar else "null",
         "risk_hist": risk_hist, "risk_hist_json": _to_json(risk_hist),
         "alerts": alerts,
@@ -3288,6 +3303,71 @@ def auditor_pilot(request, main_id):
         "ciclo": ciclo,
     }
     return render(request, "koru_stats/auditor_pilot.html", context)
+
+
+# ---------------------------------------------------------------------------
+# Auditor — Abrir auditoria de Asuntos Internos (K2)
+# ---------------------------------------------------------------------------
+
+@permission_required("koru_stats.auditor_access")
+def auditor_abrir_auditoria(request, main_id):
+    """
+    Abre una auditoria de Asuntos Internos para este piloto desde el Auditor.
+
+    No escribe nada: se lo pide a n8n (K1 -> K2), que crea el canal en Discord
+    y la ficha en Baserow. Lo que se vea aqui entra luego por `sync_tickets`,
+    como todo lo demas.
+
+    ⚠ DOS permisos, no uno: `auditor_access` para estar en esta pantalla y
+    `tickets_asuntos_internos` para abrir el expediente. Ver el riesgo de
+    alguien y abrirle un caso no son la misma autoridad.
+    """
+    from django.contrib import messages
+    from django.http import HttpResponseForbidden
+    from django.shortcuts import redirect
+    from django.urls import reverse
+
+    from . import tickets_write
+
+    main_id = int(main_id)
+    destino = reverse("koru_stats:auditor_pilot", args=[main_id])
+
+    if "asuntos" not in _tickets_allowed(request.user):
+        return HttpResponseForbidden(
+            "Abrir una auditoria necesita permiso de Asuntos Internos.")
+    if request.method != "POST":
+        return redirect(destino)
+
+    nombre = (request.POST.get("piloto") or "").strip()
+    if not nombre:
+        with connection.cursor() as cur:
+            cur.execute("SELECT character_name FROM eveonline_evecharacter "
+                        "WHERE character_id = %s", [main_id])
+            fila = cur.fetchone()
+        nombre = (fila[0] if fila else "") or ""
+    if not nombre:
+        messages.error(request, "No se encontró el nombre de ese piloto.")
+        return redirect(destino)
+
+    try:
+        datos = tickets_write.abrir_auditoria(
+            main_id, nombre,
+            request.POST.get("motivo"),
+            request.user,
+            riesgo=request.POST.get("riesgo") or None,
+            alerta=request.POST.get("alerta") or "",
+        )
+        canal = datos.get("canal_nombre") or datos.get("canal") or ""
+        messages.success(
+            request,
+            "Auditoría abierta" + (f" en #{canal}" if canal else "") +
+            ". La ficha aparecerá aquí en la próxima sincronización de tickets.")
+    except tickets_write.SinConfigurar as e:
+        messages.warning(request, str(e))
+    except ValueError as e:
+        messages.error(request, str(e))
+
+    return redirect(destino)
 
 
 # ---------------------------------------------------------------------------

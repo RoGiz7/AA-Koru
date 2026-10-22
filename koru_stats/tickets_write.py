@@ -15,7 +15,7 @@ credenciales, como hasta ahora.
 
 LO QUE MANDA, y por qué cada cosa:
 
-    accion            "claim", de momento lo único
+    accion            "claim" | "estado" | "auditoria"
     tipo              reclutamiento | directores | asuntos | it | soporte
     tabla             id de tabla en Baserow, para que n8n no tenga que adivinarlo
     row_id            la fila del ticket (la tenemos del espejo)
@@ -140,23 +140,7 @@ def reclamar(ticket, user):
         "origen": "koru",
     }
 
-    try:
-        r = requests.post(
-            cfg.n8n_webhook_url,
-            json=carga,
-            headers={"X-Koru-Token": cfg.n8n_webhook_secret},
-            timeout=TIEMPO_MAX,
-        )
-    except requests.RequestException as exc:
-        logger.error("koru tickets_write reclamar: no se pudo llamar a n8n: %s", exc)
-        raise ValueError(f"No se pudo hablar con n8n: {exc}")
-
-    if r.status_code >= 400:
-        # ⚠ Se enseña el cuerpo RECORTADO: un webhook que falla suele devolver
-        # el error entero, y ahi dentro puede venir media fila de Baserow.
-        logger.error("koru tickets_write reclamar: n8n devolvio %s — %s",
-                     r.status_code, r.text[:300])
-        raise ValueError(f"n8n respondió {r.status_code}. Mira la ejecución en n8n.")
+    _llamar(cfg, carga, "reclamar")
 
     # ★ NO se toca el espejo local. Lo que vale es lo que quede en Baserow, y
     # eso entra por `sync_tickets`. Escribirlo aqui «para que se vea ya» seria
@@ -164,6 +148,85 @@ def reclamar(ticket, user):
     logger.info("koru tickets_write: %s reclama el ticket %s/%s",
                 nombre, ticket.tipo, ticket.numero or ticket.baserow_row_id)
     return nombre
+
+
+def _llamar(cfg, carga, que):
+    """El POST a n8n, que es igual para todas las acciones."""
+    try:
+        r = requests.post(
+            cfg.n8n_webhook_url, json=carga,
+            headers={"X-Koru-Token": cfg.n8n_webhook_secret}, timeout=TIEMPO_MAX)
+    except requests.RequestException as exc:
+        logger.error("koru tickets_write %s: no se pudo llamar a n8n: %s", que, exc)
+        raise ValueError(f"No se pudo hablar con n8n: {exc}")
+
+    if r.status_code >= 400:
+        # ⚠ El cuerpo se recorta: un webhook que falla suele devolver el error
+        # entero, y ahi dentro puede venir media fila de Baserow.
+        logger.error("koru tickets_write %s: n8n devolvio %s — %s",
+                     que, r.status_code, r.text[:300])
+        raise ValueError(f"n8n respondió {r.status_code}. Mira la ejecución en n8n.")
+
+    try:
+        return r.json()
+    except ValueError:
+        return {}
+
+
+def abrir_auditoria(main_id, nombre_piloto, motivo, user, riesgo=None, alerta=""):
+    """
+    Abre una auditoría de Asuntos Internos para este piloto, desde el Auditor.
+
+    Se lo pide a n8n (K1 → K2), que crea el canal en Discord y la ficha en la
+    tabla 1702. Devuelve el dict que responde n8n: `canal`, `canal_nombre`,
+    `fila_1702`.
+
+    ★ EL MOTIVO ES OBLIGATORIO y va a parar a las Notas de la ficha. Una
+    auditoría cuyo único rastro es «la abrió el Auditor» no le sirve a nadie
+    dentro de tres meses, que es justo cuando se consulta.
+    """
+    from .models import Ticket
+
+    cfg = _config()
+
+    motivo = " ".join((motivo or "").split())
+    if len(motivo) < 10:
+        raise ValueError("Pon un motivo de al menos 10 caracteres: es lo que "
+                         "queda escrito en la ficha de la auditoría")
+
+    nombre, uid = _quien(user)
+    if not nombre:
+        raise ValueError(
+            "Tu usuario no tiene personaje principal en el Auth, así que no hay "
+            "nombre al que asignar la auditoría")
+
+    # ⚠ Una auditoria abierta por piloto. Dos canales para el mismo caso es
+    # como se pierde la mitad de la conversacion. Las auditorias NO tienen
+    # Estado en Baserow, asi que «abierta» = sin fecha de cierre.
+    abierta = (Ticket.objects
+               .filter(tipo="asuntos", main_character_id=main_id, fecha_cierre__isnull=True)
+               .order_by("-fecha").first())
+    if abierta:
+        raise ValueError(
+            f"{nombre_piloto} ya tiene una auditoría abierta"
+            + (f" ({abierta.numero or abierta.discord_ticket})" if (abierta.numero or abierta.discord_ticket) else "")
+            + ". Ciérrala antes de abrir otra.")
+
+    carga = {
+        "accion": "auditoria",
+        "piloto": nombre_piloto,
+        "motivo": motivo,
+        "quien_personaje": nombre,
+        "quien_discord_uid": uid,
+        "riesgo": "" if riesgo is None else str(riesgo),
+        "alerta": alerta or "",
+        "origen": "koru",
+    }
+
+    datos = _llamar(cfg, carga, "auditoria")
+    logger.info("koru tickets_write: %s abre auditoria de %s (canal %s)",
+                nombre, nombre_piloto, datos.get("canal") or "?")
+    return datos
 
 
 def estados_posibles(ticket):
@@ -219,18 +282,7 @@ def cambiar_estado(ticket, estado, user):
         "origen": "koru",
     }
 
-    try:
-        r = requests.post(
-            cfg.n8n_webhook_url, json=carga,
-            headers={"X-Koru-Token": cfg.n8n_webhook_secret}, timeout=TIEMPO_MAX)
-    except requests.RequestException as exc:
-        logger.error("koru tickets_write estado: no se pudo llamar a n8n: %s", exc)
-        raise ValueError(f"No se pudo hablar con n8n: {exc}")
-
-    if r.status_code >= 400:
-        logger.error("koru tickets_write estado: n8n devolvio %s — %s",
-                     r.status_code, r.text[:300])
-        raise ValueError(f"n8n respondió {r.status_code}. Mira la ejecución en n8n.")
+    _llamar(cfg, carga, "estado")
 
     logger.info("koru tickets_write: %s pone el ticket %s/%s en «%s»",
                 nombre or user, ticket.tipo, ticket.numero or ticket.baserow_row_id, estado)

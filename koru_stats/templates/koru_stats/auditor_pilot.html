@@ -202,7 +202,7 @@
   quiere saber primero es si ya hubo una auditoría abierta sobre él. Enterrarlo
   al final sería tenerlo y no usarlo.
   {% endcomment %}
-  {% if tickets_resumen %}
+  {% if tickets_resumen or puede_auditar %}
   <div class="card sec-card mb-4"><div class="card-body">
     <h6 class="card-title d-flex align-items-center gap-2 flex-wrap">
       <i class="fas fa-ticket me-1"></i>Tickets de este piloto
@@ -211,7 +211,49 @@
           {{ r.n }} {{ r.tipo }}
         </span>
       {% endfor %}
+      {% if puede_auditar %}
+        <span class="ms-auto">
+        {% if auditoria_abierta %}
+          <a class="btn btn-sm btn-outline-danger"
+             href="{% url 'koru_stats:ticket_detail' auditoria_abierta.pk %}">
+            <i class="fas fa-folder-open me-1"></i>Auditoría abierta
+          </a>
+        {% else %}
+          <button class="btn btn-sm btn-outline-danger" type="button"
+                  data-bs-toggle="collapse" data-bs-target="#abrirAuditoria">
+            <i class="fas fa-gavel me-1"></i>Abrir auditoría
+          </button>
+        {% endif %}
+        </span>
+      {% endif %}
     </h6>
+
+    {% if puede_auditar and not auditoria_abierta %}
+      <div class="collapse mb-3" id="abrirAuditoria">
+        <form method="post" action="{% url 'koru_stats:auditor_abrir_auditoria' main_id %}"
+              class="border rounded p-3">
+          {% csrf_token %}
+          <input type="hidden" name="piloto" value="{{ main_name }}">
+          {% if latest %}<input type="hidden" name="riesgo" value="{{ latest.risk_total }}">{% endif %}
+          <label class="form-label small mb-1" for="motivoAuditoria">
+            Motivo <span class="text-muted">— queda escrito en la ficha y en el canal</span>
+          </label>
+          <textarea class="form-control form-control-sm mb-2" id="motivoAuditoria"
+                    name="motivo" rows="2" minlength="10" required
+                    placeholder="Qué se ha visto y por qué merece mirarlo"></textarea>
+          <div class="d-flex align-items-center gap-2 flex-wrap">
+            <button class="btn btn-sm btn-danger" type="submit">
+              <i class="fas fa-gavel me-1"></i>Abrir auditoría de {{ main_name }}
+            </button>
+            <span class="small text-muted">
+              Crea el canal en Discord y la ficha en Asuntos Internos, a tu nombre.
+            </span>
+          </div>
+        </form>
+      </div>
+    {% endif %}
+
+    {% if tickets_piloto %}
     <div class="table-responsive" style="max-height:320px;overflow:auto">
       <table class="table table-sm mb-0">
         <thead><tr><th>Fecha</th><th>Tipo</th><th>Nº</th><th>Asunto</th><th>Estado</th><th>Claim</th></tr></thead>
@@ -234,6 +276,9 @@
     </div>
     {% if tickets_piloto|length >= 40 %}
       <div class="small text-muted mt-1">Se enseñan los 40 más recientes.</div>
+    {% endif %}
+    {% else %}
+      <p class="text-muted small mb-0">Este piloto no tiene tickets a los que tengas acceso.</p>
     {% endif %}
   </div></div>
   {% endif %}

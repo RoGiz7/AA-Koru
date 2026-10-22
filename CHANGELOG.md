@@ -3,6 +3,32 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.26.0] — 2026-10-22
+
+### Añadido
+
+- **Abrir una auditoría de Asuntos Internos desde la ficha del Auditor (K2).**
+  El Auditor ya detectaba; ahora desde la misma pantalla se abre el caso. El
+  botón pide un motivo —obligatorio, mínimo 10 caracteres, porque una auditoría
+  cuyo único rastro es «la abrió el Auditor» no le sirve a nadie dentro de tres
+  meses— y se lo pasa a n8n, que crea el canal en Discord con los permisos de
+  siempre, la ficha en la tabla 1702 con el Main ya enlazado y el Claim a
+  nombre de quien la abrió. Antes había que irse a Discord, acordarse del
+  comando y volver a escribir el nombre a mano.
+- Guarda contra duplicados: **una auditoría abierta por piloto**. Si ya hay
+  una sin cerrar, el botón lleva a su ficha en vez de abrir un segundo canal
+  para el mismo caso.
+- La tarjeta de tickets del piloto ahora aparece aunque no tenga ninguno, para
+  que el botón esté donde se mira el riesgo y no en otra pantalla.
+
+### Notas
+
+- Hacen falta **dos** permisos: `auditor_access` para estar en la pantalla y
+  `tickets_asuntos_internos` para abrir el expediente. Ver el riesgo de alguien
+  y abrirle un caso no son la misma autoridad.
+- Koru sigue sin escribir en Baserow: todo pasa por el webhook de n8n.
+  Requiere importar `K2 Auditoría desde Koru` y colgarlo del Switch de K1.
+
 ## [0.25.2] — 2026-10-22
 
 ### Corregido
