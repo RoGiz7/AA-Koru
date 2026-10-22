@@ -3,6 +3,14 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.27.1] — 2026-10-22
+
+### Corregido
+
+- Un tipo sin ninguna fecha de cierre sacaba las dos notas a la vez, y la del
+  recorte con el mes en blanco («desde ,»). Ahora esa nota solo aparece cuando
+  hay una fecha desde la que medir.
+
 ## [0.27.0] — 2026-10-22
 
 ### Cambiado

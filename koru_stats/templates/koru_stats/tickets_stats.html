@@ -79,7 +79,7 @@
             <td class="text-end">{% if t.p90 != None %}{{ t.p90 }} {{ t.unidad }}{% else %}—{% endif %}</td>
             <td class="text-end text-muted">{% if t.media != None %}{{ t.media }} {{ t.unidad }}{% else %}—{% endif %}</td>
           </tr>
-          {% if t.sin_rastro and not t.dormida %}
+          {% if t.medible_desde and t.sin_rastro and not t.dormida %}
           <tr><td colspan="6" class="small text-muted">
             El porcentaje va sobre los <strong>{{ t.total_rango }}</strong> abiertos desde
             {{ t.medible_desde|date:"F Y" }}, que es cuando empezó a haber dónde apuntar el cierre.
