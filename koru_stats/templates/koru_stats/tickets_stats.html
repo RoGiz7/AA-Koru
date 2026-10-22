@@ -63,14 +63,23 @@
         </tr></thead>
         <tbody>
         {% for t in tiempos %}
-          <tr>
-            <td>{{ t.tipo }}</td>
+          <tr{% if t.dormida %} class="opacity-50"{% endif %}>
+            <td>{{ t.tipo }}
+              {% if t.dormida %}<span class="badge bg-secondary ms-1">histórica</span>{% endif %}
+            </td>
             <td class="text-end">{{ t.total }}</td>
             <td class="text-end">{{ t.cerrados }} <span class="text-muted small">({{ t.pct_cerrado }}%)</span></td>
             <td class="text-end">{% if t.mediana != None %}{{ t.mediana }} {{ t.unidad }}{% else %}—{% endif %}</td>
             <td class="text-end">{% if t.p90 != None %}{{ t.p90 }} {{ t.unidad }}{% else %}—{% endif %}</td>
             <td class="text-end text-muted">{% if t.media != None %}{{ t.media }} {{ t.unidad }}{% else %}—{% endif %}</td>
           </tr>
+          {% if t.dormida %}
+          <tr><td colspan="6" class="small text-muted">
+            Sin tickets nuevos desde {{ t.ultima|date:"F Y" }}. No es un problema de gestión:
+            esa tabla está jubilada. Se deja a la vista en vez de esconderla, pero su 0% cerrados
+            no significa nada.
+          </td></tr>
+          {% endif %}
           {% if t.raros %}
           <tr><td colspan="6" class="small text-warning">
             ⚠ {{ t.raros }} ticket{{ t.raros|pluralize }} de «{{ t.tipo }}» con fecha de cierre
@@ -88,6 +97,17 @@
       «it» y «soporte» no tienen fecha de cierre en Baserow, así que no hay
       tiempo que medir. <strong>«asuntos» se mide en minutos</strong>, no en
       días: una auditoría se hace del tirón, y en días todas valdrían 0.
+    </div>
+  </div></div>
+  {% endif %}
+
+  {% if resultados %}
+  <div class="card mb-3"><div class="card-body">
+    <h6 class="card-title">Cómo acabaron las solicitudes</h6>
+    <canvas id="chResultados" height="110"></canvas>
+    <div class="small text-muted mt-2">
+      Solo las que terminaron con una salida clara. Las que están en curso no
+      cuentan aquí — para eso está el embudo.
     </div>
   </div></div>
   {% endif %}
@@ -125,10 +145,11 @@
         {% for f in fases_fin %}<span class="badge bg-secondary me-1">{{ f.fase }}: {{ f.n }}</span>{% endfor %}
       </div>
       <div class="small text-muted mt-1">
-        Se separan a propósito: «Archivado», «Completado» o «Rechazado» no son
-        fases, son finales, y mezclados con «Con Reclutadores» aplastan la escala
-        y esconden lo único accionable. «(sin fase anotada)» son las que no
-        tienen el campo relleno, y están aquí para que las partes sumen el total.
+        Sale del campo <strong>Estado</strong>, no de <code>Fase</code>: ese casi
+        nadie lo rellena y el embudo sumaba 165 de 573. «Estado» lo tienen todas,
+        solo que mezcla tres cosas —dónde está, cómo acabó y si está cerrada— así
+        que se clasifican aquí. Si aparece un estado que no sabemos clasificar,
+        sale igualmente entre las terminadas en vez de desaparecer.
       </div>
     {% endif %}
   </div></div>
@@ -202,6 +223,11 @@
     if (audit && audit.length) {
         hbar('chAudit', audit.map(function(x){return x.tramo + ' — ' + x.pct + '%';}),
              audit.map(function(x){return x.n;}), '#8b5cf6');
+    }
+
+    var res = {{ resultados_json|safe }};
+    if (res && res.length) {
+        hbar('chResultados', res.map(function(x){return x.resultado;}), res.map(function(x){return x.n;}), '#10b981');
     }
 
     var fases = {{ fases_json|safe }};

@@ -3,6 +3,35 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.25.0] — 2026-10-22
+
+### Corregido
+
+- **El embudo de reclutamiento estaba montado sobre el campo equivocado.** Se
+  apoyaba en `Fase`, que casi nadie rellena: sumaba 165 de 573. El campo que sí
+  tienen las 573 es **`Estado`**. Lo que pasa es que `Estado` mezcla tres cosas
+  —dónde está la solicitud, cómo acabó, y si está cerrada— así que ahora se
+  clasifican en Koru.
+  - **Sin tocar Baserow.** La alternativa era partir el campo en tres y migrar
+    573 filas; los valores ya se distinguen solos, así que no hace falta. El
+    campo `Fase` queda de adorno: no se borra, solo se deja de usar.
+  - Se compara **sin acentos y en minúsculas**, porque en Baserow conviven
+    «Se marcho» y «Se marchó» según quién creara la opción.
+  - Un estado que no sepamos clasificar **no desaparece**: sale entre las
+    terminadas. Si alguien añade una opción allí, esto lo canta.
+- **«A IT» aparecía con 150 tickets y 0% cerrados, como si fueran 150 tickets
+  abandonados.** No lo son: esa tabla lleva **desde mayo de 2025** sin un ticket
+  nuevo — se usaba para apuntar updates del Auth y ya no se usa. Ahora cualquier
+  tabla sin movimiento en seis meses sale marcada como **histórica**, atenuada y
+  con la fecha del último. Se deja a la vista en vez de esconderla: ocultar
+  datos es otra forma de mentir, pero presentarlos sin contexto también.
+
+### Añadido
+
+- **Gráfico «Cómo acabaron las solicitudes»**: Pasa a Corp, Pasa a Academia,
+  Rechazado, Se marchó, Fue a otra corp. Solo las que terminaron con una salida
+  clara; las que están en curso viven en el embudo.
+
 ## [0.24.0] — 2026-10-22
 
 ### Añadido

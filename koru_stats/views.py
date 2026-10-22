@@ -3573,6 +3573,7 @@ def ticket_estado(request, ticket_id):
 @login_required
 def tickets_stats(request):
     from collections import Counter
+    from datetime import date
     from django.db.models import Count
     from .models import Ticket
 
@@ -3700,7 +3701,7 @@ def tickets_stats(request):
             tiempos.append({
                 "tipo": tipo, "total": tot, "cerrados": n,
                 "pct_cerrado": round(n * 100 / tot, 1),
-                "unidad": "min",
+                "unidad": "min", "dormida": False, "ultima": None,
                 "mediana": round(mins[n // 2]) if n else None,
                 "p90": round(mins[min(n - 1, int(n * 0.9))]) if n else None,
                 "media": round(sum(mins) / n, 1) if n else None,
@@ -3718,15 +3719,56 @@ def tickets_stats(request):
                 dias.append(d)
         dias.sort()
         n = len(dias)
+        # ★ Una tabla sin tickets nuevos en mucho tiempo no es un problema de
+        # gestion, es una tabla jubilada: «A IT» lleva desde mayo de 2025 sin
+        # uno. Enseñarla con 0% cerrados junto a las vivas hace pensar que hay
+        # 150 tickets abandonados. Se marca; esconderla seria peor.
+        ultima = qs.order_by("-fecha").values_list("fecha", flat=True).first()
+        dormida = bool(ultima and (date.today() - ultima).days > 180)
+
         tiempos.append({
             "tipo": tipo, "total": tot, "cerrados": n,
             "pct_cerrado": round(n * 100 / tot, 1),
             "unidad": "d",
+            "dormida": dormida, "ultima": ultima,
             "mediana": dias[n // 2] if n else None,
             "p90": dias[min(n - 1, int(n * 0.9))] if n else None,
             "media": round(sum(dias) / n, 1) if n else None,
             "raros": raros,
         })
+
+    # --- Clasificar los ESTADOS de reclutamiento -----------------------------
+    #
+    # ★ El embudo se montaba sobre el campo `Fase` y sumaba 165 de 573, porque
+    # ese campo casi nadie lo rellena. El que SI esta relleno es `Estado` — los
+    # 573 tienen uno. Lo que pasa es que `Estado` mezcla tres cosas distintas:
+    # donde esta la solicitud, como acabo, y si esta cerrada.
+    #
+    # Se clasifican aqui en vez de partir el campo en Baserow y migrar 573
+    # filas: los valores ya se distinguen solos, asi que no hace falta tocar
+    # nada alli. El campo `Fase` queda de adorno; no se borra, solo se deja de
+    # usar.
+    #
+    # ⚠ Se compara SIN acentos y en minusculas: en Baserow conviven «Se marcho»
+    # y «Se marchó» segun quien creara la opcion.
+    import unicodedata as _ud
+
+    def _norm(x):
+        x = _ud.normalize("NFKD", str(x or "").strip().lower())
+        return "".join(c for c in x if not _ud.combining(c))
+
+    FASES = {
+        "nuevo", "formulario pendiente", "verificando",
+        "con reclutadores", "con asuntos internos", "con directores",
+    }
+    RESULTADOS = {
+        "pasa a corp": "Pasa a Corp",
+        "pasa a academia": "Pasa a Academia",
+        "rechazado": "Rechazado",
+        "se marcho": "Se marchó",
+        "fue a otra corp": "Fue a otra corp",
+    }
+    CIERRE = {"completado", "archivado"}
 
     # --- Embudo de reclutamiento: en que fase esta cada uno ------------------
     #
@@ -3742,24 +3784,29 @@ def tickets_stats(request):
     # Se separan en dos listas: las vivas, que es donde se actua, y las
     # terminadas, que son historia.
     fases, fases_fin, fases_vivas_n = [], [], 0
-    TERMINALES = ("archivad", "completad", "rechazad", "se marcho", "fue a otra")
+    resultados = []
     if "reclutamiento" in allowed:
-        fc_counter = Counter()
-        sin_fase = 0
-        for e in Ticket.objects.filter(tipo="reclutamiento").values_list("extra", flat=True):
-            v = (e or {}).get("Fase")
-            if isinstance(v, dict):
-                v = v.get("value")
-            if v:
-                fc_counter[str(v)[:40]] += 1
+        vivas, finales, salidas = Counter(), Counter(), Counter()
+        for est in Ticket.objects.filter(tipo="reclutamiento").values_list("estado", flat=True):
+            crudo = (est or "").strip()
+            n = _norm(crudo)
+            if n in FASES:
+                vivas[crudo] += 1
+            elif n in RESULTADOS:
+                salidas[RESULTADOS[n]] += 1
+                finales[crudo] += 1
+            elif n in CIERRE:
+                finales[crudo] += 1
             else:
-                sin_fase += 1
-        for k, n in fc_counter.most_common(20):
-            destino = fases_fin if any(t in k.lower() for t in TERMINALES) else fases
-            destino.append({"fase": k, "n": n})
+                # ⚠ Un estado que no sabemos clasificar NO se esconde: sale
+                # aparte. Si alguien añade una opcion en Baserow, esto lo canta
+                # en vez de tragarselo en silencio.
+                finales[crudo or "(sin estado)"] += 1
+
+        fases      = [{"fase": k, "n": v} for k, v in vivas.most_common(20)]
+        fases_fin  = [{"fase": k, "n": v} for k, v in finales.most_common(20)]
+        resultados = [{"resultado": k, "n": v} for k, v in salidas.most_common(20)]
         fases_vivas_n = sum(f["n"] for f in fases)
-        if sin_fase:
-            fases_fin.append({"fase": "(sin fase anotada)", "n": sin_fase})
 
     recl = None
     if "reclutamiento" in allowed:
@@ -3828,6 +3875,8 @@ def tickets_stats(request):
         "fases": fases,
         "fases_fin": fases_fin,
         "fases_vivas_n": fases_vivas_n,
+        "resultados": resultados,
+        "resultados_json": _to_json(resultados),
         "recl": recl,
         "recl_charts_json": _to_json(recl_charts) if recl_charts else "null",
     }
