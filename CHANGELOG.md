@@ -3,6 +3,17 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.29.1] — 2026-10-22
+
+### Corregido
+
+- **Toda la conversación salía al mismo lado.** Se comparaba el autor con el
+  main del ticket, y el solicitante de un reclutamiento todavía no está en el
+  Auth: su nombre de Discord no se resuelve a ningún personaje, así que nunca
+  casaba. Ahora al revés — a quien el Auth conoce se le ve el nombre de
+  personaje y va al lado del staff; el que sigue con su alias de Discord es el
+  que viene de fuera.
+
 ## [0.29.0] — 2026-10-22
 
 ### Añadido

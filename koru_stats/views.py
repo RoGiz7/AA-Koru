@@ -1,5 +1,6 @@
 import json
 import logging
+import unicodedata
 import calendar
 from decimal import Decimal
 from datetime import date, datetime
@@ -3678,9 +3679,23 @@ def ticket_detail(request, ticket_id):
     for f in ficheros:
         copias.setdefault(str(f["name"]).strip().lower(), f["url"])
 
+    # ★ QUIEN VA A CADA LADO. La primera version comparaba el autor con el main
+    # del ticket y mandaba TODO al lado del staff: el solicitante de un
+    # reclutamiento no esta en el Auth todavia, asi que su nombre de Discord no
+    # se resuelve a ningun main y nunca casaba.
+    #
+    # La regla que si funciona es la inversa: a quien el Auth CONOCE —porque
+    # `_sub_discord` le ha puesto su nombre de personaje— es de los nuestros; el
+    # que sigue con su alias de Discord es el que viene de fuera.
+    def _llano(x):
+        x = unicodedata.normalize("NFKD", str(x or "").strip().lower())
+        return "".join(c for c in x if not unicodedata.combining(c))
+
+    conocidos = {_llano(v) for v in dmap.values() if v}
+
     conversacion = []
     if transcripcion_texto:
-        quien_pide = (t.main_character_name or "").strip().lower()
+        quien_pide = _llano(t.main_character_name)
         for linea in transcripcion_texto.splitlines():
             m = LINEA_MSG.match(linea)
             if not m:
@@ -3702,7 +3717,8 @@ def ticket_detail(request, ticket_id):
                 "autor": autor, "dia": dia, "hora": hora, "texto": cuerpo,
                 "adjuntos": adj,
                 # El piloto a un lado y el staff al otro, como una conversacion.
-                "del_piloto": bool(quien_pide and autor.lower() == quien_pide),
+                "del_piloto": (_llano(autor) == quien_pide
+                               or _llano(autor) not in conocidos),
             })
 
     # ★ Las imagenes que viven DENTRO del texto de la transcripcion. Discord las
