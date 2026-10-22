@@ -3,6 +3,32 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.23.0] — 2026-10-22
+
+### Añadido
+
+- **T3, primera pieza: reclamar un ticket desde la web.** Con una decisión de
+  fondo: **Koru no escribe en Baserow**, le pide a n8n que escriba.
+  - La regla de junio era «un único dueño por dato»: Baserow es la fuente de
+    verdad del ticket operativo y lo escribe n8n. Un `PATCH` directo desde Koru
+    serían dos sistemas escribiendo la misma fila, justo lo que se decidió
+    evitar — y encima **Discord no se enteraría**: reclamarías el ticket en la
+    web y en el canal seguiría figurando sin reclamar, con su botón intacto.
+  - Koru manda un POST al webhook de n8n con cabecera `X-Koru-Token`, y n8n hace
+    lo de siempre con sus credenciales: vincular el Claim en Baserow y editar el
+    mensaje de Discord.
+  - **El permiso se comprueba en Koru**, con los grupos de AA. El ticket guarda
+    *quién* lo cogió; *quién puede cogerlo* lo decide el Auth. n8n solo
+    comprueba que la llamada viene de Koru.
+  - **El espejo local no se toca al reclamar.** Lo que vale es lo que quede en
+    Baserow, y eso entra por `sync_tickets`. Escribirlo aquí «para que se vea
+    ya» sería inventar un estado que quizá n8n no llegó a guardar.
+  - El botón solo aparece si hay webhook configurado y el ticket no está ya
+    reclamado: un botón que no va a funcionar es peor que no tenerlo.
+  - Config nueva en *Configuración de Tickets*: `n8n_webhook_url` y
+    `n8n_webhook_secret`. Vacíos = la web no escribe, que es como queda al
+    actualizar.
+
 ## [0.22.0] — 2026-10-22
 
 ### Añadido

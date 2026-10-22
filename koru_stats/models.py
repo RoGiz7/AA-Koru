@@ -575,6 +575,21 @@ class TicketsConfig(models.Model):
     tag             = models.CharField(max_length=50, default="default", unique=True)
     baserow_base_url = models.CharField(max_length=255, default="https://rekipiloto.sinzg.synology.me")
     baserow_token    = models.CharField(max_length=255, blank=True, default="", help_text="Token de Baserow (solo lectura)")
+
+    # ★ Koru NO escribe en Baserow. Le pide a n8n que escriba.
+    #
+    # La decision de junio fue «un unico dueño por dato»: Baserow es la fuente
+    # de verdad del ticket operativo y lo escribe n8n. Si Koru hiciera PATCH
+    # directo serian dos sistemas escribiendo la misma fila —justo lo que se
+    # decidio evitar— y ademas Discord no se enteraria: reclamarias un ticket en
+    # la web y en el canal seguiria figurando sin reclamar.
+    n8n_webhook_url    = models.CharField(
+        max_length=300, blank=True, default="",
+        help_text="Webhook de n8n que recibe las acciones desde la web (vacío = la web no escribe)")
+    n8n_webhook_secret = models.CharField(
+        max_length=200, blank=True, default="",
+        help_text="Se manda en la cabecera X-Koru-Token; el webhook lo comprueba")
+
     enabled          = models.BooleanField(default=True)
     updated_at       = models.DateTimeField(auto_now=True)
 

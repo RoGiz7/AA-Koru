@@ -3282,6 +3282,13 @@ def auditor_pilot(request, main_id):
 # Koru — Tickets (staff, por rol)
 # ---------------------------------------------------------------------------
 
+def _webhook_puesto():
+    """¿Esta configurado el webhook de n8n? Si no, la web no escribe."""
+    from .models import TicketsConfig
+    cfg = TicketsConfig.objects.filter(tag="default").first()
+    return bool(cfg and cfg.enabled and cfg.n8n_webhook_url)
+
+
 def _tickets_allowed(user):
     """Tipos de ticket que el usuario puede ver según sus permisos."""
     if user.has_perm("koru_stats.tickets_admin"):
@@ -3464,8 +3471,52 @@ def ticket_detail(request, ticket_id):
         "transcripcion_texto": transcripcion_texto,
         "trans_imgs": trans_imgs,
         "auditor_main_id": auditor_main_id,
+        # El boton solo se ofrece si hay webhook puesto y el ticket no esta ya
+        # reclamado: un boton que no va a funcionar es peor que no tenerlo.
+        "puede_reclamar": bool(_webhook_puesto()) and not t.claim_name,
     }
     return render(request, "koru_stats/ticket_detail.html", context)
+
+
+@login_required
+def ticket_reclamar(request, ticket_id):
+    """
+    Reclamar un ticket desde la web (T3).
+
+    ⚠ El permiso se comprueba AQUI, con los grupos de AA, no en n8n: el ticket
+    guarda quién lo cogió, y quién puede cogerlo lo decide el Auth. n8n solo
+    verifica que la llamada viene de Koru.
+    """
+    from django.contrib import messages
+    from django.http import HttpResponseForbidden, Http404
+    from django.shortcuts import redirect
+    from django.urls import reverse
+
+    from . import tickets_write
+    from .models import Ticket
+
+    t = Ticket.objects.filter(id=ticket_id).first()
+    if not t:
+        raise Http404("Ticket no encontrado")
+    if t.tipo not in _tickets_allowed(request.user):
+        return HttpResponseForbidden("No tienes permiso para este tipo de ticket.")
+
+    destino = reverse("koru_stats:ticket_detail", args=[t.id])
+    if request.method != "POST":
+        return redirect(destino)
+
+    try:
+        quien = tickets_write.reclamar(t, request.user)
+        messages.success(
+            request,
+            f"Pedido a n8n: el ticket queda a nombre de {quien}. "
+            f"Aparecerá aquí en la próxima sincronización.")
+    except tickets_write.SinConfigurar as e:
+        messages.warning(request, str(e))
+    except ValueError as e:
+        messages.error(request, str(e))
+
+    return redirect(destino)
 
 
 @login_required

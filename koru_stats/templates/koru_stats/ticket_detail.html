@@ -49,6 +49,15 @@
           {% if t.tipo == 'directores' %}· {% if t.visible_piloto %}<span class="badge bg-success">Visible para el piloto</span>{% else %}<span class="badge bg-secondary">Oculto al piloto</span>{% endif %}{% endif %}
         </div>
       </div>
+      {% if puede_reclamar %}
+      <form method="post" action="{% url 'koru_stats:ticket_reclamar' t.id %}" class="d-inline">
+        {% csrf_token %}
+        <button class="btn btn-sm btn-outline-primary"
+                onclick="return confirm('¿Reclamar este ticket a tu nombre? Se apuntará también en Discord.')">
+          <i class="fas fa-hand-paper me-1"></i>Reclamar
+        </button>
+      </form>
+      {% endif %}
       {% if auditor_main_id %}
       {# La URL por su nombre, no pegada a mano: si el prefijo cambia, esto se entera #}
       <a href="{% url 'koru_stats:auditor_pilot' auditor_main_id %}"
