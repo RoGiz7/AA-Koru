@@ -3,6 +3,16 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.28.1] — 2026-10-22
+
+### Corregido
+
+- **El recuadro «Conversación» enseñaba una foto.** El campo «Transcripción» de
+  Baserow guarda el HTML de la charla y los adjuntos en la misma lista —W5
+  escribe las imágenes ahí mismo—, así que coger el primer fichero y meterlo en
+  el iframe mostraba cualquier cosa. Ahora la conversación es el fichero HTML y
+  el resto baja a Adjuntos. Venía de antes; salió al revisar los permisos.
+
 ## [0.28.0] — 2026-10-22
 
 ### Seguridad

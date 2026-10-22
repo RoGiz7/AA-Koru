@@ -3409,13 +3409,23 @@ def _ficheros_de(ticket):
     """
     extra = ticket.extra or {}
     fuera = []
+    # ⚠ El campo «Transcripción» de Baserow guarda la CONVERSACION Y LAS
+    # IMAGENES en la misma lista —W5 escribe los adjuntos ahi mismo—, asi que
+    # coger el primer fichero y meterlo en el iframe enseñaba una foto en vez de
+    # la charla. La conversacion es el que es HTML; el resto son adjuntos.
+    def _es_conversacion(nombre, url):
+        bajo = (str(nombre) + " " + str(url)).lower()
+        return any(e in bajo for e in (".html", ".htm", ".txt"))
+
     for clave in ("Transcripción", "Transcripción Auditoría", "Archivo"):
         val = extra.get(clave)
         if isinstance(val, list):
             for f in val:
                 if isinstance(f, dict) and f.get("url"):
-                    fuera.append({"name": f.get("name") or clave, "url": f["url"],
-                                  "clave": clave, "transcripcion": clave != "Archivo"})
+                    nombre = f.get("name") or clave
+                    fuera.append({"name": nombre, "url": f["url"], "clave": clave,
+                                  "transcripcion": (clave != "Archivo"
+                                                    and _es_conversacion(nombre, f["url"]))})
     for clave, val in extra.items():
         if clave in ("Transcripción", "Transcripción Auditoría", "Archivo"):
             continue
