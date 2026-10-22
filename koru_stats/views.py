@@ -3563,7 +3563,7 @@ def tickets_stats(request):
             return None
         return (fin - inicio).total_seconds() / 60.0
 
-    tiempos = []
+    tiempos, auditorias_reparto = [], []
     for tipo in sorted(allowed):
         qs = Ticket.objects.filter(tipo=tipo)
         tot = qs.count()
@@ -3577,6 +3577,24 @@ def tickets_stats(request):
                                 for e in qs.values_list("extra", flat=True)) if m is not None]
             mins.sort()
             n = len(mins)
+
+            # ★ EL REPARTO, no solo la mediana. Con mediana 1 min y P90 280 no
+            # hay «una duracion tipica»: hay DOS poblaciones metidas en la misma
+            # fila, y un numero del medio las tapa las dos. Los tramos las
+            # enseñan, y de paso dicen cuantas estan a medio rellenar.
+            tramos = [("menos de 1 min", 0, 1), ("1 – 10 min", 1, 10),
+                      ("10 – 60 min", 10, 60), ("más de 1 h", 60, None)]
+            reparto = []
+            for etiqueta, desde, hasta in tramos:
+                cuantas = sum(1 for m in mins
+                              if m >= desde and (hasta is None or m < hasta))
+                reparto.append({"tramo": etiqueta, "n": cuantas,
+                                "pct": round(cuantas * 100 / n, 1) if n else 0})
+            sin_medir = tot - n
+            if sin_medir:
+                reparto.append({"tramo": "sin marcas suficientes", "n": sin_medir,
+                                "pct": round(sin_medir * 100 / tot, 1)})
+            auditorias_reparto = reparto
             tiempos.append({
                 "tipo": tipo, "total": tot, "cerrados": n,
                 "pct_cerrado": round(n * 100 / tot, 1),
@@ -3702,6 +3720,8 @@ def tickets_stats(request):
         "por_mes_json": _to_json(por_mes),
         "por_claim_json": _to_json(por_claim),
         "tiempos": tiempos,
+        "auditorias_reparto": auditorias_reparto,
+        "auditorias_reparto_json": _to_json(auditorias_reparto),
         "fases_json": _to_json(fases),
         "fases": fases,
         "fases_fin": fases_fin,

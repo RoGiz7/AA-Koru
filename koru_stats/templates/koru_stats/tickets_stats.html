@@ -92,6 +92,22 @@
   </div></div>
   {% endif %}
 
+  {% if auditorias_reparto %}
+  <div class="card mb-3"><div class="card-body">
+    <h6 class="card-title">Auditorías — cuánto duran de verdad</h6>
+    <canvas id="chAudit" height="110"></canvas>
+    <div class="small text-muted mt-2">
+      Con mediana 1 min y P90 280 no hay «una duración típica»: hay <strong>dos
+      poblaciones</strong> metidas en la misma fila, y un número del medio las
+      tapa las dos. Esto las separa.
+      <br>
+      Las marcas miden <strong>cuándo se hizo clic en el check</strong>, no cuánto
+      se revisó: un auditor puede mirarlo todo y luego marcar los siete seguidos.
+      El reparto describe el ritmo de los clics, no el esfuerzo.
+    </div>
+  </div></div>
+  {% endif %}
+
   {% if fases or fases_fin %}
   <div class="card mb-3"><div class="card-body">
     <h6 class="card-title">
@@ -181,6 +197,12 @@
 
     var porClaim = {{ por_claim_json|safe }};
     hbar('chClaim', porClaim.map(function(x){return x.claim;}), porClaim.map(function(x){return x.n;}), '#a855f7');
+
+    var audit = {{ auditorias_reparto_json|safe }};
+    if (audit && audit.length) {
+        hbar('chAudit', audit.map(function(x){return x.tramo + ' — ' + x.pct + '%';}),
+             audit.map(function(x){return x.n;}), '#8b5cf6');
+    }
 
     var fases = {{ fases_json|safe }};
     if (fases && fases.length) {

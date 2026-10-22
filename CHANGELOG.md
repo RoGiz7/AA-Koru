@@ -3,6 +3,21 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.22.0] — 2026-10-22
+
+### Añadido
+
+- **Reparto de la duración de las auditorías**, por tramos: menos de 1 minuto,
+  de 1 a 10, de 10 a 60, y más de una hora, más las que no tienen marcas
+  suficientes para medirse. Con mediana 1 min y P90 280 no hay «una duración
+  típica»: hay **dos poblaciones** metidas en la misma fila, y un número del
+  medio las tapa las dos.
+- La tarjeta dice explícitamente lo que el dato **no** significa: las marcas
+  miden **cuándo se hizo clic en el check**, no cuánto se revisó. Un auditor
+  puede mirarlo todo y luego marcar los siete seguidos. El reparto describe el
+  ritmo de los clics, no el esfuerzo, y presentarlo como lo segundo sería acusar
+  a alguien con un dato que no lo sostiene.
+
 ## [0.21.5] — 2026-10-22
 
 ### Añadido
