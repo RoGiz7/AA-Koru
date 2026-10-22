@@ -3782,6 +3782,10 @@ def tickets_stats(request):
                 "tipo": tipo, "total": tot, "cerrados": n,
                 "pct_cerrado": round(n * 100 / tot, 1),
                 "unidad": "min", "dormida": False, "ultima": None,
+                # Las auditorias se miden por sus propias marcas, no por un
+                # campo de cierre: aqui no hay recorte que aplicar.
+                "medible_desde": None, "total_rango": tot,
+                "cerrados_rango": n, "sin_rastro": 0,
                 "mediana": round(mins[n // 2]) if n else None,
                 "p90": round(mins[min(n - 1, int(n * 0.9))]) if n else None,
                 "media": round(sum(mins) / n, 1) if n else None,
@@ -3806,9 +3810,37 @@ def tickets_stats(request):
         ultima = qs.order_by("-fecha").values_list("fecha", flat=True).first()
         dormida = bool(ultima and (date.today() - ultima).days > 180)
 
+        # ★ «% cerrados» sobre TODO el historico MIENTE cuando el campo de
+        # cierre se añadio a mitad de camino. Directores salia al 9,6% y no es
+        # que no cierre: es que antes de marzo de 2026 no habia donde apuntarlo
+        # —282 de sus 353 no tienen ni estado—. El ticket se cerraba en Discord,
+        # se borraba el canal, y la fila se quedaba igual.
+        #
+        # Asi que el porcentaje se calcula SOLO desde que hay rastro de cierre,
+        # y la pantalla dice desde cuando. Lo anterior no desaparece: sigue en
+        # el total, en el volumen por mes y en los tiempos.
+        medible_desde = (qs.exclude(fecha_cierre__isnull=True)
+                           .order_by("fecha_cierre")
+                           .values_list("fecha_cierre", flat=True).first())
+        if medible_desde:
+            # ⚠ El denominador son los ABIERTOS desde esa fecha, no los cerrados
+            # desde esa fecha: si no, el porcentaje seria siempre 100.
+            en_rango = qs.filter(fecha__gte=medible_desde)
+            tot_rango = en_rango.count()
+            cerrados_rango = en_rango.exclude(fecha_cierre__isnull=True).count()
+            pct_cerrado = round(cerrados_rango * 100 / tot_rango, 1) if tot_rango else None
+        else:
+            # Sin una sola fecha de cierre no hay nada que medir, y un 0% ahi
+            # se lee como «no cierran nunca», que es justo lo contrario.
+            tot_rango = cerrados_rango = 0
+            pct_cerrado = None
+
         tiempos.append({
             "tipo": tipo, "total": tot, "cerrados": n,
-            "pct_cerrado": round(n * 100 / tot, 1),
+            "pct_cerrado": pct_cerrado,
+            "medible_desde": medible_desde,
+            "total_rango": tot_rango, "cerrados_rango": cerrados_rango,
+            "sin_rastro": tot - tot_rango,
             "unidad": "d",
             "dormida": dormida, "ultima": ultima,
             "mediana": dias[n // 2] if n else None,

@@ -3,6 +3,21 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.27.0] — 2026-10-22
+
+### Cambiado
+
+- **El «% cerrados» ya no castiga a una tabla por no haber tenido dónde apuntar
+  el cierre.** Directores salía al 9,6% y no es que no cierre: antes de marzo de
+  2026 no existía el campo —282 de sus 353 tickets no tienen ni estado—. El
+  ticket se cerraba en Discord, se borraba el canal, y la fila se quedaba igual.
+  Ahora el porcentaje se calcula sobre los tickets **abiertos desde que hay
+  rastro de cierre**, y la pantalla dice desde cuándo y cuántos quedan fuera.
+  Los anteriores siguen contando en el total, en el volumen y en los tiempos.
+- Un tipo **sin ninguna fecha de cierre** deja de salir como «0%» y pasa a decir
+  «sin rastro». Un cero ahí se lee como «no cierran nunca», que es justo lo
+  contrario de lo que dice el dato: es Soporte, cuyo campo se creó hoy.
+
 ## [0.26.1] — 2026-10-22
 
 ### Corregido

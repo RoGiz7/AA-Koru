@@ -68,11 +68,32 @@
               {% if t.dormida %}<span class="badge bg-secondary ms-1">histórica</span>{% endif %}
             </td>
             <td class="text-end">{{ t.total }}</td>
-            <td class="text-end">{{ t.cerrados }} <span class="text-muted small">({{ t.pct_cerrado }}%)</span></td>
+            <td class="text-end">
+              {% if t.pct_cerrado != None %}
+                {{ t.cerrados_rango }} <span class="text-muted small">({{ t.pct_cerrado }}%)</span>
+              {% else %}
+                <span class="text-muted">sin rastro</span>
+              {% endif %}
+            </td>
             <td class="text-end">{% if t.mediana != None %}{{ t.mediana }} {{ t.unidad }}{% else %}—{% endif %}</td>
             <td class="text-end">{% if t.p90 != None %}{{ t.p90 }} {{ t.unidad }}{% else %}—{% endif %}</td>
             <td class="text-end text-muted">{% if t.media != None %}{{ t.media }} {{ t.unidad }}{% else %}—{% endif %}</td>
           </tr>
+          {% if t.sin_rastro and not t.dormida %}
+          <tr><td colspan="6" class="small text-muted">
+            El porcentaje va sobre los <strong>{{ t.total_rango }}</strong> abiertos desde
+            {{ t.medible_desde|date:"F Y" }}, que es cuando empezó a haber dónde apuntar el cierre.
+            Los <strong>{{ t.sin_rastro }}</strong> anteriores se cerraron igual —se borraba el canal
+            de Discord— pero la fila no guardó nada, así que meterlos en la cuenta diría que no se
+            cierra lo que sí se cerró. Siguen contando en el total y en el volumen.
+          </td></tr>
+          {% endif %}
+          {% if t.pct_cerrado == None and not t.dormida %}
+          <tr><td colspan="6" class="small text-muted">
+            Ni una sola fecha de cierre todavía, así que no hay nada que medir. Un 0% aquí se leería
+            como «no cierran nunca», que es lo contrario de lo que dice el dato.
+          </td></tr>
+          {% endif %}
           {% if t.dormida %}
           <tr><td colspan="6" class="small text-muted">
             Sin tickets nuevos desde {{ t.ultima|date:"F Y" }}. No es un problema de gestión:
