@@ -3,6 +3,25 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.21.5] — 2026-10-22
+
+### Añadido
+
+- **`python manage.py koru_plantillas_check`**, que busca los dos errores de
+  plantilla que *no dan error*:
+  - El **comentario corto escrito en varias líneas**. Django no lo reconoce y lo
+    imprime tal cual en la página; no falla, no avisa, sale. Es el que nos mordió
+    dos veces el mismo día, y uno de ellos llevaba meses saliendo en el tax
+    lunar de cada piloto.
+  - Las **etiquetas de bloque descuadradas**. Un `{% if %}` sin cerrar revienta
+    al renderizar, pero solo cuando alguien entra en esa pantalla, que puede ser
+    semanas después. `{% comment %}` entra en la lista a propósito: sin cerrar
+    se come el resto de la plantilla en silencio.
+
+  Devuelve 1 si encuentra algo, así que vale para un hook o para CI el día que
+  lo haya. No sustituye a abrir la página y mirarla: evita que estos dos haya
+  que buscarlos a ojo.
+
 ## [0.21.4] — 2026-10-22
 
 ### Corregido

@@ -175,6 +175,19 @@ pip show koru-stats | head -2
 
 Y para ver si hay algo nuevo, el [CHANGELOG](CHANGELOG.md) y los tags del repo.
 
+## Comprobaciones antes de subir
+
+```bash
+python manage.py koru_plantillas_check     # comentarios y bloques de plantilla
+python manage.py makemigrations koru_stats --check --dry-run
+```
+
+El primero busca los dos errores de plantilla que **no dan error**: el
+comentario corto `{# … #}` escrito en varias líneas —que Django imprime en la
+página en vez de ocultarlo— y las etiquetas de bloque sin cerrar, que revientan
+sólo cuando alguien entra en esa pantalla. El segundo confirma que no falta
+ninguna migración.
+
 ## Versionado
 
 La versión vive en **un solo sitio**: `koru_stats/__init__.py`. El `pyproject.toml`
