@@ -3,6 +3,31 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.21.3] — 2026-10-22
+
+### Corregido
+
+- **La duración de una auditoría se cortaba en el último check.** El asunto trae
+  «Aprobado por … · 21/10/2026, 0:54:14», seis minutos después, y ese tramo se
+  perdía: el ticket 146 constaba de 5,3 minutos cuando duró 11,4. La aprobación
+  solo puede **alargar** el intervalo, nunca adelantar el principio, porque se
+  aprueba al terminar. De paso, ahora se puede medir una auditoría con **un solo
+  check** si tiene aprobación; antes hacían falta dos y se descartaba.
+
+### Añadido
+
+- **Las imágenes pegadas dentro de la transcripción se ven.** Discord las deja
+  como una URL cruda larguísima que ocupaba dos líneas y ni se podía pinchar —
+  siendo la prueba de la auditoría, merecía verse. Ahora el texto pasa por
+  `urlizetrunc` (que escapa el contenido y solo convierte los enlaces, así que
+  una transcripción con HTML dentro no puede inyectar nada) y las imágenes salen
+  como miniaturas debajo.
+  - La extensión se comprueba sobre la ruta **antes del `?`**: los enlaces de
+    Discord acaban en `?ex=…&is=…&hm=…` y mirando la URL entera no se
+    reconocería ni un png.
+  - Las de Discord caducan, así que la que no cargue se esconde sola en vez de
+    dejar el hueco roto.
+
 ## [0.21.2] — 2026-10-22
 
 ### Corregido

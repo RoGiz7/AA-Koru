@@ -3419,6 +3419,24 @@ def ticket_detail(request, ticket_id):
         if isinstance(cd.get("v"), str):
             cd["v"] = _sub_discord(cd["v"])
 
+    # ★ Las imagenes que viven DENTRO del texto de la transcripcion. Discord las
+    # pega como una URL cruda larguisima, que ocupaba dos lineas y no se podia
+    # ni pinchar; siendo la prueba de la auditoria, merece verse.
+    #
+    # ⚠ Se mira la ruta ANTES del «?»: los enlaces de Discord acaban en
+    # «?ex=…&is=…&hm=…», asi que comprobar la extension sobre la URL entera no
+    # reconoceria ni un png.
+    trans_imgs = []
+    if transcripcion_texto:
+        vistas = set()
+        for u in _re.findall(r"https?://[^\s<>\"']+", transcripcion_texto):
+            u = u.rstrip(".,);]")
+            ruta = u.split("?", 1)[0].lower()
+            if u not in vistas and ruta.endswith(
+                    (".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp")):
+                vistas.add(u)
+                trans_imgs.append(u)
+
     # ⚠ El boton «Ficha Auditor» mandaba a /auditor/piloto/<main_character_id>/,
     # pero ese id es el del personaje que figura en Baserow, que MUCHAS VECES es
     # un alt. El Auditor espera el id del MAIN, asi que el enlace llevaba a una
@@ -3444,6 +3462,7 @@ def ticket_detail(request, ticket_id):
         "transcripcion_files": transcripcion_files,
         "notas": notas,
         "transcripcion_texto": transcripcion_texto,
+        "trans_imgs": trans_imgs,
         "auditor_main_id": auditor_main_id,
     }
     return render(request, "koru_stats/ticket_detail.html", context)
@@ -3514,21 +3533,35 @@ def tickets_stats(request):
         """
         import re as _re
         from datetime import datetime as _dt
-        vistos = []
-        for k, val in (extra or {}).items():
-            if not k.startswith("Check ") or not isinstance(val, str):
-                continue
-            m = _re.search(r"(\d{1,2})/(\d{1,2})/(\d{4}),?\s+(\d{1,2}):(\d{2}):(\d{2})", val)
-            if not m:
-                continue
-            try:
-                vistos.append(_dt(int(m.group(3)), int(m.group(2)), int(m.group(1)),
-                                  int(m.group(4)), int(m.group(5)), int(m.group(6))))
-            except ValueError:
-                continue
-        if len(vistos) < 2:
+
+        def _marcas(texto):
+            fuera = []
+            for m in _re.finditer(
+                    r"(\d{1,2})/(\d{1,2})/(\d{4}),?\s+(\d{1,2}):(\d{2}):(\d{2})",
+                    str(texto or "")):
+                try:
+                    fuera.append(_dt(int(m.group(3)), int(m.group(2)), int(m.group(1)),
+                                     int(m.group(4)), int(m.group(5)), int(m.group(6))))
+                except ValueError:
+                    continue
+            return fuera
+
+        extra = extra or {}
+        checks = []
+        for k, val in extra.items():
+            if k.startswith("Check ") and isinstance(val, str):
+                checks.extend(_marcas(val))
+        if not checks:
             return None
-        return (max(vistos) - min(vistos)).total_seconds() / 60.0
+
+        # ★ El final NO es el ultimo check: el asunto trae «Aprobado por … ·
+        # 21/10/2026, 0:54:14», seis minutos despues. Parando en el check, esa
+        # auditoria salia de 5,3 minutos cuando duro 11,5.
+        finales = checks + _marcas(extra.get("Asunto"))
+        inicio, fin = min(checks), max(finales)
+        if fin <= inicio:
+            return None
+        return (fin - inicio).total_seconds() / 60.0
 
     tiempos = []
     for tipo in sorted(allowed):

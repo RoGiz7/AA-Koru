@@ -76,7 +76,25 @@
       {% if transcripcion_texto %}
       <div class="card mb-3"><div class="card-body">
         <h6 class="card-title">Transcripción (texto)</h6>
-        <div class="transcript">{{ transcripcion_texto }}</div>
+        {# `urlizetrunc` y no `safe`: Django escapa el texto y solo convierte los
+           enlaces, asi que una transcripcion con HTML dentro no puede inyectar
+           nada. El 60 es para que una URL de Discord no ocupe dos lineas. #}
+        <div class="transcript">{{ transcripcion_texto|urlizetrunc:60 }}</div>
+        {% if trans_imgs %}
+        <div class="d-flex flex-wrap gap-2 mt-2">
+          {% for u in trans_imgs %}
+          <a href="{{ u }}" target="_blank" rel="noopener">
+            <img src="{{ u }}" style="height:120px;border-radius:6px;object-fit:cover"
+                 onerror="this.closest('a').style.display='none'">
+          </a>
+          {% endfor %}
+        </div>
+        <div class="small text-muted mt-1">
+          Imágenes pegadas dentro de la transcripción. Las de Discord caducan,
+          así que alguna puede no cargar: por eso se esconde sola en vez de
+          dejar el hueco roto.
+        </div>
+        {% endif %}
       </div></div>
       {% endif %}
 

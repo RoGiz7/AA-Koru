@@ -1992,24 +1992,35 @@ def sync_tickets():
 
     def _fechas_checks(row):
         """
-        (primera, ultima) de los «Check …» de una auditoria, o (None, None).
+        (primera, ultima) de las marcas de tiempo de una auditoria.
 
         Son texto libre del estilo «Superion Maximus · 21/10/2026, 0:48:07», asi
-        que la fecha se saca con una expresion regular. El primero marca cuando
-        el auditor se puso; el ultimo, cuando acabo.
+        que la fecha se saca con una expresion regular. El primer check marca
+        cuando el auditor se puso.
+
+        ★ El final NO es el ultimo check: el asunto trae «Aprobado por … ·
+        21/10/2026, 0:54:14», seis minutos despues del ultimo. Parando en el
+        check se perdia el tramo final y la auditoria salia mas corta de lo que
+        fue. La aprobacion solo puede ALARGAR el intervalo, nunca adelantar el
+        principio, porque se aprueba al terminar.
         """
-        vistas = []
+        def _ds(texto):
+            fuera = []
+            for m in re.finditer(r"(\d{1,2})/(\d{1,2})/(\d{4})", str(texto or "")):
+                try:
+                    fuera.append(date(int(m.group(3)), int(m.group(2)), int(m.group(1))))
+                except ValueError:
+                    continue
+            return fuera
+
+        checks = []
         for k, val in row.items():
-            if not k.startswith("Check ") or not isinstance(val, str):
-                continue
-            m = re.search(r"(\d{1,2})/(\d{1,2})/(\d{4})", val)
-            if not m:
-                continue
-            try:
-                vistas.append(date(int(m.group(3)), int(m.group(2)), int(m.group(1))))
-            except ValueError:
-                continue
-        return (min(vistas), max(vistas)) if vistas else (None, None)
+            if k.startswith("Check ") and isinstance(val, str):
+                checks.extend(_ds(val))
+        if not checks:
+            return (None, None)
+        finales = checks + _ds(row.get("Asunto"))
+        return (min(checks), max(finales))
 
     def _fecha_apertura(tipo, row):
         """
