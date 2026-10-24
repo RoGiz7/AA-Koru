@@ -634,9 +634,77 @@ class RecruitApplicationAdmin(admin.ModelAdmin):
         return False      # Una solicitud nace del formulario, no del admin
 
 
+class RecruitConfigForm(forms.ModelForm):
+    """
+    ★ Los roles se ELIGEN de una lista, no se teclean. Un id de Discord son 18
+    dígitos: copiarlos a mano es una invitación a que uno salga mal, y un id mal
+    copiado aquí es un canal que no ve quien tiene que verlo.
+
+    ⚠ La lista se le pide a Discord. Si Discord no contesta, el campo se queda
+    como estaba —texto JSON— en vez de impedir guardar la configuración: no
+    poder tocar nada porque un servicio externo está caído sería peor.
+    """
+
+    class Meta:
+        model  = RecruitConfig
+        fields = "__all__"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from . import discordapi
+        try:
+            opciones = discordapi.listar_roles()
+        except Exception as exc:
+            self.fields["roles_ver"].help_text = (
+                "No se ha podido consultar Discord para ofrecer la lista "
+                f"({exc}). Escribe los ids a mano, como lista JSON.")
+            return
+
+        actuales = [str(x) for x in (self.initial.get("roles_ver") or [])]
+        self.fields["roles_ver"] = forms.MultipleChoiceField(
+            choices=opciones,
+            initial=actuales,
+            required=False,
+            widget=forms.SelectMultiple(attrs={"size": min(len(opciones), 14)}),
+            label="Roles que ven el canal",
+            help_text="Ctrl+clic para marcar varios. La lista viene de tu Discord.",
+        )
+
+        # Las categorías y el canal de aviso, igual: elegidos, no tecleados.
+        # ⚠ Cada uno en su try: que no se pueda listar una cosa no tiene por qué
+        # dejar la otra sin lista.
+        self._lista(discordapi, "categoria_id", discordapi.CATEGORIA,
+                    "Categoría donde van los canales",
+                    "Los canales de reclutamiento nacerán dentro de ésta.")
+        self._lista(discordapi, "avisar_en", discordapi.CANAL_TEXTO,
+                    "Avisar en",
+                    "Dónde avisar de que hay solicitud nueva. Déjalo vacío para no avisar.")
+
+    def _lista(self, discordapi, campo, tipo, etiqueta, ayuda):
+        from django import forms as f
+        try:
+            opciones = discordapi.listar_canales(tipo)
+        except Exception:
+            return      # se queda como texto libre, con su id a mano
+        actual = str(self.initial.get(campo) or "")
+        # El vacío va SIEMPRE, aunque el campo tenga valor: si no, no habría
+        # forma de dejar de avisar una vez elegido un canal.
+        self.fields[campo] = f.ChoiceField(
+            choices=[("", "— ninguno —")] + opciones,
+            initial=actual, required=False, label=etiqueta, help_text=ayuda)
+
+    def clean_roles_ver(self):
+        # Se guardan como lista de textos: los ids de Discord son demasiado
+        # grandes para un entero de 32 bits y en JSON se irían a notación
+        # científica si alguien los tratara como números.
+        return [str(x) for x in (self.cleaned_data.get("roles_ver") or [])]
+
+
 @admin.register(RecruitConfig)
 class RecruitConfigAdmin(admin.ModelAdmin):
     """Dónde nacen los canales de reclutamiento y quién los ve."""
+
+    form = RecruitConfigForm
 
     list_display = ("__str__", "categoria_id", "prefijo_canal", "updated_at")
 
@@ -649,8 +717,8 @@ class RecruitConfigAdmin(admin.ModelAdmin):
         ("Discord", {
             "fields": ("categoria_id", "prefijo_canal", "roles_ver", "avisar_en"),
             "description": "⚠ Los ids se copian de Discord con el modo desarrollador activado "
-                           "(clic derecho → Copiar id). `roles_ver` es una lista JSON de ids "
-                           "de rol; quien no esté ahí no verá el canal.",
+                           "(clic derecho → Copiar id). Los roles se eligen de la lista: "
+                           "quien no esté marcado no verá el canal.",
         }),
     )
 

@@ -3,6 +3,27 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.33.1] — 2026-10-24
+
+### Cambiado
+
+- **Los roles del canal se eligen de una lista**, no se teclean. La lista se le
+  pide a Discord con el token que ya tiene el Auth, así que salen los roles
+  reales con su nombre. Un id de Discord son 18 dígitos: copiarlos a mano es
+  una invitación a que uno salga mal, y un id mal copiado es un canal que no ve
+  quien tiene que verlo.
+- Si Discord no contesta, el campo se queda como estaba —texto JSON— en vez de
+  impedir guardar: no poder tocar la configuración porque un servicio externo
+  está caído sería peor que escribir un id a mano.
+- `@everyone` y los roles de bots no se ofrecen. Dar a `@everyone` permiso de
+  ver un canal privado es exactamente lo contrario de lo que se busca.
+- **La categoría y el canal de aviso también se eligen de una lista.** El canal
+  se muestra con su categoría delante (`Reclutamiento / #general`): en un
+  Discord grande hay tres canales llamados «general» y sin el contexto no se
+  sabe cuál es cuál.
+- Cada lista se pide por separado: que Discord falle al listar una cosa no deja
+  la otra sin su desplegable.
+
 ## [0.33.0] — 2026-10-24
 
 ### Añadido

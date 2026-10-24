@@ -118,3 +118,89 @@ def publicar(canal_id, contenido):
             raise RuntimeError(f"Discord respondió {r.status_code} al publicar")
         ultimo = r.json().get("id")
     return ultimo
+
+
+def listar_roles():
+    """
+    Los roles del servidor, de mayor a menor posición: [(id, nombre), …].
+
+    Se usa para ofrecer una lista en el admin en vez de pedir ids a mano. Los
+    ids se copian mal con una facilidad pasmosa, y un id mal copiado aquí es un
+    canal que no ve quien tiene que verlo.
+    """
+    from django.core.cache import cache
+
+    guardado = cache.get("koru_discord_roles")
+    if guardado is not None:
+        return guardado
+
+    r = requests.get(f"{API}/guilds/{_guild()}/roles",
+                     headers=_cabeceras(), timeout=ESPERA)
+    if r.status_code >= 400:
+        logger.error("koru discord: listar roles devolvio %s — %s",
+                     r.status_code, r.text[:200])
+        raise RuntimeError(f"Discord respondió {r.status_code} al listar los roles")
+
+    roles = []
+    for rol in r.json():
+        # @everyone no se ofrece: darle permiso de ver un canal privado es
+        # exactamente lo contrario de lo que se quiere aquí.
+        if str(rol.get("id")) == _guild():
+            continue
+        if rol.get("managed"):
+            continue      # roles de bots e integraciones; no son de personas
+        roles.append((str(rol["id"]), rol.get("name") or rol["id"]))
+
+    roles.sort(key=lambda x: x[1].lower())
+    # Diez minutos: cambiar un rol y que tarde eso en aparecer es asumible;
+    # pedirle la lista a Discord en cada carga del admin, no.
+    cache.set("koru_discord_roles", roles, 600)
+    return roles
+
+
+# Tipos de canal de Discord, de los que nos interesan aquí.
+CANAL_TEXTO = 0
+CATEGORIA   = 4
+
+
+def listar_canales(tipo=CANAL_TEXTO):
+    """
+    Los canales del servidor de ese tipo: [(id, nombre), …].
+
+    Con `tipo=CATEGORIA` devuelve las categorías, que para Discord son canales
+    de otro tipo y vienen en la misma respuesta.
+    """
+    from django.core.cache import cache
+
+    clave = f"koru_discord_canales_{tipo}"
+    guardado = cache.get(clave)
+    if guardado is not None:
+        return guardado
+
+    r = requests.get(f"{API}/guilds/{_guild()}/channels",
+                     headers=_cabeceras(), timeout=ESPERA)
+    if r.status_code >= 400:
+        logger.error("koru discord: listar canales devolvio %s — %s",
+                     r.status_code, r.text[:200])
+        raise RuntimeError(f"Discord respondió {r.status_code} al listar los canales")
+
+    todos = r.json()
+    # Para un canal de texto se enseña también su categoría: en un Discord con
+    # cien canales, tres se llaman «general» y sin el contexto no se sabe cuál
+    # es cuál.
+    nombres_cat = {str(c["id"]): c.get("name") or ""
+                   for c in todos if c.get("type") == CATEGORIA}
+
+    fuera = []
+    for c in todos:
+        if c.get("type") != tipo:
+            continue
+        nombre = c.get("name") or str(c["id"])
+        padre = nombres_cat.get(str(c.get("parent_id") or ""))
+        if tipo == CANAL_TEXTO and padre:
+            nombre = f"{padre} / #{nombre}"
+        fuera.append((str(c["id"]), nombre))
+
+    fuera.sort(key=lambda x: x[1].lower())
+    cache.set(clave, fuera, 600)
+    return fuera
