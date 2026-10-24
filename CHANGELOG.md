@@ -3,6 +3,34 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.32.0] — 2026-10-24
+
+### Añadido
+
+- **El formulario de solicitud se edita desde el admin** (`RecruitQuestion`).
+  Pregunta, ayuda, tipo, opciones, orden y si es obligatoria. La migración
+  `0038` lo siembra con las seis preguntas acordadas; a partir de ahí manda el
+  admin y tocar el código ya no cambia nada en producción.
+- **Retrato del piloto** (`recruit.retrato`): personajes, SP, antigüedad de cada
+  cuenta, corp actual, historial de corps y unas pocas señales objetivas. Todo
+  de la base del Auth, sin llamar al ESI, así que el reclutador no espera.
+
+### Decisiones
+
+- **La etiqueta de la pregunta se guarda junto a la respuesta.** Si solo se
+  guardara la clave, el día que alguien reescriba o borre una pregunta las
+  solicitudes viejas quedarían con respuestas huérfanas: un texto sin saber a
+  qué contestaba. Se guarda `{clave: {etiqueta, valor}}`, y el lector aguanta
+  también el formato plano por si acaso.
+- **Las preguntas no se borran desde el admin, se desactivan.** Borrar una no
+  borra las respuestas que ya dio la gente, solo las deja sin contexto.
+- **Las señales son señales, no un veredicto.** Cuenta recién creada, muchos
+  saltos de corp, sin datos de ESI todavía. El reclutador filtra; si algo huele,
+  para eso está el botón de abrir auditoría y Asuntos Internos detrás.
+- `sp` puede venir vacío y eso **no** es un cero: corptools rellena en su propio
+  ciclo, así que un personaje registrado hace diez minutos aún no tiene datos.
+  La ficha lo dice; un 0 se leería como «cuenta vacía», que es lo contrario.
+
 ## [0.31.0] — 2026-10-24
 
 ### Añadido

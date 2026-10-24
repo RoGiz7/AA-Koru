@@ -14,6 +14,7 @@ from .models import (
     GiftContribution, GiftContributionItem,
     Raffle, RaffleEntrant, RafflePrize, RaffleDraw, RaffleRosterFilter,
     GiftDelivery,
+    RecruitApplication, RecruitNote, RecruitQuestion,
 )
 
 
@@ -557,3 +558,74 @@ class GiftDeliveryAdmin(admin.ModelAdmin):
 
     def has_add_permission(self, request):
         return False      # La ficha nace con la tirada, no se escribe a mano
+
+
+# ---------------------------------------------------------------------------
+# Reclutamiento
+# ---------------------------------------------------------------------------
+
+@admin.register(RecruitQuestion)
+class RecruitQuestionAdmin(admin.ModelAdmin):
+    """El formulario de solicitud se edita aquí, sin tocar código."""
+
+    list_display  = ("orden", "etiqueta", "clave", "tipo", "obligatoria", "activa")
+    list_editable = ("orden", "obligatoria", "activa")
+    list_filter   = ("activa", "tipo")
+    search_fields = ("clave", "etiqueta")
+    ordering      = ("orden", "id")
+
+    fieldsets = (
+        ("La pregunta", {
+            "fields": ("etiqueta", "ayuda", "tipo", "opciones", "obligatoria"),
+            "description": "«Elegir de una lista» usa el campo Opciones; los otros dos lo ignoran.",
+        }),
+        ("Dónde va", {"fields": ("orden", "activa")}),
+        ("Identificador", {
+            "fields": ("clave",),
+            "classes": ("collapse",),
+            "description": "⚠ Enlaza esta pregunta con las respuestas ya guardadas. "
+                           "Si lo cambias, las fichas antiguas dejan de saber a qué "
+                           "contestaban. Para cambiar una pregunta a fondo: crea otra "
+                           "y desactiva ésta.",
+        }),
+    )
+
+    def has_delete_permission(self, request, obj=None):
+        # ★ No se borra: se desactiva. Borrar la pregunta no borra las respuestas
+        # que ya dio la gente, pero deja esas fichas sin saber qué se preguntó.
+        return False
+
+
+class RecruitNoteInline(admin.TabularInline):
+    model = RecruitNote
+    extra = 0
+    readonly_fields = ("autor", "autor_nombre", "texto", "created_at")
+    can_delete = False
+
+    def has_add_permission(self, request, obj=None):
+        return False      # Las notas se escriben en la ficha, no aquí
+
+
+@admin.register(RecruitApplication)
+class RecruitApplicationAdmin(admin.ModelAdmin):
+    """Para mirar y para desatascar un caso raro. Lo normal va en la pantalla."""
+
+    list_display  = ("main_character_name", "estado", "fase", "claim_por",
+                     "discord_channel_id", "created_at")
+    list_filter   = ("estado", "created_at")
+    search_fields = ("main_character_name", "motivo_cierre")
+    date_hierarchy = "created_at"
+    inlines = [RecruitNoteInline]
+
+    # ⚠ Todo esto es historia: quién aprobó qué y cuándo, y el retrato del
+    # piloto al solicitar. Editarlo a mano sería reescribir lo que pasó.
+    readonly_fields = ("user", "main_character_id", "main_character_name",
+                       "respuestas", "instantanea", "instantanea_en",
+                       "ok_reclutadores_por", "ok_reclutadores_en",
+                       "ok_asuntos_por", "ok_asuntos_en",
+                       "ok_directores_por", "ok_directores_en",
+                       "claim_por", "claim_en", "cerrada_por", "fecha_cierre",
+                       "created_at", "updated_at", "fase")
+
+    def has_add_permission(self, request):
+        return False      # Una solicitud nace del formulario, no del admin

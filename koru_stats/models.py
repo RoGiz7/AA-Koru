@@ -1867,3 +1867,45 @@ class RecruitNote(models.Model):
 
     def __str__(self):
         return f"{self.autor_nombre}: {self.texto[:40]}"
+
+
+class RecruitQuestion(models.Model):
+    """Una pregunta del formulario de solicitud, editable desde el admin."""
+
+    TEXTO  = "texto"
+    LARGA  = "larga"
+    OPCION = "opcion"
+    TIPOS = (
+        (TEXTO,  "Una línea"),
+        (LARGA,  "Varias líneas"),
+        (OPCION, "Elegir de una lista"),
+    )
+
+    # ⚠ La clave NO se cambia una vez hay respuestas guardadas con ella: es lo
+    # que las enlaza. Si hace falta otra pregunta, se crea nueva y se desactiva
+    # la vieja — asi las fichas antiguas siguen teniendo sentido.
+    clave = models.SlugField(max_length=40, unique=True,
+                             help_text="Identificador interno. No lo cambies si ya hay respuestas")
+    etiqueta = models.CharField(max_length=200, help_text="La pregunta tal como la lee el piloto")
+    ayuda    = models.CharField(max_length=250, blank=True, default="",
+                                help_text="Texto pequeño debajo. Opcional")
+    tipo     = models.CharField(max_length=10, choices=TIPOS, default=TEXTO)
+    opciones = models.JSONField(default=list, blank=True,
+                                help_text='Solo para "Elegir de una lista". Ej: ["Sí", "No"]')
+    obligatoria = models.BooleanField(default=True)
+    orden    = models.IntegerField(default=0, help_text="De menor a mayor")
+
+    # ★ Desactivar en vez de borrar. Borrar una pregunta no borra las respuestas
+    # que ya se dieron, pero si deja la ficha sin saber a que contestaban.
+    activa   = models.BooleanField(default=True,
+                                   help_text="Desactívala en vez de borrarla: las fichas antiguas la siguen necesitando")
+
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name        = "Reclutamiento — pregunta"
+        verbose_name_plural = "Reclutamiento — preguntas del formulario"
+        ordering = ["orden", "id"]
+
+    def __str__(self):
+        return f"{self.orden}. {self.etiqueta}" + ("" if self.activa else " (inactiva)")
