@@ -3,6 +3,30 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.34.0] — 2026-10-24
+
+### Añadido
+
+- **Quién aprueba cada paso, configurable desde el admin** y con varios grupos
+  por paso: reclutadores, Asuntos Internos, Dirección, y quién puede rechazar o
+  cerrar. Se usan **grupos de AA**, no roles de Discord: aquí manda el Auth y
+  los roles de Discord salen de él. Un sitio donde decidirlo, no dos.
+- Cuando a alguien no le toca un paso, no se le esconde el botón: se le dice
+  **quién tiene que darlo**, para que sepa a quién avisar.
+
+### Por qué
+
+En W4 el permiso era **una sola comprobación para todos los botones** — los
+cinco roles podían pulsar cualquier paso. La cadena existía como secuencia, no
+como reparto de autoridad, y así el registro de «quién aprobó» dice quién pulsó,
+no quién tenía potestad.
+
+### Cuidado
+
+- **Un paso con la lista vacía no es «todos»: es «sin configurar»**, y entonces
+  solo un superusuario puede darlo. Nacen vacías a propósito; sembrarlas con una
+  suposición sería peor que obligar a decidirlo.
+
 ## [0.33.2] — 2026-10-24
 
 ### Corregido

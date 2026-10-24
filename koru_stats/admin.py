@@ -705,6 +705,8 @@ class RecruitConfigAdmin(admin.ModelAdmin):
     """Dónde nacen los canales de reclutamiento y quién los ve."""
 
     form = RecruitConfigForm
+    filter_horizontal = ("grupos_reclutadores", "grupos_asuntos",
+                         "grupos_directores", "grupos_rechazo")
 
     list_display = ("__str__", "categoria_id", "prefijo_canal", "updated_at")
 
@@ -713,6 +715,13 @@ class RecruitConfigAdmin(admin.ModelAdmin):
             "fields": ("activo",),
             "description": "Apagado: la solicitud se guarda igual, pero no se crea canal. "
                            "La pantalla del reclutador la enseña marcada como «sin canal».",
+        }),
+        ("Quién aprueba cada paso", {
+            "fields": ("grupos_reclutadores", "grupos_asuntos",
+                       "grupos_directores", "grupos_rechazo"),
+            "description": "⚠ Dejar un paso VACÍO no quiere decir «todos»: quiere decir "
+                           "sin configurar, y entonces solo un superusuario puede darlo. "
+                           "Se pueden poner varios grupos por paso.",
         }),
         ("Discord", {
             "fields": ("categoria_id", "prefijo_canal", "roles_ver", "avisar_en"),

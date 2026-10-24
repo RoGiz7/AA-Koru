@@ -1939,6 +1939,38 @@ class RecruitConfig(models.Model):
         max_length=30, blank=True, default="",
         help_text="Canal donde avisar de que hay solicitud nueva. Opcional")
 
+    # --- Quién aprueba cada paso -------------------------------------------
+    #
+    # ★ CONFIGURABLE, Y CON VARIOS GRUPOS POR PASO. En n8n esto era una sola
+    # comprobación para todos los botones: cualquiera de los cinco roles podía
+    # pulsar cualquier paso. La cadena existía como secuencia, no como reparto
+    # de autoridad, y entonces el registro de «quién aprobó» dice quién pulsó,
+    # no quién tenía potestad.
+    #
+    # Se usan GRUPOS DE AA, no roles de Discord: aquí manda el Auth y los roles
+    # de Discord salen de él. Un sitio donde decidirlo, no dos.
+    #
+    # ⚠ Una lista VACÍA no significa «todos»: significa sin configurar, y
+    # entonces solo un superusuario puede dar ese paso. Que un paso sin definir
+    # lo pueda dar cualquiera es la clase de descuido que no se nota hasta que
+    # alguien aprueba algo que no le tocaba.
+    grupos_reclutadores = models.ManyToManyField(
+        "auth.Group", blank=True, related_name="+",
+        verbose_name="Paso 1 · Reclutadores",
+        help_text="Grupos que pueden dar el OK de reclutadores")
+    grupos_asuntos = models.ManyToManyField(
+        "auth.Group", blank=True, related_name="+",
+        verbose_name="Paso 2 · Asuntos Internos",
+        help_text="Grupos que pueden dar el OK de Asuntos Internos")
+    grupos_directores = models.ManyToManyField(
+        "auth.Group", blank=True, related_name="+",
+        verbose_name="Paso 3 · Directores",
+        help_text="Grupos que pueden dar el OK de Dirección")
+    grupos_rechazo = models.ManyToManyField(
+        "auth.Group", blank=True, related_name="+",
+        verbose_name="Rechazar o cerrar",
+        help_text="Grupos que pueden rechazar una solicitud o cerrarla")
+
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

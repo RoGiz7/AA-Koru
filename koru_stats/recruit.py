@@ -343,3 +343,57 @@ def crear_canal(solicitud, retrato):
         logger.error("koru recruit: canal %s creado pero sin ficha: %s", canal, exc)
 
     return canal
+
+
+# ---------------------------------------------------------------------------
+# Quién puede dar cada paso
+# ---------------------------------------------------------------------------
+
+PASOS = {
+    "reclutadores": ("grupos_reclutadores", "el OK de reclutadores"),
+    "asuntos":      ("grupos_asuntos",      "el OK de Asuntos Internos"),
+    "directores":   ("grupos_directores",   "el OK de Dirección"),
+    "rechazo":      ("grupos_rechazo",      "rechazar o cerrar una solicitud"),
+}
+
+
+def quien_puede(paso):
+    """Los nombres de los grupos que pueden dar ese paso. Vacío = sin configurar."""
+    from .models import RecruitConfig
+
+    campo = PASOS.get(paso, (None, None))[0]
+    if not campo:
+        return []
+    cfg = RecruitConfig.objects.filter(tag="default").first()
+    if not cfg:
+        return []
+    return list(getattr(cfg, campo).values_list("name", flat=True))
+
+
+def puede(user, paso):
+    """
+    (sí/no, motivo). El motivo se enseña tal cual cuando es que no.
+
+    ⚠ Lista vacía = SIN CONFIGURAR, y entonces solo un superusuario. No
+    significa «todos»: un paso sin definir que pueda darlo cualquiera es
+    exactamente el descuido que no se nota hasta que alguien aprueba algo que
+    no le tocaba.
+    """
+    if not user.is_authenticated:
+        return False, "Hay que entrar primero."
+    if user.is_superuser:
+        return True, ""
+
+    grupos = quien_puede(paso)
+    if not grupos:
+        _, que = PASOS.get(paso, ("", "este paso"))
+        return False, (f"Todavía no está configurado quién puede dar {que}. "
+                       "Dilo en la configuración de reclutamiento del admin.")
+
+    mios = set(user.groups.values_list("name", flat=True))
+    if mios & set(grupos):
+        return True, ""
+
+    _, que = PASOS[paso]
+    return False, (f"No puedes dar {que}: eso lo hace "
+                   + " o ".join(grupos) + ". Avísales y lo darán ellos.")
