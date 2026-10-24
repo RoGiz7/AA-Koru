@@ -3639,7 +3639,7 @@ def recruit_ficha(request, sol_id):
 
     puedo_rechazar, motivo_rechazo = recruit.puede(request.user, "rechazo")
 
-    from .models import RecruitNote
+    from .models import RecruitCheck, RecruitNote
     reservadas = recruit.lee_reservadas(request.user)
     notas = sol.notas.all().select_related("autor")
     if not reservadas:
@@ -3666,6 +3666,13 @@ def recruit_ficha(request, sol_id):
         "conversacion": _conversacion_de(sol.transcripcion, sol.main_character_name),
         "finales": [(c, n) for c, n in RecruitApplication.ESTADOS
                     if c in RecruitApplication.CERRADOS],
+        # ⚠ La pestaña de auditoría NO LLEGA A LA PÁGINA si no puede verla.
+        # Misma regla que las notas reservadas: un reclutador no debe ver ni
+        # que existe, porque «hay una pestaña que no puedo abrir» ya es
+        # información sobre una investigación en curso.
+        "checks": recruit.checks_de(sol) if reservadas else None,
+        "puedo_auditar": recruit.puede(request.user, "asuntos")[0],
+        "estados_check": RecruitCheck.ESTADOS,
     })
 
 
@@ -3720,6 +3727,18 @@ def recruit_accion(request, sol_id):
                 request,
                 "Nota reservada guardada." if pedida == RecruitNote.RESERVADA
                 else "Nota guardada.")
+
+    elif accion == "check":
+        ok, msg = recruit.marcar_check(
+            sol, request.user,
+            request.POST.get("clave") or "",
+            request.POST.get("estado") or "",
+            request.POST.get("nota") or "")
+        (messages.success if ok else messages.error)(request, msg)
+        # ⚠ No se avisa al canal del solicitante de los checks. Es el canal
+        # donde está ÉL: contarle ahí que Asuntos Internos acaba de marcar
+        # algo como «duda» sería enseñarle la investigación.
+        destino += "#auditoria"
 
     elif accion == "aprobar":
         paso = request.POST.get("paso") or ""

@@ -223,6 +223,102 @@ expediente existe para conservar: lo que se habló.
         </dl>
       </div></div>
 
+{% comment %}
+★ LA AUDITORIA, DENTRO DE LA SOLICITUD. Asuntos Internos no tiene que irse a
+otra pantalla ni a otro ticket: lo que audita esta aqui, y los puntos que el
+sistema sabe responder llegan ya resueltos con el dato al lado. Un check que
+obliga a ir a buscar el dato a otro sitio es burocracia, no control.
+
+⚠ Este bloque SOLO SE RENDERIZA si `checks` no es None, y la vista lo pone a
+None para quien no puede leer reservadas. No se esconde con CSS ni con un if
+cosmetico: lo que no se puede ver no llega a la pagina.
+{% endcomment %}
+      {% if checks %}
+      <div class="card mb-3 border-danger" id="auditoria"><div class="card-body">
+        <h6 class="card-title">🔒 Auditoría — Asuntos Internos</h6>
+        <p class="small text-muted">
+          Solo lo ven Asuntos Internos y Dirección. Los puntos con dato ya
+          calculado salen resueltos; el resto los mira una persona.
+        </p>
+
+        {% for c in checks %}
+        <div class="border-top pt-2 mt-2">
+          <div class="d-flex align-items-start gap-2 flex-wrap">
+            <strong class="small">{{ c.etiqueta }}</strong>
+            {% if c.obligatorio %}<span class="badge bg-secondary">obligatorio</span>{% endif %}
+            {% if c.estado == 'ok' %}<span class="badge bg-success">correcto</span>
+            {% elif c.estado == 'duda' %}<span class="badge bg-warning text-dark">duda</span>
+            {% elif c.estado == 'problema' %}<span class="badge bg-danger">problema</span>
+            {% elif c.estado == 'na' %}<span class="badge bg-secondary">no aplica</span>
+            {% else %}<span class="badge bg-dark border">sin mirar</span>{% endif %}
+            {% if c.enlace %}
+            <a class="btn btn-sm btn-outline-info ms-auto py-0"
+               href="{{ c.enlace }}" target="_blank" rel="noopener">Abrir ↗</a>
+            {% endif %}
+          </div>
+
+          {% if c.ayuda %}<div class="small text-muted">{{ c.ayuda }}</div>{% endif %}
+
+          {% if c.valor %}
+          <div class="small mt-1">
+            <span class="text-info">{{ c.valor }}</span>
+            {% if c.congelado %}
+            {% comment %}
+            ⚠ Lo que se vio ENTONCES. corptools se actualiza solo: dentro de
+            seis meses el saldo sera otro, y la auditoria tiene que poder
+            explicar que se miro cuando se decidio, no lo que hay hoy.
+            {% endcomment %}
+            <span class="text-muted">· dato del momento en que se marcó</span>
+            {% endif %}
+          </div>
+          {% endif %}
+
+          {% if c.detalle %}
+          <details class="small mt-1">
+            <summary class="text-muted">Ver el detalle</summary>
+            <ul class="mb-0 ps-3">
+              {% for d in c.detalle %}<li>{{ d }}</li>{% endfor %}
+            </ul>
+          </details>
+          {% endif %}
+
+          {% if c.nota %}
+          <div class="small mt-1"><em>{{ c.nota|linebreaksbr }}</em></div>
+          {% endif %}
+          {% if c.por %}
+          <div class="small text-muted">{{ c.por }} · {{ c.en|date:"d/m/Y H:i" }}</div>
+          {% endif %}
+
+          {% if puedo_auditar %}
+          <form method="post" action="{% url 'koru_stats:recruit_accion' sol.pk %}"
+                class="row g-1 mt-1">
+            {% csrf_token %}
+            <input type="hidden" name="accion" value="check">
+            <input type="hidden" name="clave" value="{{ c.clave }}">
+            <div class="col-auto">
+              <select class="form-select form-select-sm" name="estado">
+                {% for valor, texto in estados_check %}
+                  {% if valor != 'pendiente' %}
+                  <option value="{{ valor }}" {% if c.estado == valor %}selected{% endif %}>{{ texto }}</option>
+                  {% endif %}
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col">
+              <input class="form-control form-control-sm" name="nota"
+                     value="{{ c.nota }}"
+                     placeholder="Qué viste (obligatorio si es duda o problema)">
+            </div>
+            <div class="col-auto">
+              <button class="btn btn-sm btn-outline-secondary">Guardar</button>
+            </div>
+          </form>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div></div>
+      {% endif %}
+
       <div class="card"><div class="card-body">
         <h6 class="card-title">Notas del staff</h6>
         {% for n in notas %}

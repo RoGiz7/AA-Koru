@@ -1923,6 +1923,133 @@ class RecruitNote(models.Model):
         return f"{self.autor_nombre}: {self.texto[:40]}"
 
 
+class AuditCheck(models.Model):
+    """
+    Un punto de la auditoría de Asuntos Internos, editable desde el admin.
+
+    ★ POR QUE EDITABLE. La lista de hoy —Auth, Personajes, Zkill, SP, Omega,
+    ISK, Assets— sale de la tabla 1702 de Baserow. Mañana os cuelan a alguien
+    por un hueco que nadie habia mirado y hay que añadir un punto. Eso no
+    deberia necesitar un despliegue.
+    """
+
+    # Lo que el sistema puede responder solo. La clave de aqui es la que
+    # `auditoria.calcular()` sabe resolver; `MANUAL` es «lo mira una persona».
+    MANUAL     = ""
+    AUTH       = "auth"
+    PERSONAJES = "personajes"
+    SP         = "sp"
+    ISK        = "isk"
+    ASSETS     = "assets"
+    CONTACTOS  = "contactos"
+    ACTIVIDAD  = "actividad"
+    FUENTES = (
+        (MANUAL,     "Lo mira una persona"),
+        (AUTH,       "Automático — registro en Auth y tokens"),
+        (PERSONAJES, "Automático — sus personajes y en qué corp está cada uno"),
+        (SP,         "Automático — skill points"),
+        (ISK,        "Automático — saldo de cartera"),
+        (ASSETS,     "Automático — número de assets"),
+        (CONTACTOS,  "Automático — contactos del personaje"),
+        (ACTIVIDAD,  "Automático — último login y total de logins"),
+    )
+
+    # ⚠ La clave NO se cambia una vez hay auditorias hechas con ella: es lo que
+    # las enlaza. Si hace falta otro punto, se crea nuevo y se desactiva el
+    # viejo — asi las fichas antiguas siguen teniendo sentido.
+    clave = models.SlugField(max_length=40, unique=True,
+                             help_text="Identificador interno. No lo cambies si ya hay auditorías hechas")
+    etiqueta = models.CharField(max_length=200, help_text="Lo que lee el auditor")
+    ayuda    = models.CharField(max_length=250, blank=True, default="",
+                                help_text="Qué hay que mirar exactamente. Opcional")
+    fuente   = models.CharField(max_length=20, choices=FUENTES, blank=True, default=MANUAL,
+                                help_text="Si el sistema puede responderlo, sale ya resuelto")
+
+    # Una plantilla de URL con {nombre} y {id} del personaje. Para zkillboard y
+    # cualquier otra herramienta de fuera: el auditor pincha en vez de buscar.
+    enlace = models.CharField(
+        max_length=300, blank=True, default="",
+        help_text="Enlace externo, con {nombre} o {id}. Ej: https://zkillboard.com/character/{id}/")
+
+    # ★ Obligatorio significa que BLOQUEA el OK de Asuntos Internos. No es
+    # desconfianza: quien lleva veinte auditorias da por hecho que miro algo
+    # que no miro, y el sistema es el unico que se acuerda.
+    obligatorio = models.BooleanField(
+        default=True, help_text="Si está marcado, no se puede dar el OK dejándolo pendiente")
+    orden  = models.IntegerField(default=0, help_text="De menor a mayor")
+    activo = models.BooleanField(
+        default=True,
+        help_text="Desactívalo en vez de borrarlo: las auditorías antiguas lo siguen necesitando")
+
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name        = "Reclutamiento — punto de auditoría"
+        verbose_name_plural = "Reclutamiento — puntos de auditoría"
+        ordering = ["orden", "id"]
+
+    def __str__(self):
+        return f"{self.orden}. {self.etiqueta}" + ("" if self.activo else " (inactivo)")
+
+
+class RecruitCheck(models.Model):
+    """
+    Cómo quedó un punto de auditoría en una solicitud concreta.
+
+    ⚠ TRES ESTADOS, NO UNA CASILLA. Con un sí/no, el auditor que tiene una
+    sospecha blanda marca que sí, porque tampoco es un «no» — y esa sospecha se
+    pierde justo antes de que Dirección decida. «Duda» existe para que quede
+    escrita.
+    """
+
+    PENDIENTE = "pendiente"
+    OK        = "ok"
+    DUDA      = "duda"
+    PROBLEMA  = "problema"
+    NO_APLICA = "na"
+    ESTADOS = (
+        (PENDIENTE, "Sin mirar"),
+        (OK,        "Correcto"),
+        (DUDA,      "Duda"),
+        (PROBLEMA,  "Problema"),
+        (NO_APLICA, "No aplica"),
+    )
+    # Lo que NO deja dar el OK si el punto es obligatorio.
+    SIN_RESOLVER = (PENDIENTE,)
+
+    solicitud = models.ForeignKey(RecruitApplication, on_delete=models.CASCADE,
+                                  related_name="checks")
+    # Se guarda la clave y la etiqueta DE ENTONCES, no una FK: si mañana se
+    # reescribe el punto, la auditoria de hace seis meses tiene que seguir
+    # diciendo lo que decia cuando se hizo.
+    clave    = models.SlugField(max_length=40, db_index=True)
+    etiqueta = models.CharField(max_length=200, blank=True, default="")
+
+    estado = models.CharField(max_length=10, choices=ESTADOS, default=PENDIENTE, db_index=True)
+    nota   = models.TextField(blank=True, default="",
+                              help_text="Por qué. Se lee como las notas reservadas")
+
+    # ★ EL DATO QUE SE VIO, CONGELADO. corptools se actualiza solo: dentro de
+    # seis meses el saldo y los SP seran otros, y la auditoria tiene que poder
+    # explicar que se miro ENTONCES, no lo que hay hoy.
+    valor = models.TextField(blank=True, default="")
+
+    por        = models.ForeignKey(User, null=True, blank=True,
+                                   on_delete=models.SET_NULL, related_name="+")
+    por_nombre = models.CharField(max_length=100, blank=True, default="",
+                                  help_text="Main de quien lo marcó, congelado")
+    en = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name        = "Reclutamiento — check de una solicitud"
+        verbose_name_plural = "Reclutamiento — checks de solicitudes"
+        unique_together = [("solicitud", "clave")]
+        ordering = ["id"]
+
+    def __str__(self):
+        return f"{self.solicitud_id} · {self.clave} = {self.estado}"
+
+
 class RecruitQuestion(models.Model):
     """Una pregunta del formulario de solicitud, editable desde el admin."""
 

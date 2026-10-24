@@ -3,6 +3,75 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.45.0] — 2026-10-24
+
+### Añadido
+
+- **La auditoría de Asuntos Internos, dentro de la propia solicitud.** Ya no
+  hay que irse a otra pantalla ni abrir otro ticket.
+  - La lista de partida son los siete puntos de la tabla 1702 de Baserow:
+    Auth, Personajes, Zkill, Skill Points, Omega, ISK, Assets. Se editan desde
+    el admin, como las preguntas del formulario.
+  - ★ **Cinco de los siete llegan ya resueltos**, con el dato al lado: Auth,
+    Personajes, Skill Points, ISK y Assets salen de corptools. Un check que
+    obliga a ir a buscar el dato a otro sitio es burocracia, no control.
+  - **Zkill lleva el enlace del piloto ya montado.** Un check externo solo
+    ahorra tiempo si se pincha en vez de buscar.
+  - **Omega se queda manual**: no existe ese dato en corptools. Y los assets
+    se cuentan, no se valoran: `corptools_typeprice` está vacía.
+  - Dos puntos nuevos que el dato permitía y no estaban: **contactos** (a
+    quién pone standing alto) y **actividad de la cuenta** (último login y
+    total de entradas — retrata solo al que dice llevar años jugando con un
+    personaje de hace tres semanas). Nacen **no obligatorios**: meterle a
+    Asuntos Internos trabajo nuevo por la puerta de atrás, no.
+  - ⚠ **Contactos NO dice «tiene contactos hostiles».** No existe una lista de
+    quién es hostil para Rekium. Dice a quién aprecia; los nombres los
+    reconoce una persona. Prometer más sería mentir en una auditoría.
+
+- **Tres estados por punto, no una casilla**: correcto / duda / problema / no
+  aplica.
+  - ★ Con un sí/no, el auditor que tiene una sospecha blanda marca que sí
+    —tampoco es un «no»— y esa sospecha se pierde justo antes de que Dirección
+    decida. «Duda» existe para que quede escrita, y **exige una línea
+    explicando qué se vio**.
+
+- **El OK de Asuntos Internos se bloquea** si queda algún punto obligatorio sin
+  mirar. Mismo motivo que la entrevista: quien lleva veinte auditorías da por
+  hecho que miró algo que no miró, y el sistema es el único que se acuerda.
+
+- **Se congela el dato que se vio.** corptools se actualiza solo: dentro de
+  seis meses el saldo y los SP serán otros, y la auditoría tiene que poder
+  explicar qué se miró **entonces**, no lo que hay hoy.
+
+### Arreglado
+
+- **El bug de identidad de W4b desaparece por construcción.** Los checks se
+  estampaban con el nombre del CEO en vez del de quien pulsaba, porque n8n
+  tenía que resolver la identidad por una cadena de lookups. Aquí quien marca
+  es quien está logueado; no hay cadena que resolver.
+
+### Seguridad
+
+- **La pestaña de auditoría no llega a la página** para quien no puede leer
+  notas reservadas: la vista manda `None`, no se esconde con CSS. Un
+  reclutador no ve ni que existe — «hay una pestaña que no puedo abrir» ya es
+  información sobre una investigación en curso.
+- **Los checks no se avisan en el canal del solicitante.** Es el canal donde
+  está él: contarle ahí que acaban de marcar algo como «duda» sería enseñarle
+  la investigación.
+
+### Verificado
+
+- **La trampa de ids de corptools, cerrada de una vez** — no «a ojo», sino
+  preguntándole a la base a qué tabla apunta cada clave ajena. Solo
+  `characteraudit.character_id` apunta a `eveonline_evecharacter`; **todo lo
+  demás cuelga del id del audit**: `characterasset`, `charactercontact`,
+  `characterroles`, `clone`, `jumpclone`, `corporationhistory`, `skill`,
+  `skillqueue`, `skilltotals`.
+  - Hacía falta porque los dos joins devolvían filas para los 2354 personajes.
+    Un join mal puesto aquí no revienta: **devuelve los datos de otra
+    persona**, y en una auditoría eso es peor que un error.
+
 ## [0.44.0] — 2026-10-24
 
 ### Añadido

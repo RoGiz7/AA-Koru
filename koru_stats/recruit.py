@@ -653,6 +653,15 @@ def aprobar(sol, user, paso):
         # cuenta lo que pasó.
         return False, ("Antes de dar el OK hay que marcar la entrevista. Si se "
                        "aprobó sin hablar con nadie, eso también hay que poder contarlo.")
+    if paso == "asuntos":
+        faltan = checks_pendientes(sol)
+        if faltan:
+            # ⚠ Mismo motivo que la entrevista: quien lleva veinte auditorias
+            # da por hecho que miro algo que no miro. El sistema es el unico
+            # que se acuerda. Un punto que no aplica se marca «No aplica»,
+            # que tambien es una respuesta — lo que no vale es el silencio.
+            return False, ("Falta por mirar: " + ", ".join(faltan) +
+                           ". Si alguno no aplica, márcalo como «No aplica».")
     if paso != sol.fase:
         return False, f"Ahora toca «{sol.fase}», no «{paso}»."
 
@@ -663,6 +672,108 @@ def aprobar(sol, user, paso):
         sol.estado = sol.EN_CURSO
     sol.save()
     return True, f"Paso «{paso}» aprobado por {quien}."
+
+
+def checks_de(sol):
+    """
+    La checklist de la solicitud: puntos activos, con lo que ya se marcó.
+
+    Los automáticos llegan con su valor calculado al vuelo; los que ya tienen
+    un marcado guardado enseñan **el valor congelado de entonces**, no el de
+    hoy. corptools se actualiza solo, y una auditoría tiene que poder explicar
+    qué se vio cuando se decidió.
+    """
+    from .models import AuditCheck, RecruitCheck
+    from . import auditoria
+
+    puntos = list(AuditCheck.objects.filter(activo=True))
+    hechos = {c.clave: c for c in RecruitCheck.objects.filter(solicitud=sol)}
+
+    # Solo se calcula si hay algún punto automático sin marcar: una consulta a
+    # corptools por cada visita a una ficha ya cerrada no la necesita nadie.
+    hace_falta = any(p.fuente and (p.clave not in hechos or
+                                   hechos[p.clave].estado == RecruitCheck.PENDIENTE)
+                     for p in puntos)
+    auto = auditoria.calcular(sol.user) if (hace_falta and sol.user) else {}
+
+    main_id = 0
+    for p in (sol.instantanea or {}).get("personajes", []):
+        if p.get("es_main"):
+            main_id = p.get("eve_id") or 0
+
+    fuera = []
+    for p in puntos:
+        hecho = hechos.get(p.clave)
+        calculado = auto.get(p.fuente) if p.fuente else None
+        fuera.append({
+            "clave": p.clave,
+            "etiqueta": p.etiqueta,
+            "ayuda": p.ayuda,
+            "obligatorio": p.obligatorio,
+            "automatico": bool(p.fuente),
+            "enlace": auditoria.enlace_de(p.enlace, sol.main_character_name, main_id),
+            "estado": hecho.estado if hecho else RecruitCheck.PENDIENTE,
+            "nota": hecho.nota if hecho else "",
+            "por": hecho.por_nombre if hecho else "",
+            "en": hecho.en if hecho else None,
+            # El congelado manda sobre el calculado en cuanto existe.
+            "valor": (hecho.valor if (hecho and hecho.valor)
+                      else (calculado or {}).get("valor", "")),
+            "detalle": [] if (hecho and hecho.valor) else (calculado or {}).get("detalle", []),
+            "congelado": bool(hecho and hecho.valor),
+        })
+    return fuera
+
+
+def checks_pendientes(sol):
+    """Las etiquetas de los puntos obligatorios que nadie ha mirado."""
+    from .models import AuditCheck, RecruitCheck
+
+    hechos = {c.clave: c.estado for c in RecruitCheck.objects.filter(solicitud=sol)}
+    return [p.etiqueta for p in AuditCheck.objects.filter(activo=True, obligatorio=True)
+            if hechos.get(p.clave, RecruitCheck.PENDIENTE) in RecruitCheck.SIN_RESOLVER]
+
+
+def marcar_check(sol, user, clave, estado, nota=""):
+    """
+    Deja constancia de cómo quedó un punto de la auditoría.
+
+    ★ Se congela el valor que se vio y quién lo vio. El bug de identidad de
+    W4b —checks estampados con el nombre del CEO en vez del que pulsaba—
+    aquí no puede pasar: quien lo marca es quien está logueado.
+    """
+    from django.utils import timezone
+
+    from .models import AuditCheck, RecruitCheck
+    from . import auditoria
+
+    ok, motivo = puede(user, "asuntos")
+    if not ok:
+        return False, motivo
+
+    punto = AuditCheck.objects.filter(clave=clave, activo=True).first()
+    if not punto:
+        return False, "Ese punto de auditoría no existe o está desactivado."
+    if estado not in dict(RecruitCheck.ESTADOS):
+        return False, "Ese no es un estado válido."
+    if estado in (RecruitCheck.DUDA, RecruitCheck.PROBLEMA) and not (nota or "").strip():
+        # ⚠ Una duda sin explicar no le sirve a Dirección, que es quien la lee
+        # para decidir. «Algo no me cuadra» es exactamente lo que hay que
+        # escribir, y basta.
+        return False, "Una duda o un problema necesitan una línea explicando qué viste."
+
+    valor = ""
+    if punto.fuente:
+        calc = auditoria.calcular(sol.user) if sol.user else {}
+        valor = (calc.get(punto.fuente) or {}).get("valor", "")
+
+    RecruitCheck.objects.update_or_create(
+        solicitud=sol, clave=clave,
+        defaults={"etiqueta": punto.etiqueta, "estado": estado,
+                  "nota": (nota or "").strip()[:5000], "valor": valor,
+                  "por": user, "por_nombre": _nombre(user), "en": timezone.now()},
+    )
+    return True, f"«{punto.etiqueta}» marcado como {dict(RecruitCheck.ESTADOS)[estado].lower()}."
 
 
 def marcar_invitacion(sol, user):

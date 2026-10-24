@@ -14,6 +14,7 @@ from .models import (
     GiftContribution, GiftContributionItem,
     Raffle, RaffleEntrant, RafflePrize, RaffleDraw, RaffleRosterFilter,
     GiftDelivery,
+    AuditCheck,
     RecruitApplication, RecruitNote, RecruitQuestion, RecruitConfig,
 )
 
@@ -563,6 +564,47 @@ class GiftDeliveryAdmin(admin.ModelAdmin):
 # ---------------------------------------------------------------------------
 # Reclutamiento
 # ---------------------------------------------------------------------------
+
+@admin.register(AuditCheck)
+class AuditCheckAdmin(admin.ModelAdmin):
+    """
+    La checklist de Asuntos Internos se edita aquí, sin tocar código.
+
+    ★ Añadir un punto nuevo porque una vez os colaron a alguien por un hueco
+    que nadie miraba no deberia necesitar un despliegue.
+    """
+
+    list_display  = ("orden", "etiqueta", "clave", "fuente", "obligatorio", "activo")
+    list_display_links = ("etiqueta",)      # admin.E124, igual que en las preguntas
+    list_editable = ("orden", "obligatorio", "activo")
+    list_filter   = ("activo", "obligatorio", "fuente")
+    search_fields = ("clave", "etiqueta")
+    ordering      = ("orden", "id")
+
+    fieldsets = (
+        ("El punto", {
+            "fields": ("etiqueta", "ayuda", "obligatorio"),
+            "description": "⚠ «Obligatorio» significa que BLOQUEA el OK de Asuntos "
+                           "Internos mientras nadie lo haya mirado. Un punto que no "
+                           "aplica se marca «No aplica» en la ficha; eso también cuenta "
+                           "como mirado.",
+        }),
+        ("De dónde sale el dato", {
+            "fields": ("fuente", "enlace"),
+            "description": "Con una fuente automática, el punto llega ya resuelto y con "
+                           "el dato al lado. «Omega» no tiene fuente: corptools no guarda "
+                           "ese dato. Los assets se cuentan, no se valoran: tampoco hay "
+                           "precios. El enlace admite {nombre} y {id} del personaje.",
+        }),
+        ("Dónde va", {"fields": ("orden", "activo")}),
+        ("Identificador", {
+            "fields": ("clave",),
+            "classes": ("collapse",),
+            "description": "⚠ Enlaza este punto con las auditorías ya hechas. Si lo "
+                           "cambias, las fichas antiguas dejan de saber qué se miró.",
+        }),
+    )
+
 
 @admin.register(RecruitQuestion)
 class RecruitQuestionAdmin(admin.ModelAdmin):
