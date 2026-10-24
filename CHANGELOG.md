@@ -3,6 +3,17 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.42.2] — 2026-10-24
+
+### Cambiado
+
+- **El cog cuenta sus propios fallos.** El log del bot no escribe nada después
+  del arranque, así que una excepción dejaba el comando colgado en «está
+  pensando…» para siempre y sin rastro en ningún sitio. Ahora el error se
+  responde en Discord: un fallo invisible pasa a ser uno que se lee.
+- `ctx.channel.id` en vez de `ctx.channel_id` — el primero existe en todas las
+  versiones, el segundo no siempre.
+
 ## [0.42.1] — 2026-10-24
 
 ### Corregido

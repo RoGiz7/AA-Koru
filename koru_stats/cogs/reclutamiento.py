@@ -134,8 +134,25 @@ class Reclutamiento(commands.Cog):
         "recluta", "Pasos de la solicitud de este canal", guild_ids=_guilds())
 
     async def _responder(self, ctx, accion, dato=""):
-        ok, msg, aviso = await sync_to_async(_hacer)(
-            ctx.channel_id, ctx.author.id, accion, dato)
+        """
+        ★ TODO VA ENVUELTO, Y EL ERROR SE RESPONDE EN DISCORD. El log del bot
+        no escribe nada despues del arranque, asi que una excepcion aqui deja
+        el comando colgado en «esta pensando…» para siempre y sin rastro en
+        ningun sitio. Contarlo en la respuesta convierte un fallo invisible en
+        uno que se lee.
+        """
+        try:
+            # `ctx.channel.id` y no `ctx.channel_id`: el primero existe en
+            # todas las versiones, el segundo no siempre.
+            canal = ctx.channel.id if ctx.channel else 0
+            ok, msg, aviso = await sync_to_async(_hacer)(
+                canal, ctx.author.id, accion, dato)
+        except Exception as exc:
+            logger.exception("koru cog: fallo en /recluta %s", accion)
+            await ctx.respond(
+                f"⚠ Se rompió al ejecutarlo: `{type(exc).__name__}: {exc}`",
+                ephemeral=True)
+            return
 
         # ⚠ La respuesta a quien ejecuta va SIEMPRE en efímero; lo que se
         # anuncia al canal es otra cosa. Mezclarlas llena el canal de ruido.
