@@ -3620,11 +3620,15 @@ def recruit_ficha(request, sol_id):
     # mas que un boton gris sin explicacion.
     cadena = []
     for clave, etiqueta, dado_en, dado_por in (
+            ("entrevista", "Entrevista", sol.entrevista_en, sol.entrevista_por),
             ("reclutadores", "Reclutadores", sol.ok_reclutadores_en, sol.ok_reclutadores_por),
             ("asuntos", "Asuntos Internos", sol.ok_asuntos_en, sol.ok_asuntos_por),
             ("directores", "Dirección", sol.ok_directores_en, sol.ok_directores_por),
             ("invitacion", "Invitación in-game", sol.invitacion_en, sol.invitacion_por)):
-        ok, motivo = recruit.puede(request.user, clave)
+        # La entrevista la marca quien luego da el OK de reclutadores: es la
+        # misma gente y el mismo momento del proceso.
+        ok, motivo = recruit.puede(
+            request.user, "reclutadores" if clave == "entrevista" else clave)
         cadena.append({
             "clave": clave, "etiqueta": etiqueta,
             "dado_en": dado_en, "dado_por": dado_por,
@@ -3722,6 +3726,15 @@ def recruit_accion(request, sol_id):
         ok, motivo = recruit.puede(request.user, paso)
         if not ok:
             messages.error(request, motivo)
+        elif (paso == "reclutadores" and not sol.entrevista_en
+              and _exige_entrevista()):
+            # ★ El OK sin entrevista deja un expediente que dice «aprobado» sin
+            # que conste que alguien hablara con la persona. Se puede apagar en
+            # la configuracion si alguna vez estorba.
+            messages.error(
+                request,
+                "Antes de dar el OK hay que marcar la entrevista. "
+                "Si se aprobó sin hablar con nadie, eso también hay que poder contarlo.")
         elif paso != sol.fase:
             # ⚠ No se puede adelantar un paso: la cadena es una secuencia, y
             # aprobar el tercero sin el primero deja un expediente que dice que
@@ -3777,6 +3790,28 @@ def recruit_accion(request, sol_id):
                      f"Este canal se borrará dentro de **24 horas**. "
                      f"Si necesitas algo de aquí, cópialo antes.",
                 mencionar=True)
+
+    elif accion == "entrevista":
+        ok, motivo = recruit.puede(request.user, "reclutadores")
+        if not ok:
+            messages.error(request, motivo)
+        elif sol.entrevista_en:
+            messages.info(request, "La entrevista ya estaba marcada.")
+        else:
+            nota = (request.POST.get("nota") or "").strip()
+            sol.entrevista_por, sol.entrevista_en = request.user, timezone.now()
+            sol.entrevista_nota = nota[:5000]
+            sol.save(update_fields=["entrevista_por", "entrevista_en",
+                                    "entrevista_nota", "updated_at"])
+            if nota:
+                # ★ Lo que salio de la entrevista va a las notas del staff, no
+                # escondido en un campo: es lo que el siguiente de la cadena
+                # necesita leer para decidir.
+                RecruitNote.objects.create(
+                    solicitud=sol, autor=request.user, autor_nombre=quien,
+                    texto="Entrevista: " + nota[:5000])
+            _avisar_canal(sol, f"🎙️ **Entrevista hecha** por {quien}.")
+            messages.success(request, "Entrevista marcada.")
 
     elif accion == "invitacion":
         # ⚠ Esto NO es una aprobacion: es «ya esta hecho». Por eso no entra en
@@ -3858,6 +3893,12 @@ def recruit_accion(request, sol_id):
                     "borrado. Míralo antes de borrarlo a mano.")
 
     return redirect(destino)
+
+
+def _exige_entrevista():
+    from .models import RecruitConfig
+    cfg = RecruitConfig.objects.filter(tag="default").first()
+    return bool(cfg and cfg.exigir_entrevista)
 
 
 def _conversacion_de(texto, nombre_piloto=""):

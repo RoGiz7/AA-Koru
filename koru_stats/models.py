@@ -1813,6 +1813,21 @@ class RecruitApplication(models.Model):
     discord_channel_id = models.CharField(max_length=30, blank=True, default="")
     discord_error      = models.CharField(max_length=250, blank=True, default="")
 
+    # ★ LA ENTREVISTA, CON SU HORA. No es una aprobacion ni un permiso: es el
+    # momento en que alguien HABLO con la persona. Sirve para medir cuanto se
+    # tarda desde que entra una solicitud hasta que alguien la atiende, que es
+    # el numero que de verdad dice si reclutamiento va bien.
+    #
+    # ⚠ Lo que NO prueba: si se pulsa esto y el OK seguido, la hora solo dice
+    # que alguien pulso dos botones. Marcarla al terminar la charla y no al
+    # aprobar es un habito, no algo que el codigo pueda garantizar.
+    entrevista_en  = models.DateTimeField(null=True, blank=True)
+    entrevista_por = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    entrevista_nota = models.TextField(
+        blank=True, default="",
+        help_text="Lo que salió de la entrevista. Se guarda como nota del staff")
+
     # ⚠ LA INVITACION NO ES UNA APROBACION, ES UNA TAREA. No dice «me parece
     # bien», dice «ya esta hecho». Se guarda aparte de los OK a proposito: si
     # se mezclaran, el expediente no distinguiria quien DECIDIO de quien HIZO.
@@ -1861,6 +1876,8 @@ class RecruitApplication(models.Model):
             return "directores"
         if self.ok_reclutadores_en:
             return "asuntos"
+        if not self.entrevista_en:
+            return "entrevista"
         return "reclutadores"
 
 
@@ -2010,6 +2027,10 @@ class RecruitConfig(models.Model):
     cerrar_al_entrar = models.BooleanField(
         default=True,
         help_text="Cerrar la solicitud sola cuando el piloto entre en una corp rastreada")
+
+    exigir_entrevista = models.BooleanField(
+        default=True,
+        help_text="No dejar dar el OK de reclutadores sin haber marcado la entrevista")
 
     # --- Quién aprueba cada paso -------------------------------------------
     #

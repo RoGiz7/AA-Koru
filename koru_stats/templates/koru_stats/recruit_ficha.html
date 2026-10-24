@@ -72,7 +72,14 @@ hecho». Por eso el botón dice otra cosa y va por otra acción.
 {% endcomment %}
               <form method="post" action="{% url 'koru_stats:recruit_accion' sol.pk %}" class="ms-auto">
                 {% csrf_token %}
-                {% if p.clave == 'invitacion' %}
+                {% if p.clave == 'entrevista' %}
+                  <input type="hidden" name="accion" value="entrevista">
+                  <button class="btn btn-sm btn-outline-primary"
+                          onclick="this.form.nota.value = prompt('¿Algo que destacar de la entrevista? (opcional)') || ''">
+                    🎙️ Entrevista hecha
+                  </button>
+                  <input type="hidden" name="nota" value="">
+                {% elif p.clave == 'invitacion' %}
                   <input type="hidden" name="accion" value="invitacion">
                   <button class="btn btn-sm btn-success">📨 Invitación enviada</button>
                 {% else %}

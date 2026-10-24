@@ -3,6 +3,27 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.41.0] — 2026-10-24
+
+### Añadido
+
+- **La entrevista, con su hora y quién la hizo**, como primer paso de la cadena.
+  Y **no se puede dar el OK de reclutadores sin marcarla** (se apaga con
+  `exigir_entrevista` si algún día estorba): un expediente que dice «aprobado»
+  sin que conste que alguien habló con la persona no cuenta lo que pasó.
+- Al marcarla se puede dejar una nota, que va **a las notas del staff** y no a
+  un campo escondido: es lo que el siguiente de la cadena necesita leer.
+
+### Para qué sirve de verdad
+
+Para medir **cuánto se tarda desde que entra una solicitud hasta que alguien
+habla con la persona**. Ese es el número que dice si reclutamiento va bien, y
+hasta ahora no existía.
+
+⚠ **Lo que NO prueba:** si se pulsa «entrevista hecha» y el OK seguido, la hora
+solo demuestra que alguien pulsó dos botones. Marcarla al terminar la charla, y
+no al aprobar, es un hábito — ninguna validación puede garantizarlo.
+
 ## [0.40.0] — 2026-10-24
 
 ### Cambiado
