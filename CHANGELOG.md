@@ -3,6 +3,14 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.32.1] — 2026-10-24
+
+### Corregido
+
+- El admin de preguntas no arrancaba (`admin.E124`): Django no admite que la
+  primera columna de la lista sea editable sin decirle cuál es el enlace a la
+  ficha. El enlace es la etiqueta.
+
 ## [0.32.0] — 2026-10-24
 
 ### Añadido

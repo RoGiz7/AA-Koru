@@ -569,6 +569,9 @@ class RecruitQuestionAdmin(admin.ModelAdmin):
     """El formulario de solicitud se edita aquí, sin tocar código."""
 
     list_display  = ("orden", "etiqueta", "clave", "tipo", "obligatoria", "activa")
+    # ⚠ Django no admite que la PRIMERA columna sea editable sin decirle cuál
+    # es el enlace a la ficha (admin.E124). El enlace es la etiqueta.
+    list_display_links = ("etiqueta",)
     list_editable = ("orden", "obligatoria", "activa")
     list_filter   = ("activa", "tipo")
     search_fields = ("clave", "etiqueta")
