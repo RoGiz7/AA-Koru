@@ -20,7 +20,7 @@
       «Abiertas» primero y por defecto: lo que el reclutador necesita saber al
       entrar es quién está esperando, no el histórico.
       {% endcomment %}
-      <a class="btn btn-sm {% if estado == 'abiertas' or not estado %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+      <a class="btn btn-sm {% if estado == 'abiertas' %}btn-primary{% else %}btn-outline-secondary{% endif %}"
          href="?estado=abiertas">Abiertas</a>
       <a class="btn btn-sm {% if estado == 'todas' %}btn-primary{% else %}btn-outline-secondary{% endif %}"
          href="?estado=todas">Todas</a>

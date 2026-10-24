@@ -3,6 +3,14 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.39.1] — 2026-10-24
+
+### Corregido
+
+- **El botón «Todas» dejaba la lista vacía.** Mandaba `?estado=todas` y la
+  vista lo trataba como si «todas» fuera un valor de la columna Estado, así que
+  no casaba con nada — justo el botón que promete enseñarlo todo.
+
 ## [0.39.0] — 2026-10-24
 
 ### Añadido

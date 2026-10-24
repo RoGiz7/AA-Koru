@@ -3574,11 +3574,14 @@ def recruit_lista(request):
     if not _ve_reclutamiento(request.user):
         return HttpResponseForbidden("No tienes acceso a reclutamiento.")
 
-    estado = request.GET.get("estado") or ""
+    # ⚠ «todas» y «abiertas» NO son estados, son filtros. Tratar «todas» como
+    # un valor de la columna dejaba la lista vacia justo al pulsar el boton que
+    # promete enseñarlo todo.
+    estado = request.GET.get("estado") or "abiertas"
     qs = RecruitApplication.objects.all()
     if estado == "abiertas":
         qs = qs.exclude(estado__in=RecruitApplication.CERRADOS)
-    elif estado:
+    elif estado != "todas":
         qs = qs.filter(estado=estado)
 
     solicitudes = list(qs.order_by("-created_at")[:200])
