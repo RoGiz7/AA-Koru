@@ -1728,21 +1728,82 @@ def emit_auditor_alerts(periods=None):
         ("score_ciclo",     "ciclo",      "ciclo_vida",  "Evento de ciclo de vida (salida/borrado/rotación)"),
         ("score_financiero","financiero", "financiero",  "Movimiento financiero anómalo (donación/liquidación)"),
     ]
+    # ★ UNA ALERTA POR SITUACION, NO UNA POR MES. Antes la clave llevaba el
+    # periodo dentro, asi que un piloto inactivo desde junio generaba una
+    # alerta cada mes — 369 filas para 224 situaciones, medido el 24/10/2026.
+    # Ahora la misma situacion se actualiza: se apunta el ultimo periodo en que
+    # disparo y cuantas veces lleva.
+    visto_ahora = set()
     for s in AuditorRiskScore.objects.filter(period__in=periods):
         for field, fam, code, titulo in dims:
             val = getattr(s, field)
-            if val >= cfg.umbral_naranja:
-                sev = "critico" if val >= cfg.umbral_rojo else "warn"
-                AuditorAlert.objects.update_or_create(
-                    main_character_id=s.main_character_id, period=s.period, codigo=code,
-                    defaults=dict(
-                        main_character_name=s.main_character_name, familia=fam,
-                        severidad=sev, titulo=titulo,
-                        detalle={"score": val, "risk_total": s.risk_total},
-                    ),
-                )
+            if val < cfg.umbral_naranja:
+                continue
+
+            visto_ahora.add((s.main_character_id, code))
+            sev = "critico" if val >= cfg.umbral_rojo else "warn"
+            fila = AuditorAlert.objects.filter(
+                main_character_id=s.main_character_id, codigo=code).first()
+
+            if fila is None:
+                AuditorAlert.objects.create(
+                    main_character_id=s.main_character_id, codigo=code,
+                    main_character_name=s.main_character_name, familia=fam,
+                    period=s.period, visto_en=s.period, veces=1,
+                    severidad=sev, titulo=titulo,
+                    detalle={"score": val, "risk_total": s.risk_total})
                 created += 1
-    logger.info("koru emit_auditor_alerts: %s alertas (calibracion=%s)", created, cfg.modo_calibracion)
+                continue
+
+            # Ya existía. Si el periodo es nuevo, cuenta una vez más.
+            if fila.visto_en != s.period:
+                fila.veces = (fila.veces or 1) + 1
+            fila.visto_en = s.period
+            fila.severidad = sev
+            fila.detalle = {"score": val, "risk_total": s.risk_total}
+            fila.main_character_name = s.main_character_name
+
+            # ⚠ Una alerta que alguien marcó como RESUELTA y vuelve a disparar
+            # se reabre: el motivo ha vuelto. Pero «descartada» la puso una
+            # persona diciendo «esto no es un problema», y eso no lo deshace el
+            # sistema solo — si no, discutiría con el auditor cada mes.
+            if fila.estado == "resuelta":
+                fila.estado = "abierta"
+                fila.resuelta_en = ""
+            fila.save()
+
+    # ★ Y AHORA LO QUE PERMITE VACIAR LA LISTA: lo que ya no dispara, se cierra.
+    # Sin esto, la alerta de un piloto que volvió a conectarse se quedaba
+    # abierta para siempre y la lista solo podía crecer.
+    # ⚠⚠ SOLO SE CIERRA SI SE ESTA PROCESANDO EL PERIODO MAS NUEVO QUE HAY.
+    # Si alguien recalcula junio a mano, `visto_ahora` solo tendria lo que
+    # disparaba en junio y esto cerraria de golpe todo lo de los meses
+    # posteriores. Un recálculo antiguo no puede tener el efecto de vaciar la
+    # lista de hoy.
+    ultimo = max(periods) if periods else ""
+    mas_nuevo = (AuditorRiskScore.objects.order_by("-period")
+                 .values_list("period", flat=True).first() or "")
+    cerradas = 0
+    if ultimo and ultimo == mas_nuevo:
+        for fila in AuditorAlert.objects.filter(estado="abierta"):
+            if (fila.main_character_id, fila.codigo) in visto_ahora:
+                continue
+            # Solo se cierra lo que ya se habia visto ANTES de este periodo: una
+            # alerta de un piloto que este mes no se ha evaluado (se fue de la
+            # corp, por ejemplo) no es lo mismo que una resuelta... pero
+            # tampoco tiene sentido dejarla abierta eternamente, asi que se
+            # cierra igual y el periodo queda anotado para poder mirarlo.
+            fila.estado = "resuelta"
+            fila.resuelta_en = ultimo
+            fila.save(update_fields=["estado", "resuelta_en"])
+            cerradas += 1
+
+    elif ultimo:
+        logger.info("koru emit_auditor_alerts: %s no es el periodo mas nuevo (%s); "
+                    "no se cierra nada", ultimo, mas_nuevo)
+
+    logger.info("koru emit_auditor_alerts: %s nuevas, %s resueltas (calibracion=%s)",
+                created, cerradas, cfg.modo_calibracion)
     return created
 
 

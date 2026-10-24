@@ -427,13 +427,29 @@ class AuditorAlert(models.Model):
     """Evento de alerta — el 'aviso' que se revisa y se acusa de recibo."""
     main_character_id   = models.IntegerField(db_index=True)
     main_character_name = models.CharField(max_length=100)
+    # ⚠ `period` es el periodo en que se vio POR PRIMERA VEZ, no «la alerta de
+    # ese mes». Hasta 0.49 había una alerta por piloto, código Y MES: un piloto
+    # inactivo desde junio generaba cinco alertas idénticas, y ninguna se
+    # cerraba al desaparecer el motivo. Medido el 24/10/2026: 369 alertas para
+    # 224 situaciones reales, y **ni una sola** cerrada en cinco meses.
     period    = models.CharField(max_length=7, db_index=True)
+    visto_en  = models.CharField(max_length=7, blank=True, default="", db_index=True,
+                                 help_text="Último periodo en que la señal seguía disparando")
+    veces     = models.IntegerField(default=1, help_text="Periodos en que ha disparado")
+
     familia   = models.CharField(max_length=20)   # pvp/ciclo/espias/fuga/huecos/financiero
     codigo    = models.CharField(max_length=50)   # p.ej. "token_caido"
     severidad = models.CharField(max_length=10, default="warn")  # info/warn/critico
     titulo    = models.CharField(max_length=200)
     detalle   = models.JSONField(default=dict, blank=True)
-    estado    = models.CharField(max_length=15, default="abierta", db_index=True)  # abierta/revisada/descartada
+
+    # abierta / revisada / descartada / resuelta
+    # ★ «resuelta» la pone el sistema cuando el motivo deja de dispararse: es
+    # lo que permite VACIAR la lista. «revisada» y «descartada» las pone una
+    # persona y son decisiones suyas — el sistema no las toca.
+    estado    = models.CharField(max_length=15, default="abierta", db_index=True)
+    resuelta_en = models.CharField(max_length=7, blank=True, default="",
+                                   help_text="Periodo en que dejó de dispararse")
 
     revisada_por  = models.ForeignKey(
         User, null=True, blank=True, on_delete=models.SET_NULL,
@@ -448,9 +464,11 @@ class AuditorAlert(models.Model):
         verbose_name_plural = "Alertas del Auditor"
         ordering = ["-created_at"]
         constraints = [
+            # ⚠ SIN `period`. Una situación es una alerta, se repita los meses
+            # que se repita. Con el periodo dentro, la lista solo podía crecer.
             models.UniqueConstraint(
-                fields=["main_character_id", "period", "codigo"],
-                name="unique_auditor_alert_period_code",
+                fields=["main_character_id", "codigo"],
+                name="unique_auditor_alert_code",
             ),
         ]
         indexes = [

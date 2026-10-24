@@ -15,6 +15,21 @@
 {% endblock %}
 
 {% block extra_css %}
+{% comment %}
+⚠ CHART.JS IGNORA EL `height` DEL CANVAS. Por defecto es responsive y mantiene
+la proporción, así que la altura la decide el ANCHO del contenedor: en un
+monitor panorámico el donut se comía media página. Se arregla con dos cosas a
+la vez, y hacen falta las dos:
+  · una altura fija en el envoltorio (`.koru-grafica`)
+  · `maintainAspectRatio:false` en las opciones de cada gráfica
+Con solo una de las dos, sigue descuadrado.
+{% endcomment %}
+<style>
+.koru-grafica { position:relative; height:230px; }
+.koru-grafica.alta { height:280px; }
+.koru-grafica.baja { height:170px; }
+</style>
+
 {% include "koru_stats/includes/koru_estilos.html" %}
 <style>
 .subida { display:flex; align-items:center; gap:.75rem; padding:.6rem .8rem;
@@ -160,13 +175,13 @@ enterrado a media tabla.
         <div class="col-lg-4">
             <div class="card h-100"><div class="card-body">
                 <h6 class="card-title">Distribución de riesgo</h6>
-                <canvas id="chartDist" height="220"></canvas>
+                <div class="koru-grafica"><canvas id="chartDist"></canvas></div>
             </div></div>
         </div>
         <div class="col-lg-8">
             <div class="card h-100"><div class="card-body">
                 <h6 class="card-title">Top 15 por riesgo</h6>
-                <canvas id="chartTop" height="220"></canvas>
+                <div class="koru-grafica"><canvas id="chartTop"></canvas></div>
             </div></div>
         </div>
     </div>
@@ -324,7 +339,8 @@ enterrado a media tabla.
                 backgroundColor: ['#10b981', '#f59e0b', '#f97316', '#ef4444'],
             }]
         },
-        options: { plugins: { legend: { position: 'bottom' } } }
+        options: { responsive: true, maintainAspectRatio: false,
+                   plugins: { legend: { position: 'bottom' } } }
     });
 
     // --- Barra top 15 ---
@@ -341,6 +357,7 @@ enterrado a media tabla.
             }]
         },
         options: {
+            responsive: true, maintainAspectRatio: false,
             indexAxis: 'y',
             scales: { x: { min: 0, max: 100 } },
             plugins: { legend: { display: false } }

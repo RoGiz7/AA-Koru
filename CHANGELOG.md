@@ -3,6 +3,48 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.49.0] — 2026-10-24
+
+### Cambiado
+
+- **Una alerta por situación, no una por mes.** La clave llevaba el periodo
+  dentro, así que un piloto inactivo desde junio generaba una alerta cada mes,
+  todas idénticas.
+  - Medido en producción: **369 alertas abiertas para 224 situaciones reales**,
+    repartidas en cinco periodos — y **ninguna cerrada nunca**, en cinco meses.
+    La función de revisar existía y no se había usado jamás.
+  - Ahora cada situación se actualiza: desde cuándo está, el último periodo en
+    que seguía disparando y cuántas veces lleva.
+  - La migración fusiona las repetidas quedándose con la más antigua, que es
+    cuando empezó el problema. ⚠ Si alguna repetida tenía estado puesto por una
+    persona, **ese estado manda**: una migración no deshace una decisión humana.
+
+- **Las alertas se cierran solas cuando el motivo desaparece.** Es lo que
+  convierte la lista en algo que se puede vaciar: antes, la alerta de un piloto
+  que volvía a conectarse seguía abierta para siempre.
+  - Si vuelve a disparar, una alerta `resuelta` se reabre. Una `descartada`
+    **no**: esa la puso una persona diciendo «esto no es un problema», y el
+    sistema no discute con el auditor cada mes.
+  - ⚠⚠ El cierre solo ocurre si se está procesando el periodo más nuevo. Sin
+    ese cerrojo, recalcular junio a mano habría cerrado de golpe todo lo
+    posterior — un recálculo antiguo no puede vaciar la lista de hoy.
+
+### Arreglado
+
+- **Las gráficas crecían con el ancho de la pantalla.** Chart.js ignora el
+  `height` del canvas: es responsive y mantiene la proporción, así que en un
+  monitor panorámico el donut se comía media página.
+  - Hacían falta las **dos** cosas a la vez: altura fija en el envoltorio y
+    `maintainAspectRatio:false` en las opciones. Con solo una, sigue
+    descuadrado.
+
+### Pendiente de decidir
+
+- **«Cobertura» dispara para 81 pilotos de 72 miembros** — más gente que la que
+  hay en la corp, incluidos los que se fueron. Una alerta que le sale a todo el
+  mundo no señala a nadie: es mantenimiento de tokens, no seguridad. Queda
+  propuesto moverla a un contador del panel.
+
 ## [0.48.0] — 2026-10-24
 
 ### Añadido

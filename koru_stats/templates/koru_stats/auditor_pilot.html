@@ -13,6 +13,21 @@
 {% endblock %}
 
 {% block extra_css %}
+{% comment %}
+⚠ CHART.JS IGNORA EL `height` DEL CANVAS. Por defecto es responsive y mantiene
+la proporción, así que la altura la decide el ANCHO del contenedor: en un
+monitor panorámico el donut se comía media página. Se arregla con dos cosas a
+la vez, y hacen falta las dos:
+  · una altura fija en el envoltorio (`.koru-grafica`)
+  · `maintainAspectRatio:false` en las opciones de cada gráfica
+Con solo una de las dos, sigue descuadrado.
+{% endcomment %}
+<style>
+.koru-grafica { position:relative; height:230px; }
+.koru-grafica.alta { height:280px; }
+.koru-grafica.baja { height:170px; }
+</style>
+
 <style>
 .portrait-lg { width:64px; height:64px; border-radius:50%; object-fit:cover; }
 .portrait    { width:28px; height:28px; border-radius:50%; object-fit:cover; }
@@ -50,14 +65,14 @@
     <div class="col-lg-5">
       <div class="card sec-card h-100"><div class="card-body">
         <h6 class="card-title">Perfil de riesgo (último periodo)</h6>
-        {% if radar_json != "null" %}<canvas id="chartRadar" height="240"></canvas>
+        {% if radar_json != "null" %}<div class="koru-grafica"><canvas id="chartRadar"></canvas></div>
         {% else %}<p class="text-muted">Sin scores todavía.</p>{% endif %}
       </div></div>
     </div>
     <div class="col-lg-7">
       <div class="card sec-card h-100"><div class="card-body">
         <h6 class="card-title">Evolución del riesgo</h6>
-        <canvas id="chartRisk" height="240"></canvas>
+        <div class="koru-grafica"><canvas id="chartRisk"></canvas></div>
       </div></div>
     </div>
   </div>
@@ -128,7 +143,7 @@
   <!-- Patrimonio en el tiempo -->
   <div class="card sec-card mb-3"><div class="card-body">
     <h6 class="card-title"><i class="fas fa-chart-area me-1"></i>Patrimonio y balance en el tiempo</h6>
-    {% if patrimonio_hist %}<canvas id="chartPatrimonio" height="90"></canvas>
+    {% if patrimonio_hist %}<div class="koru-grafica baja"><canvas id="chartPatrimonio"></canvas></div>
     {% else %}<p class="text-muted mb-0">Aún no hay snapshots. Se irá rellenando a diario.</p>{% endif %}
   </div></div>
 
@@ -341,7 +356,8 @@
             type:'radar',
             data:{ labels:['PvP','Ciclo','Espías','Fuga','Huecos','Financ.'],
                 datasets:[{ data:radar, backgroundColor:'rgba(239,68,68,.2)', borderColor:'#ef4444', pointBackgroundColor:'#ef4444' }]},
-            options:{ scales:{ r:{ min:0, max:100, ticks:{ stepSize:25 } } }, plugins:{ legend:{ display:false } } }
+            options:{ responsive:true, maintainAspectRatio:false,
+                scales:{ r:{ min:0, max:100, ticks:{ stepSize:25 } } }, plugins:{ legend:{ display:false } } }
         });
     }
 
@@ -353,7 +369,8 @@
             datasets:[{ label:'Riesgo', data:rh.map(function(x){return x.risk;}),
                 borderColor:'#8b5cf6', backgroundColor:'rgba(139,92,246,.15)', fill:true, tension:.25,
                 pointBackgroundColor:rh.map(function(x){return colorByNivel[x.nivel]||'#888';}), pointRadius:4 }]},
-        options:{ scales:{ y:{ min:0, max:100 } }, plugins:{ legend:{ display:false } } }
+        options:{ responsive:true, maintainAspectRatio:false,
+            scales:{ y:{ min:0, max:100 } }, plugins:{ legend:{ display:false } } }
     });
 
     var ph = {{ patrimonio_json|safe }};
@@ -366,7 +383,8 @@
                     { label:'Assets', data:ph.map(function(x){return x.assets;}), borderColor:'#f59e0b', backgroundColor:'rgba(245,158,11,.12)', fill:true, tension:.2 },
                     { label:'Balance', data:ph.map(function(x){return x.balance;}), borderColor:'#10b981', backgroundColor:'rgba(16,185,129,.12)', fill:true, tension:.2 }
                 ]},
-            options:{ scales:{ y:{ ticks:{ callback:fmtISK } } },
+            options:{ responsive:true, maintainAspectRatio:false,
+                scales:{ y:{ ticks:{ callback:fmtISK } } },
                 plugins:{ legend:{ position:'bottom' }, tooltip:{ callbacks:{ label:function(c){ return ' '+c.dataset.label+': '+fmtISK(c.raw)+' ISK'; } } } } }
         });
     }

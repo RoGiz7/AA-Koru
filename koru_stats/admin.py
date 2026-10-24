@@ -205,7 +205,8 @@ class AuditorRiskScoreAdmin(admin.ModelAdmin):
 
 @admin.register(AuditorAlert)
 class AuditorAlertAdmin(admin.ModelAdmin):
-    list_display  = ("created_at", "severidad", "familia", "codigo", "main_character_name", "period", "estado", "revisada_por")
+    list_display  = ("created_at", "severidad", "familia", "codigo", "main_character_name",
+                     "period", "visto_en", "veces", "estado", "revisada_por")
     list_filter   = ("estado", "severidad", "familia", "period")
     search_fields = ("main_character_name", "codigo")
     ordering      = ("-created_at",)
