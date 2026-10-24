@@ -3723,29 +3723,10 @@ def recruit_accion(request, sol_id):
 
     elif accion == "aprobar":
         paso = request.POST.get("paso") or ""
-        ok, motivo = recruit.puede(request.user, paso)
+        ok, msg = recruit.aprobar(sol, request.user, paso)
         if not ok:
-            messages.error(request, motivo)
-        elif (paso == "reclutadores" and not sol.entrevista_en
-              and _exige_entrevista()):
-            # ★ El OK sin entrevista deja un expediente que dice «aprobado» sin
-            # que conste que alguien hablara con la persona. Se puede apagar en
-            # la configuracion si alguna vez estorba.
-            messages.error(
-                request,
-                "Antes de dar el OK hay que marcar la entrevista. "
-                "Si se aprobó sin hablar con nadie, eso también hay que poder contarlo.")
-        elif paso != sol.fase:
-            # ⚠ No se puede adelantar un paso: la cadena es una secuencia, y
-            # aprobar el tercero sin el primero deja un expediente que dice que
-            # paso algo que no paso.
-            messages.error(request, f"Ahora toca «{sol.fase}», no «{paso}».")
+            messages.error(request, msg)
         else:
-            setattr(sol, f"ok_{paso}_por", request.user)
-            setattr(sol, f"ok_{paso}_en", timezone.now())
-            if sol.estado == RecruitApplication.NUEVO:
-                sol.estado = RecruitApplication.EN_CURSO
-            sol.save()
             etiquetas = {"reclutadores": "Reclutadores",
                          "asuntos": "Asuntos Internos", "directores": "Dirección"}
             siguiente = {"reclutadores": "Ahora lo revisa Asuntos Internos.",
@@ -3756,28 +3737,16 @@ def recruit_accion(request, sol_id):
                 f"✅ **{etiquetas.get(paso, paso)}** dan su OK — {quien}.\n"
                 f"{siguiente.get(paso, '')}",
                 mencionar=True, rol_siguiente=paso)
-            messages.success(request, f"Paso «{paso}» aprobado por {quien}.")
+            messages.success(request, msg)
 
     elif accion == "cerrar":
-        ok, motivo = recruit.puede(request.user, "rechazo")
         estado = request.POST.get("estado") or ""
         texto = (request.POST.get("motivo") or "").strip()
+        ok, msg = recruit.cerrar(sol, request.user, estado, texto)
         if not ok:
-            messages.error(request, motivo)
-        elif estado not in RecruitApplication.CERRADOS:
-            messages.error(request, "Ese no es un estado de cierre.")
-        elif not texto:
-            # ★ El motivo es obligatorio. Una solicitud cerrada sin explicacion
-            # no le sirve a nadie dentro de seis meses, que es justo cuando se
-            # consulta — y menos aun si la persona vuelve a solicitar.
-            messages.error(request, "Pon un motivo: es lo que queda escrito en el expediente.")
+            messages.error(request, msg)
         else:
-            sol.estado = estado
-            sol.motivo_cierre = texto[:2000]
-            sol.cerrada_por = request.user
-            sol.fecha_cierre = timezone.now()
-            sol.save()
-            messages.success(request, f"Solicitud cerrada como «{sol.get_estado_display()}».")
+            messages.success(request, msg)
 
             # ★ CERRAR NO BORRA EL CANAL. Son dos decisiones distintas y una
             # de ellas no tiene vuelta atrás. Al piloto se le avisa de que
@@ -3792,46 +3761,29 @@ def recruit_accion(request, sol_id):
                 mencionar=True)
 
     elif accion == "entrevista":
-        ok, motivo = recruit.puede(request.user, "reclutadores")
-        if not ok:
-            messages.error(request, motivo)
-        elif sol.entrevista_en:
-            messages.info(request, "La entrevista ya estaba marcada.")
-        else:
-            nota = (request.POST.get("nota") or "").strip()
-            sol.entrevista_por, sol.entrevista_en = request.user, timezone.now()
-            sol.entrevista_nota = nota[:5000]
-            sol.save(update_fields=["entrevista_por", "entrevista_en",
-                                    "entrevista_nota", "updated_at"])
-            if nota:
-                # ★ Lo que salio de la entrevista va a las notas del staff, no
-                # escondido en un campo: es lo que el siguiente de la cadena
-                # necesita leer para decidir.
-                RecruitNote.objects.create(
-                    solicitud=sol, autor=request.user, autor_nombre=quien,
-                    texto="Entrevista: " + nota[:5000])
+        # ★ La logica vive en `recruit`, y la llaman la web y el cog de Discord.
+        # Dos implementaciones se desincronizan en la primera modificacion.
+        ok, msg = recruit.marcar_entrevista(sol, request.user,
+                                            request.POST.get("nota"))
+        if ok:
             _avisar_canal(sol, f"🎙️ **Entrevista hecha** por {quien}.")
-            messages.success(request, "Entrevista marcada.")
+            messages.success(request, msg)
+        else:
+            messages.error(request, msg)
 
     elif accion == "invitacion":
         # ⚠ Esto NO es una aprobacion: es «ya esta hecho». Por eso no entra en
         # la cadena de OK y tiene su propio grupo — el expediente tiene que
         # distinguir quien DECIDIO de quien EJECUTO.
-        ok, motivo = recruit.puede(request.user, "invitacion")
+        ok, msg = recruit.marcar_invitacion(sol, request.user)
         if not ok:
-            messages.error(request, motivo)
-        elif not sol.ok_directores_en:
-            messages.error(request, "Todavía falta el OK de Dirección.")
-        elif sol.invitacion_en:
-            messages.info(request, "Ya estaba marcada como enviada.")
+            messages.error(request, msg)
         else:
-            sol.invitacion_por, sol.invitacion_en = request.user, timezone.now()
-            sol.save(update_fields=["invitacion_por", "invitacion_en", "updated_at"])
             _avisar_canal(
                 sol, f"📨 **Invitación enviada** por {quien}. "
                      f"Acéptala desde el juego; en cuanto entres lo vemos aquí.",
                 mencionar=True)
-            messages.success(request, "Invitación marcada como enviada.")
+            messages.success(request, msg)
 
     elif accion == "reabrir":
         # ★ SOLO MIENTRAS EL CANAL VIVA. Reabrir una solicitud ya archivada
@@ -3893,12 +3845,6 @@ def recruit_accion(request, sol_id):
                     "borrado. Míralo antes de borrarlo a mano.")
 
     return redirect(destino)
-
-
-def _exige_entrevista():
-    from .models import RecruitConfig
-    cfg = RecruitConfig.objects.filter(tag="default").first()
-    return bool(cfg and cfg.exigir_entrevista)
 
 
 def _conversacion_de(texto, nombre_piloto=""):

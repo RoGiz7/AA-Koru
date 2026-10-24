@@ -578,3 +578,139 @@ def tiene_rol_invitar(user):
         # grupos de AA, que es el respaldo.
         logger.warning("koru recruit: no se pudo mirar el rol in-game: %s", exc)
         return False
+
+
+# ---------------------------------------------------------------------------
+# Las acciones, en un solo sitio
+# ---------------------------------------------------------------------------
+#
+# ★ AQUI VIVE LA LOGICA, Y LA LLAMAN LOS DOS: la pantalla web y el cog de
+# Discord. Si cada uno tuviera la suya, se desincronizarian en la primera
+# modificacion — y entonces aprobar desde Discord y aprobar desde la web harian
+# cosas distintas sin que nadie se diera cuenta.
+#
+# Todas devuelven (ok, mensaje). El mensaje se enseña tal cual: en la web como
+# aviso, en Discord como respuesta efimera.
+
+def _nombre(user):
+    """El main de quien actúa, para dejarlo escrito."""
+    from django.db import connection
+
+    with connection.cursor() as cur:
+        cur.execute(
+            "SELECT mc.character_name FROM authentication_userprofile up "
+            "JOIN eveonline_evecharacter mc ON mc.id = up.main_character_id "
+            "WHERE up.user_id = %s", [user.id])
+        fila = cur.fetchone()
+    return (fila[0] if fila else "") or str(user)
+
+
+def exige_entrevista():
+    from .models import RecruitConfig
+
+    cfg = RecruitConfig.objects.filter(tag="default").first()
+    return bool(cfg and cfg.exigir_entrevista)
+
+
+def marcar_entrevista(sol, user, nota=""):
+    from django.utils import timezone
+
+    from .models import RecruitNote
+
+    ok, motivo = puede(user, "reclutadores")
+    if not ok:
+        return False, motivo
+    if sol.entrevista_en:
+        return False, "La entrevista ya estaba marcada."
+
+    quien = _nombre(user)
+    nota = (nota or "").strip()[:5000]
+    sol.entrevista_por, sol.entrevista_en = user, timezone.now()
+    sol.entrevista_nota = nota
+    sol.save(update_fields=["entrevista_por", "entrevista_en",
+                            "entrevista_nota", "updated_at"])
+    if nota:
+        # ★ Lo que salió de la entrevista va a las notas del staff, no escondido
+        # en un campo: es lo que el siguiente de la cadena necesita leer.
+        RecruitNote.objects.create(solicitud=sol, autor=user,
+                                   autor_nombre=quien, texto="Entrevista: " + nota)
+    return True, f"Entrevista marcada por {quien}."
+
+
+def aprobar(sol, user, paso):
+    from django.utils import timezone
+
+    ok, motivo = puede(user, paso)
+    if not ok:
+        return False, motivo
+    if paso == "reclutadores" and not sol.entrevista_en and exige_entrevista():
+        # ⚠ Un «aprobado» sin que conste que alguien habló con la persona no
+        # cuenta lo que pasó.
+        return False, ("Antes de dar el OK hay que marcar la entrevista. Si se "
+                       "aprobó sin hablar con nadie, eso también hay que poder contarlo.")
+    if paso != sol.fase:
+        return False, f"Ahora toca «{sol.fase}», no «{paso}»."
+
+    quien = _nombre(user)
+    setattr(sol, f"ok_{paso}_por", user)
+    setattr(sol, f"ok_{paso}_en", timezone.now())
+    if sol.estado == sol.NUEVO:
+        sol.estado = sol.EN_CURSO
+    sol.save()
+    return True, f"Paso «{paso}» aprobado por {quien}."
+
+
+def marcar_invitacion(sol, user):
+    from django.utils import timezone
+
+    ok, motivo = puede(user, "invitacion")
+    if not ok:
+        return False, motivo
+    if not sol.ok_directores_en:
+        return False, "Todavía falta el OK de Dirección."
+    if sol.invitacion_en:
+        return False, "Ya estaba marcada como enviada."
+
+    quien = _nombre(user)
+    sol.invitacion_por, sol.invitacion_en = user, timezone.now()
+    sol.save(update_fields=["invitacion_por", "invitacion_en", "updated_at"])
+    return True, f"Invitación marcada por {quien}."
+
+
+def cerrar(sol, user, estado, motivo_texto):
+    from django.utils import timezone
+
+    ok, motivo = puede(user, "rechazo")
+    if not ok:
+        return False, motivo
+    if estado not in sol.CERRADOS:
+        return False, "Ese no es un estado de cierre."
+
+    texto = (motivo_texto or "").strip()
+    if not texto:
+        # ★ Obligatorio: una solicitud cerrada sin explicación no le sirve a
+        # nadie dentro de seis meses, que es justo cuando se consulta.
+        return False, "Pon un motivo: es lo que queda escrito en el expediente."
+
+    sol.estado = estado
+    sol.motivo_cierre = texto[:2000]
+    sol.cerrada_por = user
+    sol.fecha_cierre = timezone.now()
+    sol.save()
+    return True, f"Cerrada como «{sol.get_estado_display()}» por {_nombre(user)}."
+
+
+def usuario_de_discord(uid):
+    """
+    El usuario de AA que hay detrás de un id de Discord. None si no lo hay.
+
+    ⚠ Esto es lo que hace que el cog no tenga que mapear roles de Discord a
+    permisos: la persona que pulsa ES un usuario del Auth, con sus grupos.
+    """
+    from django.contrib.auth.models import User
+    from django.db import connection
+
+    with connection.cursor() as cur:
+        cur.execute("SELECT user_id FROM discord_discorduser WHERE uid = %s", [str(uid)])
+        fila = cur.fetchone()
+    return User.objects.filter(id=fila[0]).first() if fila else None

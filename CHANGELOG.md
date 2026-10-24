@@ -3,6 +3,22 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.41.1] — 2026-10-24
+
+### Cambiado (por dentro)
+
+- **Las acciones de la cadena pasan a vivir en `recruit.py`**: marcar la
+  entrevista, aprobar un paso, marcar la invitación y cerrar. La pantalla web ya
+  solo las llama.
+- Es el paso previo a los botones de Discord: si el cog reimplementara la
+  lógica, aprobar desde Discord y aprobar desde la web harían cosas distintas a
+  la primera modificación — y nadie se daría cuenta hasta que importara.
+- `recruit.usuario_de_discord(uid)` traduce quien pulsa en Discord a su usuario
+  del Auth, para que el cog **no tenga que mapear roles**: la persona que pulsa
+  ya es un usuario con sus grupos.
+
+Sin cambios visibles en la pantalla.
+
 ## [0.41.0] — 2026-10-24
 
 ### Añadido
