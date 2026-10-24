@@ -1,192 +1,85 @@
+"""
+Lo que Koru cuelga del menú de Alliance Auth.
+
+★ TRES ENTRADAS, NO ONCE (24/10/2026). Antes había once, todas empezando por
+«🌀 Koru —». El problema no era el número: era QUIÉN las veía. Un miembro
+normal veía tres o cuatro; un director, las once. El menú se ensuciaba justo
+para quien más deprisa necesita encontrar las cosas — el mismo fallo que
+tenía la ficha de solicitud antes de las pestañas.
+
+⚠ Alliance Auth 5.3 NO tiene submenús: se comprobó en
+`allianceauth/services/hooks.py` y no hay ni `children` ni `folder`. Por eso
+cada panel es una página con tarjetas y no un desplegable. Cuesta un clic;
+a cambio, un director pasa de once entradas a tres.
+
+El reparto vive en `paneles.py`, no aquí: añadir una pantalla nueva debería
+ser una línea en una lista, no tocar los hooks.
+"""
+
 from allianceauth import hooks
 from allianceauth.services.hooks import MenuItemHook, UrlHook
 
-from . import urls
+from . import paneles, urls
 
 
-def _tiene_acceso(request):
-    return request.user.has_perm("koru_stats.basic_access")
+class PanelMenuHook(MenuItemHook):
+    """
+    Una entrada por panel, y solo si el usuario tiene algo dentro.
 
+    ★ Un menú que lleva a una página vacía es peor que no tener el menú: el
+    que lo pulsa se queda sin saber si le falta un permiso o si la pantalla
+    está rota.
+    """
 
-class RankingMenuHook(MenuItemHook):
+    def __init__(self, area, *args, **kwargs):
+        self.area = area
+        super().__init__(*args, **kwargs)
+
     def render(self, request):
-        if _tiene_acceso(request):
-            return super().render(request)
-        return ""
-
-
-class CorpMenuHook(MenuItemHook):
-    def render(self, request):
-        if request.user.has_perm("koru_stats.corp_finance_access"):
-            return super().render(request)
-        return ""
-
-
-class LunasMenuHook(MenuItemHook):
-    def render(self, request):
-        if request.user.has_perm("koru_stats.moon_tax_access"):
-            return super().render(request)
-        return ""
+        if not request.user.is_authenticated:
+            return ""
+        if not paneles.tiene_algo(request.user, self.area):
+            return ""
+        return super().render(request)
 
 
 @hooks.register("menu_item_hook")
-def register_menu_ranking():
-    return RankingMenuHook(
-        "🌀 Koru — Estadísticas",
+def register_menu_mio():
+    return PanelMenuHook(
+        paneles.MIO,
+        "🌀 Koru",
         "fas fa-chart-bar fa-fw",
-        "koru_stats:dashboard",
-        navactive=["koru_stats:dashboard"],
+        # ⚠ Una URL propia por panel en vez de pasarle el área como argumento:
+        # `MenuItemHook` hace `reverse(url_name)` sin más, así que una ruta con
+        # parámetro reventaría al construir el menú — y un menú que revienta se
+        # lleva por delante TODO el Auth, no solo Koru.
+        "koru_stats:panel_mio",
+        navactive=["koru_stats:panel_mio"],
         order=1200,
     )
 
 
 @hooks.register("menu_item_hook")
-def register_menu_corp():
-    return CorpMenuHook(
-        "🌀 Koru — Finanzas",
-        "fas fa-coins fa-fw",
-        "koru_stats:corp_dashboard",
-        navactive=["koru_stats:corp_dashboard"],
+def register_menu_gestion():
+    return PanelMenuHook(
+        paneles.GESTION,
+        "🌀 Koru — Gestión",
+        "fas fa-user-check fa-fw",
+        "koru_stats:panel_gestion",
+        navactive=["koru_stats:panel_gestion"],
         order=1201,
     )
 
 
 @hooks.register("menu_item_hook")
-def register_menu_lunas():
-    return LunasMenuHook(
-        "🌀 Koru — Tax Lunas",
-        "fas fa-moon fa-fw",
-        "koru_stats:moon_dashboard",
-        navactive=["koru_stats:moon_dashboard"],
-        order=1202,
-    )
-
-
-class PvpMenuHook(MenuItemHook):
-    def render(self, request):
-        if _tiene_acceso(request):
-            return super().render(request)
-        return ""
-
-
-@hooks.register("menu_item_hook")
-def register_menu_pvp():
-    return PvpMenuHook(
-        "🌀 Koru — PvP",
-        "fas fa-crosshairs fa-fw",
-        "koru_stats:pvp_dashboard",
-        navactive=["koru_stats:pvp_dashboard"],
-        order=1203,
-    )
-
-
-class AuditorMenuHook(MenuItemHook):
-    def render(self, request):
-        if request.user.has_perm("koru_stats.auditor_access"):
-            return super().render(request)
-        return ""
-
-
-@hooks.register("menu_item_hook")
-def register_menu_auditor():
-    return AuditorMenuHook(
-        "🌀 Koru — Auditor",
-        "fas fa-user-shield fa-fw",
-        "koru_stats:auditor_dashboard",
-        navactive=["koru_stats:auditor_dashboard"],
-        order=1204,
-    )
-
-
-class TicketsMenuHook(MenuItemHook):
-    def render(self, request):
-        perms = [
-            "koru_stats.tickets_admin", "koru_stats.tickets_reclutamiento",
-            "koru_stats.tickets_directores", "koru_stats.tickets_asuntos_internos",
-            "koru_stats.tickets_it",
-        ]
-        if any(request.user.has_perm(p) for p in perms):
-            return super().render(request)
-        return ""
-
-
-@hooks.register("menu_item_hook")
-def register_menu_tickets():
-    return TicketsMenuHook(
-        "🌀 Koru — Tickets",
-        "fas fa-ticket-alt fa-fw",
-        "koru_stats:tickets_dashboard",
-        navactive=["koru_stats:tickets_dashboard"],
-        order=1205,
-    )
-
-
-class DirectoresMenuHook(MenuItemHook):
-    def render(self, request):
-        if request.user.has_perm("koru_stats.auditor_corp_health"):
-            return super().render(request)
-        return ""
-
-
-@hooks.register("menu_item_hook")
-def register_menu_corp_health():
-    return DirectoresMenuHook(
-        "\U0001f300 Koru \u2014 Direcci\u00f3n",
+def register_menu_direccion():
+    return PanelMenuHook(
+        paneles.DIRECCION,
+        "🌀 Koru — Dirección",
         "fas fa-chart-line fa-fw",
-        "koru_stats:corp_health_dashboard",
-        navactive=["koru_stats:corp_health_dashboard"],
-        order=1206,
-    )
-
-
-class RegalosMenuHook(MenuItemHook):
-    """
-    Estacional: la entrada solo existe mientras haya una campana abierta.
-
-    Una fiesta son seis semanas al ano; una entrada fija que diez meses no
-    enseña nada es ruido en el menu. En enero desaparece sola, sin que nadie
-    tenga que acordarse de quitarla.
-    """
-    def render(self, request):
-        if not request.user.has_perm("koru_stats.gift_access"):
-            return ""
-        from .models import GiftCampaign
-        if not GiftCampaign.objects.filter(estado=GiftCampaign.ESTADO_ABIERTA).exists():
-            return ""
-        return super().render(request)
-
-
-@hooks.register("menu_item_hook")
-def register_menu_regalos():
-    return RegalosMenuHook(
-        "\U0001f381 Koru — Mi aportación",
-        "fas fa-gift fa-fw",
-        "koru_stats:gift_mi",
-        navactive=["koru_stats:gift_mi"],
-        order=1207,
-    )
-
-
-class RegalosGestionMenuHook(MenuItemHook):
-    """Para directores, y tambien estacional: sin campaña abierta no se pinta."""
-    def render(self, request):
-        if not request.user.has_perm("koru_stats.gift_manage"):
-            return ""
-        from .models import GiftCampaign
-        if not GiftCampaign.objects.filter(estado=GiftCampaign.ESTADO_ABIERTA).exists():
-            return ""
-        return super().render(request)
-
-
-@hooks.register("menu_item_hook")
-def register_menu_regalos_gestion():
-    return RegalosGestionMenuHook(
-        "\U0001f381 Koru \u2014 Gesti\u00f3n de regalos",
-        "fas fa-gifts fa-fw",
-        "koru_stats:gift_gestion",
-        navactive=["koru_stats:gift_gestion", "koru_stats:gift_sorteos",
-                   "koru_stats:gift_sorteo", "koru_stats:gift_entregas"],
-        order=1208,
+        "koru_stats:panel_direccion",
+        navactive=["koru_stats:panel_direccion"],
+        order=1202,
     )
 
 
@@ -197,16 +90,46 @@ def register_urls():
 
 class ReclutamientoMenuHook(MenuItemHook):
     """
-    ★ SIN COMPROBAR NINGÚN PERMISO, a propósito. Esta entrada es justo para
-    quien todavía no es nadie en la corp: alguien que acaba de entrar al Auth y
-    no tiene grupo ninguno. Si pidiera `basic_access` la vería todo el mundo
-    menos las personas a las que va dirigida.
+    ★ FUERA DE LOS PANELES Y ARRIBA DEL TODO, a propósito. Quien la necesita
+    es el que menos sabe moverse por el Auth: alguien que acaba de registrarse
+    y no tiene ni un grupo. Meterla detrás de un panel es justo lo contrario
+    de lo que se busca.
+
+    ⚠ Y desaparece cuando ya estás dentro. Antes la veía TODO el mundo,
+    incluido el veterano de hace tres años, que tenía en su menú una
+    invitación permanente a solicitar entrar en su propia corp. Se oculta en
+    cuanto alguno de sus personajes está en una corp vigilada — el mismo dato
+    que usa la tarea que detecta las entradas, para no inventar un criterio
+    nuevo que luego diga otra cosa.
     """
 
     def render(self, request):
         if not request.user.is_authenticated:
             return ""
+        try:
+            if self._ya_esta_dentro(request.user):
+                return ""
+        except Exception:
+            # Si la comprobación falla, se ENSEÑA. Esconder la puerta de
+            # entrada por un error de base de datos es el peor de los dos
+            # fallos posibles.
+            pass
         return super().render(request)
+
+    @staticmethod
+    def _ya_esta_dentro(user):
+        # Con el ORM y no con SQL a mano: el nombre de la tabla es un detalle
+        # que no hay que repetir, y así no se olvida `is_active` — una corp
+        # que se dejó de vigilar no debería seguir escondiendo la entrada.
+        from allianceauth.authentication.models import CharacterOwnership
+
+        from .models import TrackedCorporation
+
+        corps = (TrackedCorporation.objects.filter(is_active=True)
+                 .values_list("corporation_id", flat=True))
+        return (CharacterOwnership.objects
+                .filter(user=user, character__corporation_id__in=list(corps))
+                .exists())
 
 
 @hooks.register("menu_item_hook")
@@ -217,36 +140,8 @@ def register_menu_reclutamiento():
         "koru_stats:recruit_wizard",
         navactive=["koru_stats:recruit_wizard"],
         # Número bajo para que salga arriba, junto a Patreon, y no enterrado
-        # entre las pantallas de staff: quien lo necesita es el que menos sabe
-        # moverse por aquí.
+        # entre las pantallas de staff.
         order=15,
-    )
-
-
-class ReclutamientoGestionMenuHook(MenuItemHook):
-    """
-    ⚠ Ver y aprobar no son lo mismo: Asuntos Internos y Dirección tienen que
-    poder entrar aunque no tengan `recruit_manage`, porque su paso está dentro.
-    Por eso también se mira si el usuario está en algún grupo de la cadena.
-    """
-
-    def render(self, request):
-        if not request.user.is_authenticated:
-            return ""
-        from .views import _ve_reclutamiento
-        if _ve_reclutamiento(request.user):
-            return super().render(request)
-        return ""
-
-
-@hooks.register("menu_item_hook")
-def register_menu_reclutamiento_gestion():
-    return ReclutamientoGestionMenuHook(
-        "🌀 Koru — Reclutamiento",
-        "fas fa-user-check fa-fw",
-        "koru_stats:recruit_lista",
-        navactive=["koru_stats:recruit_lista"],
-        order=1209,
     )
 
 

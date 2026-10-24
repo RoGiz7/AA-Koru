@@ -3435,6 +3435,31 @@ def _paso_actual(datos, salto_alts):
 
 
 @login_required
+def koru_panel(request, area):
+    """
+    Un panel con las pantallas de Koru de esa área.
+
+    ⚠ Sin `permission_required`: el panel en sí no enseña datos, solo enlaces,
+    y cada tarjeta ya se filtra por lo que el usuario puede abrir. Poner aquí
+    un permiso dejaría fuera justo a quien tiene uno solo de los de dentro.
+    """
+    from django.http import Http404
+    from django.shortcuts import render
+
+    from . import paneles
+
+    if area not in paneles.PANELES:
+        raise Http404("Ese panel no existe")
+
+    titulo, subtitulo = paneles.PANELES[area]
+    return render(request, "koru_stats/panel.html", {
+        "titulo": titulo,
+        "subtitulo": subtitulo,
+        "tarjetas": paneles.tarjetas_de(request.user, area),
+    })
+
+
+@login_required
 def recruit_wizard(request):
     """El camino del solicitante, de registrarse a enviar la solicitud."""
     from .models import RecruitApplication

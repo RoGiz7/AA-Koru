@@ -1,0 +1,52 @@
+{% extends 'allianceauth/base-bs5.html' %}
+{% load i18n %}
+
+{% block title %}{{ titulo }}{% endblock %}
+
+{% block extra_css %}
+{% include "koru_stats/includes/koru_estilos.html" %}
+<style>
+.koru-tarjeta { display:block; height:100%; padding:1rem 1.1rem; border-radius:12px;
+                text-decoration:none; color:inherit;
+                background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.1);
+                transition:border-color .12s, background .12s; }
+.koru-tarjeta:hover { border-color:rgba(13,110,253,.6); background:rgba(13,110,253,.08);
+                      color:inherit; }
+.koru-tarjeta .tit { font-weight:600; }
+.koru-tarjeta .ico { font-size:1.35rem; opacity:.75; }
+.koru-tarjeta .txt { font-size:.85rem; opacity:.7; }
+</style>
+{% endblock %}
+
+{% block page_title %}
+    {% include "framework/header/page-header.html" with title=titulo subtitle=subtitulo %}
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+{% comment %}
+⚠ Las tarjetas que se ven aquí son las que el usuario PUEDE abrir, pero eso no
+es lo que lo protege: cada vista tiene su propio permiso. Esto decide qué se
+ofrece, no qué se puede abrir.
+{% endcomment %}
+  <div class="row g-3">
+    {% for t in tarjetas %}
+    <div class="col-12 col-md-6 col-xl-4">
+      <a class="koru-tarjeta" href="{% url t.url %}">
+        <div class="d-flex align-items-center gap-2 mb-1">
+          <i class="{{ t.icono }} ico"></i>
+          <span class="tit">{{ t.titulo }}</span>
+        </div>
+        <div class="txt">{{ t.texto }}</div>
+      </a>
+    </div>
+    {% empty %}
+    <div class="col-12">
+      <div class="alert alert-secondary mb-0">
+        Aquí no tienes nada todavía. Si crees que deberías, habla con un director.
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

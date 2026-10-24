@@ -5,6 +5,12 @@ app_name = "koru_stats"
 
 urlpatterns = [
     path("", views.dashboard, name="dashboard"),
+    # Los tres paneles de Koru. Una ruta por panel y no una con parámetro:
+    # `MenuItemHook` hace `reverse(url_name)` a secas, y una ruta que necesita
+    # argumento reventaría al construir el menú de todo el Auth.
+    path("panel/mio/",       views.koru_panel, {"area": "mio"},       name="panel_mio"),
+    path("panel/gestion/",   views.koru_panel, {"area": "gestion"},   name="panel_gestion"),
+    path("panel/direccion/", views.koru_panel, {"area": "direccion"}, name="panel_direccion"),
 
     # Reclutamiento: lo ve cualquiera que haya entrado, sea o no de la corp.
     path("reclutamiento/", views.recruit_wizard, name="recruit_wizard"),

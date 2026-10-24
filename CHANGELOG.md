@@ -3,6 +3,52 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.47.0] — 2026-10-24
+
+### Cambiado
+
+- **De once entradas de menú a tres paneles.** 🌀 Koru · 🌀 Koru — Gestión ·
+  🌀 Koru — Dirección, cada uno una página con tarjetas.
+  - ★ **El problema no era el número, era quién las veía.** Un miembro normal
+    veía tres o cuatro entradas; un director, las once. El menú se ensuciaba
+    justo para quien más deprisa necesita encontrar las cosas — el mismo fallo
+    que tenía la ficha de solicitud antes de las pestañas.
+  - Agrupadas **por lo que haces, no por rango**: un reclutador también es
+    miembro, y con grupos de «miembros / mandos / dirección» estaría en dos.
+    Que los tres paneles se parezcan a los tres niveles es consecuencia.
+  - **Un panel sin nada dentro no se ofrece.** Un menú que lleva a una página
+    vacía es peor que no tener el menú: quien lo pulsa no sabe si le falta un
+    permiso o si la pantalla está rota.
+  - El reparto vive en `paneles.py`: añadir una pantalla es una línea en una
+    lista, no tocar los hooks.
+  - ⚠ **Las tarjetas no son seguridad**: cada vista mantiene su
+    `permission_required`. Esto decide qué se ofrece, no qué se puede abrir.
+  - ⚠ Una ruta propia por panel, no una con parámetro: `MenuItemHook` hace
+    `reverse(url_name)` a secas, y una ruta que necesita argumento reventaría
+    al construir el menú — y un menú que revienta se lleva por delante **todo**
+    el Auth, no solo Koru.
+  - Las URLs de cada pantalla no cambian: los enlaces guardados siguen valiendo.
+
+### Arreglado
+
+- **«Únete a Rekium» la veía todo el mundo, también quien ya estaba dentro.**
+  Un veterano de hace tres años tenía en su menú una invitación permanente a
+  solicitar entrar en su propia corp.
+  - Ahora desaparece cuando alguno de sus personajes está en una corp vigilada
+    — el mismo dato que usa la tarea que detecta entradas, para no inventar un
+    criterio nuevo que luego diga otra cosa. Y respeta `is_active`: una corp
+    que se dejó de vigilar no debe seguir escondiendo la entrada.
+  - Sigue **fuera de los paneles y arriba del todo**: quien la necesita es el
+    que menos sabe moverse por el Auth.
+  - ★ Si la comprobación falla, **se enseña**. Esconder la puerta de entrada
+    por un error de base de datos es el peor de los dos fallos posibles.
+
+### Verificado
+
+- **Alliance Auth 5.3 no tiene submenús** — comprobado en
+  `allianceauth/services/hooks.py`: ni `children` ni `folder`. De ahí que un
+  panel sea una página y no un desplegable.
+
 ## [0.46.1] — 2026-10-24
 
 ### Arreglado
