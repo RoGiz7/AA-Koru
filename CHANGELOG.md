@@ -3,6 +3,50 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.31.0] — 2026-10-24
+
+### Añadido
+
+- **El reclutamiento empieza a vivir dentro del Auth.** Modelos
+  `RecruitApplication` y `RecruitNote`, migración `0037`. Todavía no hay
+  pantallas: esto solo crea las tablas para poder construir encima.
+- Permisos nuevos: `recruit_apply` y `recruit_manage`.
+
+### Por qué
+
+- La solicitud vivía en Baserow y se cruzaba con el Auth **por el nombre del
+  personaje**. Ese cruce es el origen de la mitad de los fallos: en **12 de los
+  últimos 36 tickets** el campo `Main` llegó vacío, y con él vacío W4 reventaba
+  (`Cannot read properties of undefined`) antes de crear la auditoría — el
+  reclutador pulsaba «aprobar» y no pasaba nada. Aquí el solicitante **es** un
+  usuario del Auth: no hay nombre que casar, hay un `user_id`.
+
+### Decisiones que quedan fijadas
+
+- **Los estados son los mismos que en Baserow.** No se renombran aprovechando la
+  migración: el histórico de 573 solicitudes se compara con esto.
+- **Cada aprobación guarda quién y cuándo en su propia columna**, en vez de un
+  campo «fase» que se pisa. Es la lección de los 282 tickets de Directores que
+  se quedaron sin rastro de quién los cerró.
+- **Se guarda un retrato del piloto al solicitar** (SP, corps, antigüedad),
+  aunque esté en corptools: corptools refleja el *ahora*, y la pregunta que se
+  hace cuando algo sale mal es «¿qué vimos cuando le aceptamos?».
+- **Las notas del staff no se editan ni se borran.** Es el expediente de una
+  persona; si se puede reescribir, deja de explicar por qué se decidió lo que
+  se decidió.
+- **Borrar el usuario del Auth no borra su solicitud** (`SET_NULL`, no cascade).
+  Con cascade, el expediente desaparecía justo cuando más falta hace: cuando
+  alguien se marcha o se le echa y hay que explicar qué pasó. El «quién» no
+  depende de esa relación — vive en `main_character_id` y `main_character_name`,
+  en texto plano, así que aguanta también que se borre el personaje.
+- **La tabla `Main` de Baserow NO se recrea aquí.** AA ya es esa tabla. Lo que
+  se hace es dejar de crear dependencias nuevas sobre ella.
+
+### Arreglado en n8n (fuera del repo)
+
+- `W4 → Escapar nombre main` ya no revienta con un error de JavaScript cuando el
+  ticket no tiene Main: dice qué falta y en qué ticket.
+
 ## [0.30.0] — 2026-10-22
 
 ### Cambiado

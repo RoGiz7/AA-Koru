@@ -25,6 +25,8 @@ class General(models.Model):
             ("gift_access",   "Regalos: ve lo suyo (Mi aportación)"),
             ("gift_manage",   "Regalos: gestiona aportaciones, sorteos y entregas"),
             ("gift_ceo",      "Regalos: monta los sorteos especiales del CEO"),
+            ("recruit_apply",  "Reclutamiento: puede enviar una solicitud"),
+            ("recruit_manage", "Reclutamiento: gestiona solicitudes y entrevista"),
         )
 
 
@@ -1699,3 +1701,169 @@ class GiftDelivery(models.Model):
     @property
     def entregado(self):
         return self.estado in (self.ESTADO_CERRADO, self.ESTADO_A_MANO)
+
+
+# ---------------------------------------------------------------------------
+# Reclutamiento dentro del Auth
+# ---------------------------------------------------------------------------
+#
+# ★ POR QUE EXISTE ESTO. Hasta ahora la solicitud vivia en una tabla de Baserow
+# y se cruzaba con el Auth POR EL NOMBRE del personaje. Ese cruce es la fuente
+# de la mitad de los fallos: en 12 de los ultimos 36 tickets el campo «Main»
+# llego vacio, y con el vacio W4 reventaba antes de crear la auditoria, asi que
+# el reclutador pulsaba «aprobar» y no pasaba nada.
+#
+# Aqui el solicitante ES un usuario del Auth. No hay nombre que casar: hay un
+# `user_id`. El problema no se arregla, deja de poder existir.
+#
+# ⚠ Y el requisito de registrarse antes de solicitar es DELIBERADO, no una
+# limitacion tecnica: quien solo quiere preguntar tiene el canal de bienvenida
+# de Discord, abierto. El formulario es para quien ya ha decidido entrar.
+
+
+class RecruitApplication(models.Model):
+    """Una solicitud de ingreso, con su cadena de aprobaciones."""
+
+    # Los estados son los MISMOS que venian usandose en Baserow. No se
+    # aprovecha la migracion para renombrarlos: el historico de 573 solicitudes
+    # se compara con esto, y un cambio de etiquetas lo parte en dos.
+    NUEVO        = "nuevo"
+    EN_CURSO     = "en_curso"
+    PASA_CORP    = "pasa_corp"
+    PASA_ACADEMIA = "pasa_academia"
+    RECHAZADO    = "rechazado"
+    SE_MARCHO    = "se_marcho"
+    OTRA_CORP    = "otra_corp"
+    ARCHIVADO    = "archivado"
+
+    ESTADOS = (
+        (NUEVO,         "Nuevo"),
+        (EN_CURSO,      "En curso"),
+        (PASA_CORP,     "Pasa a Corp"),
+        (PASA_ACADEMIA, "Pasa a Academia"),
+        (RECHAZADO,     "Rechazado"),
+        (SE_MARCHO,     "Se marchó"),
+        (OTRA_CORP,     "Fue a otra corp"),
+        (ARCHIVADO,     "Archivado"),
+    )
+
+    # ★ Los que cierran la solicitud. Se declara aqui y no se deduce en cada
+    # pantalla: ayer descubrimos que «cerrado» se calculaba distinto en tres
+    # sitios y ninguno coincidia.
+    CERRADOS = (PASA_CORP, PASA_ACADEMIA, RECHAZADO, SE_MARCHO, OTRA_CORP, ARCHIVADO)
+
+    # ⚠ SET_NULL y NO cascade. Con cascade, borrar el usuario del Auth se
+    # llevaba por delante su solicitud entera — justo cuando mas falta hace, que
+    # es cuando alguien se marcha o se le echa y hay que explicar que paso.
+    # El «quien» no depende de esta relacion: vive en las dos columnas de abajo.
+    user = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL,
+                             related_name="solicitudes_rekium")
+
+    # ★ Copia del personaje principal EN EL MOMENTO DE SOLICITAR, en texto
+    # plano. Si se borra el personaje del Auth, o el usuario cambia de main, la
+    # ficha sigue diciendo de quien era. Una relacion aqui se quedaria en nada.
+    main_character_id   = models.BigIntegerField(db_index=True)
+    main_character_name = models.CharField(max_length=100)
+
+    estado = models.CharField(max_length=20, choices=ESTADOS, default=NUEVO, db_index=True)
+
+    respuestas = models.JSONField(default=dict, blank=True,
+                                  help_text="Lo que contestó el solicitante, tal cual")
+
+    # ★ RETRATO DEL PILOTO AL SOLICITAR: SP, corps, antiguedad, kills. Se guarda
+    # aunque todo eso este en corptools, porque corptools refleja el AHORA y
+    # dentro de un año nadie podra responder «¿que vimos cuando le aceptamos?».
+    # Esa pregunta es justo la que se hace cuando algo sale mal.
+    instantanea    = models.JSONField(default=dict, blank=True)
+    instantanea_en = models.DateTimeField(null=True, blank=True)
+
+    # --- La cadena de aprobaciones -----------------------------------------
+    # ⚠ Cada paso guarda QUIEN y CUANDO en su propia columna. La tentacion es
+    # un solo campo «fase» que se va pisando, y es justo lo que dejo 282 de 353
+    # tickets de Directores sin rastro de quien los cerro ni cuando.
+    ok_reclutadores_por = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    ok_reclutadores_en  = models.DateTimeField(null=True, blank=True)
+
+    ok_asuntos_por = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    ok_asuntos_en  = models.DateTimeField(null=True, blank=True)
+
+    ok_directores_por = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    ok_directores_en  = models.DateTimeField(null=True, blank=True)
+
+    # Quien la lleva. Puede cambiar; lo que no cambia es quien aprobó cada paso.
+    claim_por = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    claim_en  = models.DateTimeField(null=True, blank=True)
+
+    motivo_cierre = models.TextField(blank=True, default="",
+                                     help_text="Por qué acabó así. Obligatorio al rechazar")
+    cerrada_por = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    fecha_cierre = models.DateTimeField(null=True, blank=True, db_index=True)
+
+    # ⚠ El canal nace AL ENVIAR, no al aprobar: la entrevista es el primer
+    # filtro, asi que el reclutador necesita poder hablar con la persona antes
+    # de decidir. Pero se crea EN SEGUNDO PLANO, no durante el envio: si Discord
+    # tarda o falla, la solicitud ya esta guardada y nadie pierde el formulario
+    # que acaba de rellenar. Vacio = todavia no se ha creado, o fallo y hay que
+    # reintentarlo; eso se ve en la pantalla del reclutador.
+    discord_channel_id = models.CharField(max_length=30, blank=True, default="")
+    discord_error      = models.CharField(max_length=250, blank=True, default="")
+
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name        = "Reclutamiento — solicitud"
+        verbose_name_plural = "Reclutamiento — solicitudes"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["estado", "-created_at"], name="koru_sol_estado_fecha"),
+        ]
+
+    def __str__(self):
+        return f"{self.main_character_name} [{self.get_estado_display()}]"
+
+    @property
+    def abierta(self):
+        return self.estado not in self.CERRADOS
+
+    @property
+    def fase(self):
+        """En qué punto de la cadena está, para pintarlo sin repetir ifs."""
+        if not self.abierta:
+            return "cerrada"
+        if self.ok_directores_en:
+            return "lista"
+        if self.ok_asuntos_en:
+            return "directores"
+        if self.ok_reclutadores_en:
+            return "asuntos"
+        return "reclutadores"
+
+
+class RecruitNote(models.Model):
+    """Una nota del staff en la solicitud. Las notas no se borran ni se editan."""
+
+    # ⚠ Sin edicion a proposito. Esto es el expediente de una persona: si una
+    # nota se puede reescribir despues, deja de servir para explicar por que se
+    # decidio lo que se decidio.
+    solicitud = models.ForeignKey(RecruitApplication, on_delete=models.CASCADE,
+                                  related_name="notas")
+    autor = models.ForeignKey(User, null=True, blank=True,
+                              on_delete=models.SET_NULL, related_name="+")
+    autor_nombre = models.CharField(max_length=100, blank=True, default="",
+                                    help_text="Main de quien escribió, congelado")
+    texto = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name        = "Reclutamiento — nota"
+        verbose_name_plural = "Reclutamiento — notas"
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"{self.autor_nombre}: {self.texto[:40]}"
