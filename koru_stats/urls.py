@@ -11,6 +11,11 @@ urlpatterns = [
     path("reclutamiento/enviar/", views.recruit_enviar, name="recruit_enviar"),
     path("reclutamiento/enviada/", views.recruit_enviada, name="recruit_enviada"),
 
+    # La parte del staff
+    path("reclutamiento/gestion/", views.recruit_lista, name="recruit_lista"),
+    path("reclutamiento/gestion/<int:sol_id>/", views.recruit_ficha, name="recruit_ficha"),
+    path("reclutamiento/gestion/<int:sol_id>/accion/", views.recruit_accion, name="recruit_accion"),
+
     path("personal/", views.mi_dashboard, name="mi_dashboard"),
     path("corp/", views.corp_dashboard, name="corp_dashboard"),
     path("lunas/", views.moon_dashboard_v2, name="moon_dashboard"),

@@ -1,0 +1,81 @@
+{% extends 'allianceauth/base-bs5.html' %}
+{% load i18n %}
+
+{% block title %}Koru — Reclutamiento{% endblock %}
+
+{% block page_title %}
+    {% include "framework/header/page-header.html" with title="Reclutamiento" subtitle="Solicitudes" %}
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+
+  <div class="card mb-3"><div class="card-body d-flex flex-wrap align-items-center gap-3">
+    <div>
+      <div class="display-6 mb-0">{{ abiertas }}</div>
+      <div class="small text-muted">abiertas ahora mismo</div>
+    </div>
+    <div class="ms-auto d-flex flex-wrap gap-1">
+      {% comment %}
+      «Abiertas» primero y por defecto: lo que el reclutador necesita saber al
+      entrar es quién está esperando, no el histórico.
+      {% endcomment %}
+      <a class="btn btn-sm {% if estado == 'abiertas' or not estado %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+         href="?estado=abiertas">Abiertas</a>
+      <a class="btn btn-sm {% if estado == 'todas' %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+         href="?estado=todas">Todas</a>
+      {% for c, n in estados %}
+      <a class="btn btn-sm {% if estado == c %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+         href="?estado={{ c }}">{{ n }}</a>
+      {% endfor %}
+    </div>
+  </div></div>
+
+  <div class="card"><div class="card-body">
+    {% if solicitudes %}
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0">
+        <thead><tr>
+          <th>Piloto</th><th>Estado</th><th>En qué punto</th>
+          <th>La lleva</th><th>Canal</th><th>Enviada</th>
+        </tr></thead>
+        <tbody>
+        {% for s in solicitudes %}
+          <tr>
+            <td>
+              <a href="{% url 'koru_stats:recruit_ficha' s.pk %}">
+                <img src="https://images.evetech.net/characters/{{ s.main_character_id }}/portrait?size=32"
+                     width="24" height="24" class="rounded-circle me-1"
+                     onerror="this.style.display='none'">
+                {{ s.main_character_name }}
+              </a>
+            </td>
+            <td><span class="badge {% if s.abierta %}bg-primary{% else %}bg-secondary{% endif %}">{{ s.get_estado_display }}</span></td>
+            <td class="small">{% if s.abierta %}{{ s.fase }}{% else %}—{% endif %}</td>
+            <td class="small text-muted">{{ s.claim_por.profile.main_character|default:"—" }}</td>
+            <td class="small">
+              {% if s.discord_channel_id %}
+                <span class="text-success">✓</span>
+              {% elif s.discord_error %}
+                {% comment %}
+                El fallo no se esconde: una solicitud sin canal es alguien
+                esperando en una pantalla a que le abran uno.
+                {% endcomment %}
+                <span class="text-warning" title="{{ s.discord_error }}">⚠ sin canal</span>
+              {% else %}
+                <span class="text-muted">…</span>
+              {% endif %}
+            </td>
+            <td class="small text-muted">{{ s.created_at|date:"d/m/Y H:i" }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+      <p class="text-muted mb-0">No hay solicitudes que encajen con ese filtro.</p>
+    {% endif %}
+  </div></div>
+
+</div>
+{% endblock %}

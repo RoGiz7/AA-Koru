@@ -3538,6 +3538,212 @@ def recruit_enviada(request):
     return render(request, "koru_stats/recruit_enviada.html", {"solicitud": solicitud})
 
 
+
+# ---------------------------------------------------------------------------
+# Reclutamiento — la pantalla del staff
+# ---------------------------------------------------------------------------
+
+def _ve_reclutamiento(user):
+    """
+    Quien puede ENTRAR aqui. Distinto de quien puede aprobar.
+
+    ★ Ver y aprobar no son lo mismo: Asuntos Internos tiene que poder leer la
+    ficha antes de dar su paso, y Direccion igual. Si entrar exigiera el permiso
+    de gestionar, los pasos 2 y 3 no podrian ni mirar lo que tienen que aprobar.
+    """
+    from . import recruit
+
+    if not user.is_authenticated:
+        return False
+    if user.is_superuser or user.has_perm("koru_stats.recruit_manage"):
+        return True
+    mios = set(user.groups.values_list("name", flat=True))
+    for paso in recruit.PASOS:
+        if mios & set(recruit.quien_puede(paso)):
+            return True
+    return False
+
+
+@login_required
+def recruit_lista(request):
+    """Las solicitudes, las abiertas primero."""
+    from django.http import HttpResponseForbidden
+
+    from .models import RecruitApplication
+
+    if not _ve_reclutamiento(request.user):
+        return HttpResponseForbidden("No tienes acceso a reclutamiento.")
+
+    estado = request.GET.get("estado") or ""
+    qs = RecruitApplication.objects.all()
+    if estado == "abiertas":
+        qs = qs.exclude(estado__in=RecruitApplication.CERRADOS)
+    elif estado:
+        qs = qs.filter(estado=estado)
+
+    solicitudes = list(qs.order_by("-created_at")[:200])
+
+    # ★ El contador de abiertas va SIEMPRE, filtres lo que filtres: es el numero
+    # que dice si hay gente esperando, y esconderlo detras de un filtro es como
+    # no tenerlo.
+    abiertas = (RecruitApplication.objects
+                .exclude(estado__in=RecruitApplication.CERRADOS).count())
+
+    return render(request, "koru_stats/recruit_lista.html", {
+        "solicitudes": solicitudes,
+        "abiertas": abiertas,
+        "estado": estado,
+        "estados": RecruitApplication.ESTADOS,
+    })
+
+
+@login_required
+def recruit_ficha(request, sol_id):
+    """Todo lo que el reclutador necesita de una solicitud."""
+    from django.http import Http404, HttpResponseForbidden
+
+    from .models import RecruitApplication
+    from . import recruit
+
+    if not _ve_reclutamiento(request.user):
+        return HttpResponseForbidden("No tienes acceso a reclutamiento.")
+
+    sol = RecruitApplication.objects.filter(id=sol_id).first()
+    if not sol:
+        raise Http404("Solicitud no encontrada")
+
+    # Para cada paso: si ya esta dado, si le toca ahora, y si YO puedo darlo.
+    # El motivo se enseña tal cual cuando no puedo: saber a quien avisar vale
+    # mas que un boton gris sin explicacion.
+    cadena = []
+    for clave, etiqueta, dado_en, dado_por in (
+            ("reclutadores", "Reclutadores", sol.ok_reclutadores_en, sol.ok_reclutadores_por),
+            ("asuntos", "Asuntos Internos", sol.ok_asuntos_en, sol.ok_asuntos_por),
+            ("directores", "Dirección", sol.ok_directores_en, sol.ok_directores_por)):
+        ok, motivo = recruit.puede(request.user, clave)
+        cadena.append({
+            "clave": clave, "etiqueta": etiqueta,
+            "dado_en": dado_en, "dado_por": dado_por,
+            "es_el_turno": (sol.fase == clave),
+            "puedo": ok, "motivo": motivo,
+            "quien": recruit.quien_puede(clave),
+        })
+
+    puedo_rechazar, motivo_rechazo = recruit.puede(request.user, "rechazo")
+
+    # El enlace al canal necesita el guild, que no esta en el retrato: sale de
+    # la configuracion del Auth, que es donde vive.
+    from django.conf import settings
+
+    return render(request, "koru_stats/recruit_ficha.html", {
+        "sol": sol,
+        "guild_id": str(getattr(settings, "DISCORD_GUILD_ID", "") or ""),
+        "respuestas": recruit.para_leer(sol.respuestas),
+        "retrato": sol.instantanea or {},
+        "cadena": cadena,
+        "puedo_rechazar": puedo_rechazar,
+        "motivo_rechazo": motivo_rechazo,
+        "notas": sol.notas.all().select_related("autor"),
+        "finales": [(c, n) for c, n in RecruitApplication.ESTADOS
+                    if c in RecruitApplication.CERRADOS],
+    })
+
+
+@login_required
+def recruit_accion(request, sol_id):
+    """Reclamar, aprobar un paso, dejar una nota o cerrar."""
+    from django.contrib import messages
+    from django.http import Http404, HttpResponseForbidden
+    from django.shortcuts import redirect
+    from django.urls import reverse
+    from django.utils import timezone
+
+    from .models import RecruitApplication, RecruitNote
+    from . import recruit
+
+    if not _ve_reclutamiento(request.user):
+        return HttpResponseForbidden("No tienes acceso a reclutamiento.")
+
+    sol = RecruitApplication.objects.filter(id=sol_id).first()
+    if not sol:
+        raise Http404("Solicitud no encontrada")
+
+    destino = reverse("koru_stats:recruit_ficha", args=[sol.id])
+    if request.method != "POST":
+        return redirect(destino)
+
+    accion = request.POST.get("accion") or ""
+    quien = _quien_main(request.user)
+
+    if accion == "reclamar":
+        sol.claim_por, sol.claim_en = request.user, timezone.now()
+        if sol.estado == RecruitApplication.NUEVO:
+            sol.estado = RecruitApplication.EN_CURSO
+        sol.save(update_fields=["claim_por", "claim_en", "estado", "updated_at"])
+        messages.success(request, f"La llevas tú, {quien}.")
+
+    elif accion == "nota":
+        texto = (request.POST.get("texto") or "").strip()
+        if not texto:
+            messages.error(request, "La nota estaba vacía.")
+        else:
+            RecruitNote.objects.create(solicitud=sol, autor=request.user,
+                                       autor_nombre=quien, texto=texto[:5000])
+            messages.success(request, "Nota guardada.")
+
+    elif accion == "aprobar":
+        paso = request.POST.get("paso") or ""
+        ok, motivo = recruit.puede(request.user, paso)
+        if not ok:
+            messages.error(request, motivo)
+        elif paso != sol.fase:
+            # ⚠ No se puede adelantar un paso: la cadena es una secuencia, y
+            # aprobar el tercero sin el primero deja un expediente que dice que
+            # paso algo que no paso.
+            messages.error(request, f"Ahora toca «{sol.fase}», no «{paso}».")
+        else:
+            setattr(sol, f"ok_{paso}_por", request.user)
+            setattr(sol, f"ok_{paso}_en", timezone.now())
+            if sol.estado == RecruitApplication.NUEVO:
+                sol.estado = RecruitApplication.EN_CURSO
+            sol.save()
+            messages.success(request, f"Paso «{paso}» aprobado por {quien}.")
+
+    elif accion == "cerrar":
+        ok, motivo = recruit.puede(request.user, "rechazo")
+        estado = request.POST.get("estado") or ""
+        texto = (request.POST.get("motivo") or "").strip()
+        if not ok:
+            messages.error(request, motivo)
+        elif estado not in RecruitApplication.CERRADOS:
+            messages.error(request, "Ese no es un estado de cierre.")
+        elif not texto:
+            # ★ El motivo es obligatorio. Una solicitud cerrada sin explicacion
+            # no le sirve a nadie dentro de seis meses, que es justo cuando se
+            # consulta — y menos aun si la persona vuelve a solicitar.
+            messages.error(request, "Pon un motivo: es lo que queda escrito en el expediente.")
+        else:
+            sol.estado = estado
+            sol.motivo_cierre = texto[:2000]
+            sol.cerrada_por = request.user
+            sol.fecha_cierre = timezone.now()
+            sol.save()
+            messages.success(request, f"Solicitud cerrada como «{sol.get_estado_display()}».")
+
+    return redirect(destino)
+
+
+def _quien_main(user):
+    """El nombre del main de quien actua, para dejarlo escrito."""
+    with connection.cursor() as cur:
+        cur.execute(
+            "SELECT mc.character_name FROM authentication_userprofile up "
+            "JOIN eveonline_evecharacter mc ON mc.id = up.main_character_id "
+            "WHERE up.user_id = %s", [user.id])
+        fila = cur.fetchone()
+    return (fila[0] if fila else "") or str(user)
+
+
 # ---------------------------------------------------------------------------
 # Koru — Tickets (staff, por rol)
 # ---------------------------------------------------------------------------

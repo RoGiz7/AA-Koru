@@ -1,0 +1,225 @@
+{% extends 'allianceauth/base-bs5.html' %}
+{% load i18n koru_stats_tags %}
+
+{% block title %}Koru — {{ sol.main_character_name }}{% endblock %}
+
+{% block page_title %}
+    {% include "framework/header/page-header.html" with title=sol.main_character_name subtitle="Solicitud de ingreso" %}
+{% endblock %}
+
+{% block header_nav_collapse_right %}
+    {% url "koru_stats:recruit_lista" as url_r %}
+    {% include "framework/header/nav-collapse-button.html" with btn_modifier="outline-light" url=url_r title="Solicitudes" fa_icon="fa-solid fa-user-check" icon_on_mobile=True icon_on_desktop=True %}
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.paso-fila { padding:.6rem .8rem; border-radius:10px; margin-bottom:.4rem;
+             background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.08); }
+.paso-fila.hecho { border-color:rgba(25,135,84,.5); }
+.paso-fila.turno { border-color:rgba(13,110,253,.7); background:rgba(13,110,253,.1); }
+.nota { padding:.5rem .8rem; border-radius:10px; background:rgba(255,255,255,.05);
+        margin-bottom:.4rem; font-size:.87rem; }
+.nota .quien { font-size:.76rem; opacity:.65; }
+.señal { font-size:.85rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+  <div class="row g-3">
+
+    <div class="col-lg-7">
+
+      {% if sol.discord_error and not sol.discord_channel_id %}
+      <div class="alert alert-warning">
+        <strong>Esta solicitud no tiene canal de Discord.</strong><br>
+        <span class="small">{{ sol.discord_error }}</span><br>
+        <span class="small text-muted">
+          El piloto está esperando a que se le abra uno. Habrá que hablarle por otro sitio
+          o arreglar la configuración y volver a intentarlo.
+        </span>
+      </div>
+      {% endif %}
+
+      <div class="card mb-3"><div class="card-body">
+        <h6 class="card-title">La cadena</h6>
+        {% for p in cadena %}
+        <div class="paso-fila {% if p.dado_en %}hecho{% elif p.es_el_turno %}turno{% endif %}">
+          <div class="d-flex align-items-center gap-2 flex-wrap">
+            <strong>{{ p.etiqueta }}</strong>
+            {% if p.dado_en %}
+              <span class="small text-success">
+                ✓ {{ p.dado_por.profile.main_character|default:"—" }} · {{ p.dado_en|date:"d/m/Y H:i" }}
+              </span>
+            {% elif p.es_el_turno and sol.abierta %}
+              {% if p.puedo %}
+              <form method="post" action="{% url 'koru_stats:recruit_accion' sol.pk %}" class="ms-auto">
+                {% csrf_token %}
+                <input type="hidden" name="accion" value="aprobar">
+                <input type="hidden" name="paso" value="{{ p.clave }}">
+                <button class="btn btn-sm btn-primary">Dar el OK</button>
+              </form>
+              {% else %}
+              {% comment %}
+              No se esconde el botón: se dice quién tiene que darlo. Saber a
+              quién avisar vale más que un hueco sin explicación.
+              {% endcomment %}
+              <span class="small text-muted ms-auto">{{ p.motivo }}</span>
+              {% endif %}
+            {% else %}
+              <span class="small text-muted">pendiente</span>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+
+        {% if sol.abierta %}
+          <div class="d-flex gap-2 flex-wrap mt-3">
+            {% if not sol.claim_por %}
+            <form method="post" action="{% url 'koru_stats:recruit_accion' sol.pk %}">
+              {% csrf_token %}
+              <input type="hidden" name="accion" value="reclamar">
+              <button class="btn btn-sm btn-outline-primary">
+                <i class="fas fa-hand-paper me-1"></i>La llevo yo
+              </button>
+            </form>
+            {% else %}
+            <span class="small text-muted align-self-center">
+              La lleva {{ sol.claim_por.profile.main_character|default:"—" }}
+            </span>
+            {% endif %}
+
+            {% if puedo_rechazar %}
+            <button class="btn btn-sm btn-outline-danger ms-auto" type="button"
+                    data-bs-toggle="collapse" data-bs-target="#cerrarCaja">
+              Cerrar la solicitud
+            </button>
+            {% else %}
+            <span class="small text-muted ms-auto align-self-center">{{ motivo_rechazo }}</span>
+            {% endif %}
+          </div>
+
+          {% if puedo_rechazar %}
+          <div class="collapse mt-3" id="cerrarCaja">
+            <form method="post" action="{% url 'koru_stats:recruit_accion' sol.pk %}"
+                  class="border rounded p-3">
+              {% csrf_token %}
+              <input type="hidden" name="accion" value="cerrar">
+              <label class="form-label small mb-1">¿Cómo acaba?</label>
+              <select class="form-select form-select-sm mb-2" name="estado" required>
+                <option value="">Elige…</option>
+                {% for c, n in finales %}<option value="{{ c }}">{{ n }}</option>{% endfor %}
+              </select>
+              <label class="form-label small mb-1">Motivo</label>
+              <textarea class="form-control form-control-sm mb-2" name="motivo" rows="2" required
+                        placeholder="Queda escrito en el expediente, y el piloto lo verá"></textarea>
+              <button class="btn btn-sm btn-danger">Cerrar solicitud</button>
+            </form>
+          </div>
+          {% endif %}
+
+        {% else %}
+          <div class="alert alert-secondary mt-3 mb-0">
+            Cerrada como <strong>{{ sol.get_estado_display }}</strong>
+            por {{ sol.cerrada_por.profile.main_character|default:"—" }}
+            el {{ sol.fecha_cierre|date:"d/m/Y H:i" }}.
+            {% if sol.motivo_cierre %}<br><span class="small">{{ sol.motivo_cierre }}</span>{% endif %}
+          </div>
+        {% endif %}
+      </div></div>
+
+      <div class="card mb-3"><div class="card-body">
+        <h6 class="card-title">Lo que nos ha contado</h6>
+        <dl class="row mb-0 small">
+          {% for r in respuestas %}
+          <dt class="col-sm-5 text-muted">{{ r.etiqueta }}</dt>
+          <dd class="col-sm-7">{{ r.valor|linebreaksbr }}</dd>
+          {% endfor %}
+        </dl>
+      </div></div>
+
+      <div class="card"><div class="card-body">
+        <h6 class="card-title">Notas del staff</h6>
+        {% for n in notas %}
+        <div class="nota">
+          <div class="quien">{{ n.autor_nombre|default:"—" }} · {{ n.created_at|date:"d/m/Y H:i" }}</div>
+          <div>{{ n.texto|linebreaksbr }}</div>
+        </div>
+        {% empty %}
+        <p class="text-muted small">Todavía no hay notas.</p>
+        {% endfor %}
+
+        <form method="post" action="{% url 'koru_stats:recruit_accion' sol.pk %}" class="mt-2">
+          {% csrf_token %}
+          <input type="hidden" name="accion" value="nota">
+          <textarea class="form-control form-control-sm mb-2" name="texto" rows="2"
+                    placeholder="Lo que quieras dejar escrito de esta solicitud"></textarea>
+          <button class="btn btn-sm btn-outline-secondary">Añadir nota</button>
+          <span class="small text-muted ms-2">Las notas no se editan ni se borran.</span>
+        </form>
+      </div></div>
+
+    </div>
+
+    <div class="col-lg-5">
+      <div class="card mb-3"><div class="card-body">
+        <h6 class="card-title d-flex align-items-center gap-2 flex-wrap">
+          El piloto
+          {% if sol.discord_channel_id %}
+          <a class="btn btn-sm btn-outline-info ms-auto"
+             href="https://discord.com/channels/{{ guild_id }}/{{ sol.discord_channel_id }}"
+             target="_blank" rel="noopener">Abrir su canal ↗</a>
+          {% endif %}
+        </h6>
+
+        <div class="small text-muted mb-2">
+          {{ retrato.total_personajes|default:0 }} personajes ·
+          Discord: {{ retrato.discord|default:"—" }}
+          {% if sol.instantanea_en %}<br>Retrato tomado el {{ sol.instantanea_en|date:"d/m/Y H:i" }}{% endif %}
+        </div>
+
+        {% if retrato.señales %}
+        <div class="alert alert-warning py-2">
+          <strong class="small">A tener en cuenta</strong>
+          <ul class="mb-0 señal">
+            {% for s in retrato.señales %}<li>{{ s }}</li>{% endfor %}
+          </ul>
+        </div>
+        {% endif %}
+
+        <div class="table-responsive">
+          <table class="table table-sm mb-0">
+            <thead><tr><th>Personaje</th><th class="text-end">SP</th><th>Corp</th><th class="text-end">Corps</th></tr></thead>
+            <tbody>
+            {% for c in retrato.personajes %}
+              <tr>
+                <td class="small">{% if c.es_main %}★ {% endif %}{{ c.nombre }}
+                  {% if c.edad_dias %}<span class="text-muted">· {{ c.edad_dias }} d</span>{% endif %}
+                </td>
+                <td class="text-end small">
+                  {% if c.sin_datos_esi %}<span class="text-muted">sin ESI</span>
+                  {% else %}{{ c.sp|rknum }}{% endif %}
+                </td>
+                <td class="small text-muted">{{ c.corp|default:"—" }}</td>
+                <td class="text-end small">{{ c.corps_total }}</td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="4" class="text-muted small">Sin retrato todavía.</td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        {% if sol.main_character_id %}
+        <a class="btn btn-sm btn-outline-warning mt-3"
+           href="{% url 'koru_stats:auditor_pilot' sol.main_character_id %}">
+          <i class="fas fa-user-shield me-1"></i>Ficha del Auditor
+        </a>
+        {% endif %}
+      </div></div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}

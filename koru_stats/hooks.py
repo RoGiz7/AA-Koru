@@ -221,3 +221,30 @@ def register_menu_reclutamiento():
         # moverse por aquí.
         order=15,
     )
+
+
+class ReclutamientoGestionMenuHook(MenuItemHook):
+    """
+    ⚠ Ver y aprobar no son lo mismo: Asuntos Internos y Dirección tienen que
+    poder entrar aunque no tengan `recruit_manage`, porque su paso está dentro.
+    Por eso también se mira si el usuario está en algún grupo de la cadena.
+    """
+
+    def render(self, request):
+        if not request.user.is_authenticated:
+            return ""
+        from .views import _ve_reclutamiento
+        if _ve_reclutamiento(request.user):
+            return super().render(request)
+        return ""
+
+
+@hooks.register("menu_item_hook")
+def register_menu_reclutamiento_gestion():
+    return ReclutamientoGestionMenuHook(
+        "🌀 Koru — Reclutamiento",
+        "fas fa-user-check fa-fw",
+        "koru_stats:recruit_lista",
+        navactive=["koru_stats:recruit_lista"],
+        order=1209,
+    )
