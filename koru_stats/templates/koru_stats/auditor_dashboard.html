@@ -15,6 +15,16 @@
 {% endblock %}
 
 {% block extra_css %}
+{% include "koru_stats/includes/koru_estilos.html" %}
+<style>
+.subida { display:flex; align-items:center; gap:.75rem; padding:.6rem .8rem;
+          border-radius:10px; margin-bottom:.4rem; text-decoration:none; color:inherit;
+          background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.1);
+          border-left:3px solid rgba(220,53,69,.85); }
+.subida:hover { background:rgba(220,53,69,.1); color:inherit; }
+.subida .salto { font-variant-numeric:tabular-nums; font-weight:600; white-space:nowrap; }
+.subida .delta { color:#ff6b6b; font-weight:700; }
+</style>
 <style>
 .kpi-card { border-radius:10px; }
 .kpi-card .kpi-val { font-size:2rem; font-weight:700; line-height:1; }
@@ -89,6 +99,61 @@
                 <div class="kpi-val">{{ dist.verde }}</div><div class="kpi-lbl">🟢 Verde</div>
             </div></div>
         </div>
+    </div>
+
+{% comment %}
+★ LO PRIMERO DE LA PANTALLA, Y A PROPOSITO. La pregunta con la que un auditor
+abre esto no es «¿cómo está todo el mundo?» —para eso está el semáforo, abajo—
+sino «¿a quién miro hoy?».
+
+Y eso no lo contesta el riesgo absoluto: ordenando por total salen siempre los
+mismos, y quien lleva cuatro meses en 70 ya se miró y se decidió. La noticia es
+el que pasó de 20 a 55 este mes, que en una tabla ordenada por total aparece
+enterrado a media tabla.
+{% endcomment %}
+    <div class="card mb-3">
+      <div class="card-body">
+        <h6 class="card-title">
+          Quién ha subido
+          {% if periodo_anterior %}
+          <small class="text-muted">· {{ periodo_anterior }} → {{ periodo_sel }}</small>
+          {% endif %}
+        </h6>
+
+        {% if not periodo_anterior %}
+        <p class="text-muted small mb-0">
+          No hay mes anterior con el que comparar. Esto se llenará solo en cuanto
+          haya dos periodos calculados.
+        </p>
+        {% else %}
+          {% for p in subidas %}
+          <a class="subida" href="{% url 'koru_stats:auditor_pilot' p.id %}">
+            <span class="salto">
+              {% if p.nuevo %}
+                <span class="badge bg-info text-dark">nuevo</span> {{ p.ahora }}
+              {% else %}
+                {{ p.antes }} → {{ p.ahora }}
+                <span class="delta">(+{{ p.delta }})</span>
+              {% endif %}
+            </span>
+            <span class="flex-grow-1">{{ p.name }}</span>
+            {% if p.motivo %}
+            {% comment %}
+            La dimensión que más creció. Sin esto el auditor lee «subió 35» y
+            tiene que abrir la ficha solo para saber por dónde empezar.
+            {% endcomment %}
+            <span class="text-muted small">sobre todo {{ p.motivo }}</span>
+            {% endif %}
+            <span class="badge lvl-{{ p.nivel }}">{{ p.nivel }}</span>
+          </a>
+          {% empty %}
+          <p class="text-muted small mb-0">
+            Nadie ha subido de forma apreciable respecto a {{ periodo_anterior }}.
+            Que esté vacío es una respuesta, no un fallo.
+          </p>
+          {% endfor %}
+        {% endif %}
+      </div>
     </div>
 
     <div class="row g-3 mb-3">

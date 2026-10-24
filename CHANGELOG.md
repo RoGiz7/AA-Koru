@@ -3,6 +3,29 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.48.0] — 2026-10-24
+
+### Añadido
+
+- **«Quién ha subido», lo primero del panel del Auditor.** Cada piloto cuyo
+  riesgo ha crecido respecto al mes anterior, con el salto (20 → 55), la
+  dimensión que más creció y un enlace directo a su ficha.
+  - ★ **El riesgo absoluto no contesta la pregunta del auditor.** Ordenando por
+    total salen siempre los mismos: quien lleva cuatro meses en 70 ya se miró y
+    se decidió. La noticia es el que pasó de 20 a 55 este mes — y ese, en una
+    tabla ordenada por total, aparece enterrado a media tabla.
+  - Se enseña **la dimensión que más creció**. Sin eso, el auditor lee «subió
+    35» y tiene que abrir la ficha solo para saber por dónde empezar.
+  - Por debajo de +10 no se enseña: es ruido del propio cálculo, y llenar la
+    lista de gente que no ha hecho nada es la forma más rápida de que nadie se
+    la lea.
+  - Quien no tiene dato del mes anterior no tiene salto que medir: si aparece
+    alto, sale marcado como **nuevo**, que es otra cosa y hay que poder
+    distinguirla.
+  - Si no hay mes anterior, lo dice. Si no ha subido nadie, también: **que esté
+    vacío es una respuesta, no un fallo**.
+- Los botones legibles del parcial común, también en esta pantalla.
+
 ## [0.47.1] — 2026-10-24
 
 ### Arreglado

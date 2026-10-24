@@ -3072,6 +3072,15 @@ def _pvp_pilot_stats(main_char_id, n_months=6):
 # Auditor — dashboard (Fase 1: Tab Semáforo)
 # ---------------------------------------------------------------------------
 
+# Cuanto tiene que subir el riesgo para merecer una mirada. Por debajo de esto
+# es ruido del propio calculo, y llenar la lista de gente que no ha hecho nada
+# es la forma mas rapida de que nadie se la lea.
+SALTO_MINIMO = 10
+# Un piloto sin dato del mes pasado no tiene salto; si ademas aparece alto, se
+# enseña como «nuevo», que es otra cosa.
+SALTO_NUEVO_MINIMO = 30
+
+
 @permission_required("koru_stats.auditor_access")
 def auditor_dashboard(request):
     from .models import AuditorConfig, AuditorRiskScore, AuditorAlert
@@ -3104,6 +3113,53 @@ def auditor_dashboard(request):
         })
 
     top = [{"name": r["name"], "total": r["total"], "nivel": r["nivel"]} for r in rows[:15]]
+
+    # ★ QUIEN HA SUBIDO, QUE NO ES LO MISMO QUE QUIEN ESTA ALTO.
+    # Ordenar por riesgo absoluto pone arriba siempre a la misma gente: quien
+    # lleva cuatro meses en 70 ya se miro y se decidio. La noticia es el que
+    # paso de 20 a 55 este mes — y ese, en una tabla ordenada por total,
+    # aparece enterrado a media tabla.
+    anterior = ""
+    if sel in periodos:
+        i = periodos.index(sel)
+        if i + 1 < len(periodos):
+            anterior = periodos[i + 1]      # `periodos` va de mas nuevo a mas viejo
+
+    antes = {}
+    if anterior:
+        for a in AuditorRiskScore.objects.filter(period=anterior):
+            antes[a.main_character_id] = a
+
+    subidas = []
+    for sc in scores:
+        prev = antes.get(sc.main_character_id)
+        if prev is None:
+            # Sin dato del mes pasado no hay salto que medir. Si encima el
+            # riesgo es alto, se marca como «nuevo»: es otra cosa, y hay que
+            # poder distinguirla de una subida.
+            if anterior and sc.risk_total >= SALTO_NUEVO_MINIMO:
+                subidas.append({"id": sc.main_character_id, "name": sc.main_character_name,
+                                "antes": None, "ahora": sc.risk_total, "delta": sc.risk_total,
+                                "nivel": sc.nivel, "nuevo": True, "motivo": ""})
+            continue
+
+        delta = sc.risk_total - prev.risk_total
+        if delta < SALTO_MINIMO:
+            continue
+
+        # Que dimension explica el salto. Sin esto el auditor ve «subio 35» y
+        # tiene que abrir la ficha solo para saber por donde mirar.
+        motivo, peor = "", 0
+        for campo, etiqueta in DIMS:
+            d = getattr(sc, campo) - getattr(prev, campo)
+            if d > peor:
+                motivo, peor = etiqueta, d
+        subidas.append({"id": sc.main_character_id, "name": sc.main_character_name,
+                        "antes": prev.risk_total, "ahora": sc.risk_total, "delta": delta,
+                        "nivel": sc.nivel, "nuevo": False, "motivo": motivo})
+
+    subidas.sort(key=lambda x: -x["delta"])
+
     cfg = AuditorConfig.objects.filter(tag="default").first()
 
     context = {
@@ -3120,6 +3176,9 @@ def auditor_dashboard(request):
         "modo_calibracion": cfg.modo_calibracion if cfg else True,
         "calibracion_hasta": cfg.calibracion_hasta if cfg else None,
         "alerts_abiertas": AuditorAlert.objects.filter(estado="abierta").count(),
+        "subidas": subidas,
+        "periodo_anterior": anterior,
+        "en_rojo": dist.get("rojo", 0) + dist.get("naranja", 0),
     }
     return render(request, "koru_stats/auditor_dashboard.html", context)
 
