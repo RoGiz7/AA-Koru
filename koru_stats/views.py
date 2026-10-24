@@ -3619,7 +3619,8 @@ def recruit_ficha(request, sol_id):
     for clave, etiqueta, dado_en, dado_por in (
             ("reclutadores", "Reclutadores", sol.ok_reclutadores_en, sol.ok_reclutadores_por),
             ("asuntos", "Asuntos Internos", sol.ok_asuntos_en, sol.ok_asuntos_por),
-            ("directores", "Dirección", sol.ok_directores_en, sol.ok_directores_por)):
+            ("directores", "Dirección", sol.ok_directores_en, sol.ok_directores_por),
+            ("invitacion", "Invitación in-game", sol.invitacion_en, sol.invitacion_por)):
         ok, motivo = recruit.puede(request.user, clave)
         cadena.append({
             "clave": clave, "etiqueta": etiqueta,
@@ -3731,8 +3732,14 @@ def recruit_accion(request, sol_id):
             sol.save()
             etiquetas = {"reclutadores": "Reclutadores",
                          "asuntos": "Asuntos Internos", "directores": "Dirección"}
-            _avisar_canal(sol, f"✅ **{etiquetas.get(paso, paso)}** dan su OK — {quien}.",
-                          mencionar=True)
+            siguiente = {"reclutadores": "Ahora lo revisa Asuntos Internos.",
+                         "asuntos": "Ahora lo ve Dirección.",
+                         "directores": "Solo falta mandar la invitación in-game."}
+            _avisar_canal(
+                sol,
+                f"✅ **{etiquetas.get(paso, paso)}** dan su OK — {quien}.\n"
+                f"{siguiente.get(paso, '')}",
+                mencionar=True, rol_siguiente=paso)
             messages.success(request, f"Paso «{paso}» aprobado por {quien}.")
 
     elif accion == "cerrar":
@@ -3767,6 +3774,26 @@ def recruit_accion(request, sol_id):
                      f"Este canal se borrará dentro de **24 horas**. "
                      f"Si necesitas algo de aquí, cópialo antes.",
                 mencionar=True)
+
+    elif accion == "invitacion":
+        # ⚠ Esto NO es una aprobacion: es «ya esta hecho». Por eso no entra en
+        # la cadena de OK y tiene su propio grupo — el expediente tiene que
+        # distinguir quien DECIDIO de quien EJECUTO.
+        ok, motivo = recruit.puede(request.user, "invitacion")
+        if not ok:
+            messages.error(request, motivo)
+        elif not sol.ok_directores_en:
+            messages.error(request, "Todavía falta el OK de Dirección.")
+        elif sol.invitacion_en:
+            messages.info(request, "Ya estaba marcada como enviada.")
+        else:
+            sol.invitacion_por, sol.invitacion_en = request.user, timezone.now()
+            sol.save(update_fields=["invitacion_por", "invitacion_en", "updated_at"])
+            _avisar_canal(
+                sol, f"📨 **Invitación enviada** por {quien}. "
+                     f"Acéptala desde el juego; en cuanto entres lo vemos aquí.",
+                mencionar=True)
+            messages.success(request, "Invitación marcada como enviada.")
 
     elif accion == "reabrir":
         # ★ SOLO MIENTRAS EL CANAL VIVA. Reabrir una solicitud ya archivada
@@ -3866,7 +3893,7 @@ def _conversacion_de(texto, nombre_piloto=""):
     return fuera
 
 
-def _avisar_canal(sol, texto, mencionar=False):
+def _avisar_canal(sol, texto, mencionar=False, rol_siguiente=""):
     """
     Una linea en el canal del solicitante contando lo que acaba de pasar.
 
@@ -3882,6 +3909,15 @@ def _avisar_canal(sol, texto, mencionar=False):
         return
     try:
         from . import discordapi, recruit
+
+        if rol_siguiente:
+            # ★ Se menciona a QUIEN LE TOCA AHORA, no a quien acaba de actuar.
+            from .models import RecruitConfig
+            cfg = RecruitConfig.objects.filter(tag="default").first()
+            campo = recruit.SIGUIENTE_ROL.get(rol_siguiente)
+            rol = getattr(cfg, campo, "") if (cfg and campo) else ""
+            if rol:
+                texto = f"<@&{rol}> " + texto
 
         if mencionar:
             # ★ Al piloto se le MENCIONA en lo que le afecta, para que le salte

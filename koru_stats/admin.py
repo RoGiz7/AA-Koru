@@ -681,12 +681,19 @@ class RecruitConfigForm(forms.ModelForm):
                     "Dónde avisar de que hay solicitud nueva. Déjalo vacío para no avisar.")
 
         # El rol a mencionar sale de la misma lista que los demás.
-        actual_rol = str(self.initial.get("rol_avisar") or "")
-        self.fields["rol_avisar"] = forms.ChoiceField(
-            choices=[("", "— no mencionar a nadie —")] + opciones,
-            initial=actual_rol, required=False,
-            label="Mencionar a",
-            help_text="Sin mención, nadie se entera de que el canal existe.")
+        for campo, etiqueta, ayuda in (
+                ("rol_avisar", "Al entrar una solicitud",
+                 "Sin mención, nadie se entera de que el canal existe."),
+                ("rol_asuntos", "Cuando reclutadores dan su OK",
+                 "Les toca a ellos revisar."),
+                ("rol_directores", "Cuando Asuntos Internos da su OK",
+                 "Les toca a ellos decidir."),
+                ("rol_invitacion", "Cuando Dirección da su OK",
+                 "Los que mandan la invitación in-game.")):
+            self.fields[campo] = forms.ChoiceField(
+                choices=[("", "— no mencionar a nadie —")] + opciones,
+                initial=str(self.initial.get(campo) or ""),
+                required=False, label=etiqueta, help_text=ayuda)
 
     def _lista(self, discordapi, campo, tipo, etiqueta, ayuda):
         from django import forms as f
@@ -714,26 +721,27 @@ class RecruitConfigAdmin(admin.ModelAdmin):
 
     form = RecruitConfigForm
     filter_horizontal = ("grupos_reclutadores", "grupos_asuntos",
-                         "grupos_directores", "grupos_rechazo")
+                         "grupos_directores", "grupos_invitacion", "grupos_rechazo")
 
     list_display = ("__str__", "categoria_id", "prefijo_canal", "updated_at")
 
     fieldsets = (
         ("Interruptor", {
-            "fields": ("activo",),
+            "fields": ("activo", "cerrar_al_entrar", "corp_academia_id"),
             "description": "Apagado: la solicitud se guarda igual, pero no se crea canal. "
                            "La pantalla del reclutador la enseña marcada como «sin canal».",
         }),
         ("Quién aprueba cada paso", {
             "fields": ("grupos_reclutadores", "grupos_asuntos",
-                       "grupos_directores", "grupos_rechazo"),
+                       "grupos_directores", "grupos_invitacion", "grupos_rechazo"),
             "description": "⚠ Dejar un paso VACÍO no quiere decir «todos»: quiere decir "
                            "sin configurar, y entonces solo un superusuario puede darlo. "
                            "Se pueden poner varios grupos por paso.",
         }),
         ("Discord", {
             "fields": ("categoria_id", "prefijo_canal", "roles_ver",
-                       "rol_avisar", "avisar_en"),
+                       "rol_avisar", "rol_asuntos", "rol_directores",
+                       "rol_invitacion", "avisar_en"),
             "description": "⚠ Los ids se copian de Discord con el modo desarrollador activado "
                            "(clic derecho → Copiar id). Los roles se eligen de la lista: "
                            "quien no esté marcado no verá el canal.",

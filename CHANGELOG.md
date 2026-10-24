@@ -3,6 +3,39 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.39.0] — 2026-10-24
+
+### Añadido
+
+- **Cada OK avisa a quien le toca ahora.** Reclutadores dan el suyo → ping a
+  Asuntos Internos; Asuntos Internos → ping a Dirección; Dirección → ping a
+  quien manda las invitaciones. Dar un OK y que nadie se entere de que ahora le
+  toca a otro es como no darlo: la solicitud se queda esperando a alguien que
+  no sabe que la espera. Cada rol se elige en la configuración.
+- **Paso 4: «Invitación enviada».** ⚠ No es una aprobación — no dice «me parece
+  bien», dice «ya está hecho». Va en sus propios campos y con su propio grupo:
+  si se mezclara con los OK, el expediente no distinguiría quién **decidió** de
+  quién **ejecutó**.
+- **Detección automática de la entrada** (`recruit_detectar_entradas`): cuando
+  el main del solicitante aparece en una corp rastreada, la solicitud se cierra
+  sola como «Pasa a Corp» —o «Pasa a Academia» si es esa corp—, se deja nota y
+  se felicita al piloto en su canal.
+  - **El dato lo pone el juego, no una casilla.** Marcar «ya entró» a mano se
+    olvida, y entonces quedan solicitudes esperando una invitación que se
+    aceptó hace tres semanas.
+  - `cerrada_por` se queda **vacío a propósito**: no la cerró nadie, la cerró el
+    hecho de que el piloto entrara. Poner un usuario ahí sería atribuirle una
+    decisión que no tomó.
+  - Solo **cierra** solicitudes abiertas. Nunca reabre ni rechaza: si alguien se
+    salió de la corp, eso es cosa del Auditor.
+  - Cuál es la Academia sale de la **configuración**, no de adivinar por el
+    nombre — adivinarlo sería inventarse el resultado de la solicitud de una
+    persona.
+
+⚠ **Dar de alta `koru_stats.tasks.recruit_detectar_entradas`** en el programador
+(cada 15–30 min). Y rellenar en la configuración los tres roles nuevos y el id
+de la Academia; sin eso, ni se avisa al siguiente ni se distingue el destino.
+
 ## [0.38.0] — 2026-10-24
 
 ### Corregido

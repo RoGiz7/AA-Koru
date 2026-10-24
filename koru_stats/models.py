@@ -1813,6 +1813,13 @@ class RecruitApplication(models.Model):
     discord_channel_id = models.CharField(max_length=30, blank=True, default="")
     discord_error      = models.CharField(max_length=250, blank=True, default="")
 
+    # ⚠ LA INVITACION NO ES UNA APROBACION, ES UNA TAREA. No dice «me parece
+    # bien», dice «ya esta hecho». Se guarda aparte de los OK a proposito: si
+    # se mezclaran, el expediente no distinguiria quien DECIDIO de quien HIZO.
+    invitacion_en  = models.DateTimeField(null=True, blank=True)
+    invitacion_por = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+
     # ★ LA CONVERSACION, GUARDADA ANTES DE BORRAR EL CANAL. El expediente
     # justifica su existencia por conservar QUE SE HABLO; una solicitud cerrada
     # sin la entrevista dentro es media solicitud. Y el canal de Discord es
@@ -1846,8 +1853,10 @@ class RecruitApplication(models.Model):
         """En qué punto de la cadena está, para pintarlo sin repetir ifs."""
         if not self.abierta:
             return "cerrada"
+        if self.invitacion_en:
+            return "esperando_entrada"
         if self.ok_directores_en:
-            return "lista"
+            return "invitacion"
         if self.ok_asuntos_en:
             return "directores"
         if self.ok_reclutadores_en:
@@ -1975,6 +1984,33 @@ class RecruitConfig(models.Model):
         max_length=30, blank=True, default="",
         help_text="Rol al que mencionar cuando entra una solicitud. Vacío = no mencionar a nadie")
 
+    # ★ A QUIEN LE TOCA DESPUES. Dar un OK y que nadie se entere de que ahora
+    # le toca a otro es como no darlo: la solicitud se queda parada esperando a
+    # alguien que no sabe que la espera.
+    rol_asuntos = models.CharField(
+        max_length=30, blank=True, default="",
+        help_text="A quién avisar cuando reclutadores dan su OK")
+    rol_directores = models.CharField(
+        max_length=30, blank=True, default="",
+        help_text="A quién avisar cuando Asuntos Internos da su OK")
+    rol_invitacion = models.CharField(
+        max_length=30, blank=True, default="",
+        help_text="A quién avisar cuando Dirección da su OK (los que mandan la invitación)")
+
+    # ⚠ CUAL ES LA ACADEMIA. Sin esto no se puede distinguir «Pasa a Corp» de
+    # «Pasa a Academia» al detectar la entrada, y adivinarlo por el nombre
+    # seria inventarse el resultado de una solicitud.
+    corp_academia_id = models.CharField(
+        max_length=20, blank=True, default="",
+        help_text="Id de la corp Academia. Si el piloto entra ahí, la solicitud "
+                  "se cierra como «Pasa a Academia» en vez de «Pasa a Corp»")
+
+    # ★ Detectar la entrada y cerrar solo. El dato lo pone el juego, no una
+    # casilla que alguien se puede olvidar de marcar.
+    cerrar_al_entrar = models.BooleanField(
+        default=True,
+        help_text="Cerrar la solicitud sola cuando el piloto entre en una corp rastreada")
+
     # --- Quién aprueba cada paso -------------------------------------------
     #
     # ★ CONFIGURABLE, Y CON VARIOS GRUPOS POR PASO. En n8n esto era una sola
@@ -2002,6 +2038,10 @@ class RecruitConfig(models.Model):
         "auth.Group", blank=True, related_name="+",
         verbose_name="Paso 3 · Directores",
         help_text="Grupos que pueden dar el OK de Dirección")
+    grupos_invitacion = models.ManyToManyField(
+        "auth.Group", blank=True, related_name="+",
+        verbose_name="Paso 4 · Marcar la invitación enviada",
+        help_text="Grupos que mandan la invitación in-game y la marcan")
     grupos_rechazo = models.ManyToManyField(
         "auth.Group", blank=True, related_name="+",
         verbose_name="Rechazar o cerrar",

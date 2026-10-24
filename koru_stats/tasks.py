@@ -3702,3 +3702,95 @@ def recruit_archivar_vencidas():
     if hechas or fallos:
         logger.info("koru recruit_archivar: %s archivadas, %s con fallo", hechas, fallos)
     return f"archivadas {hechas}, fallos {fallos}"
+
+
+@shared_task
+def recruit_detectar_entradas():
+    """
+    Cierra sola la solicitud del que ya ha entrado en una corp de Rekium.
+
+    ★ EL DATO LO PONE EL JUEGO, NO UNA CASILLA. Marcar «ya entro» a mano es
+    algo que se olvida, y entonces quedan solicitudes eternamente esperando una
+    invitacion que se acepto hace tres semanas. AA ya refresca la corp de cada
+    personaje; solo hay que mirarla.
+
+    ⚠ Solo toca solicitudes ABIERTAS y solo para CERRARLAS bien. Nunca
+    reabre y nunca rechaza: si alguien se salio de la corp, eso es cosa del
+    Auditor, no de reclutamiento.
+    """
+    from django.db import connection
+    from django.utils import timezone
+
+    from .models import (RecruitApplication, RecruitConfig, RecruitNote,
+                         TrackedCorporation)
+
+    cfg = RecruitConfig.objects.filter(tag="default").first()
+    if not cfg or not cfg.cerrar_al_entrar:
+        return "apagado"
+
+    corps = dict(TrackedCorporation.objects.filter(is_active=True)
+                 .values_list("corporation_id", "corporation_name"))
+    if not corps:
+        logger.warning("koru recruit_detectar: no hay corps rastreadas activas")
+        return "sin corps"
+
+    abiertas = list(RecruitApplication.objects
+                    .exclude(estado__in=RecruitApplication.CERRADOS)
+                    .exclude(main_character_id=0))
+    if not abiertas:
+        return "nada que mirar"
+
+    ids = [x.main_character_id for x in abiertas]
+    marcas = ",".join(["%s"] * len(ids))
+    with connection.cursor() as cur:
+        cur.execute(
+            "SELECT character_id, corporation_id FROM eveonline_evecharacter "
+            "WHERE character_id IN (" + marcas + ")", ids)
+        donde = {int(c): int(k) for c, k in cur.fetchall()}
+
+    academia = str(cfg.corp_academia_id or "")
+    cerradas = 0
+
+    for sol in abiertas:
+        corp = donde.get(sol.main_character_id)
+        if not corp or corp not in corps:
+            continue
+
+        # ⚠ Distinguir Academia de Corp sale de la CONFIGURACION, no de
+        # adivinar por el nombre: adivinar aqui seria inventarse el resultado
+        # de la solicitud de una persona.
+        if academia and str(corp) == academia:
+            sol.estado = RecruitApplication.PASA_ACADEMIA
+        else:
+            sol.estado = RecruitApplication.PASA_CORP
+
+        sol.motivo_cierre = f"Entró en {corps[corp]} — detectado automáticamente."
+        sol.fecha_cierre = timezone.now()
+        # ★ `cerrada_por` se queda VACIO a proposito: no la cerro nadie, la
+        # cerro el hecho de que el piloto entrara. Poner un usuario ahi seria
+        # atribuirle una decision que no tomo.
+        sol.save()
+
+        RecruitNote.objects.create(
+            solicitud=sol, autor=None, autor_nombre="Koru",
+            texto=f"{sol.main_character_name} aparece en {corps[corp]}. "
+                  f"Solicitud cerrada como «{sol.get_estado_display()}».")
+
+        if sol.discord_channel_id:
+            try:
+                from . import discordapi, recruit
+                uid = recruit.uid_piloto(sol)
+                discordapi.publicar(
+                    sol.discord_channel_id,
+                    (f"<@{uid}> " if uid else "")
+                    + f"🎉 **Bienvenido a {corps[corp]}.** Ya apareces dentro.\n"
+                      f"Este canal se cerrará en unas horas.")
+            except Exception as exc:
+                logger.warning("koru recruit_detectar: aviso en %s: %s",
+                               sol.discord_channel_id, exc)
+
+        cerradas += 1
+        logger.info("koru recruit_detectar: %s entro en %s",
+                    sol.main_character_name, corps[corp])
+
+    return f"cerradas {cerradas}"

@@ -376,7 +376,17 @@ PASOS = {
     "reclutadores": ("grupos_reclutadores", "el OK de reclutadores"),
     "asuntos":      ("grupos_asuntos",      "el OK de Asuntos Internos"),
     "directores":   ("grupos_directores",   "el OK de Dirección"),
+    "invitacion":   ("grupos_invitacion",   "marcar la invitación como enviada"),
     "rechazo":      ("grupos_rechazo",      "rechazar o cerrar una solicitud"),
+}
+
+# A quién se avisa cuando se completa cada paso: le toca al siguiente.
+# ⚠ Dar un OK y que nadie se entere de que ahora le toca a otro es como no
+# darlo: la solicitud se queda esperando a alguien que no sabe que la espera.
+SIGUIENTE_ROL = {
+    "reclutadores": "rol_asuntos",
+    "asuntos":      "rol_directores",
+    "directores":   "rol_invitacion",
 }
 
 
