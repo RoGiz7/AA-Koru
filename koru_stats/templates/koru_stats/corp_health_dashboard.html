@@ -105,6 +105,56 @@
     </div>
   </div>
 
+{% comment %}
+★ ESTA PANTALLA NO NOMBRABA A NADIE. Daba el % de churn y la retención por
+cohorte, pero no decía quién. Una cifra de rotación no se puede accionar; una
+lista de nombres con días sin conectarse, sí.
+
+Y va aquí y no en el Auditor a propósito: una alerta del Auditor dice
+«investiga esto»; esto dice «decide si le das de baja». Mientras estuvieron
+juntas, dieciséis bajas pendientes le quitaban sitio a un awox.
+{% endcomment %}
+  <div class="card mb-3"><div class="card-body">
+    <h6 class="card-title">
+      Inactivos
+      <small class="text-muted">· {{ inactivo_dias }} días o más sin conectarse</small>
+      {% if inactivos %}<span class="badge bg-secondary">{{ inactivos|length }}</span>{% endif %}
+    </h6>
+    {% if inactivos %}
+    <p class="small text-muted">
+      Se mira el último login de <strong>cualquiera</strong> de sus personajes:
+      quien juega con un alt no está inactivo aunque su main lleve meses sin entrar.
+    </p>
+    <div class="table-responsive" style="max-height:420px;overflow:auto">
+      <table class="table table-sm align-middle mb-0">
+        <thead><tr>
+          <th>Piloto</th><th>Corp</th><th class="text-end">Sin conectarse</th>
+          <th>Último login</th><th class="text-end">Personajes</th>
+        </tr></thead>
+        <tbody>
+        {% for p in inactivos %}
+          <tr>
+            <td class="small"><a href="{% url 'koru_stats:auditor_pilot' p.id %}">{{ p.name }}</a></td>
+            <td class="small text-muted">{{ p.corp|default:"—" }}</td>
+            <td class="text-end small">
+              {% if p.dias %}
+                <span class="{% if p.dias >= 180 %}text-danger{% elif p.dias >= 90 %}text-warning{% endif %}">{{ p.dias }} días</span>
+              {% else %}
+                <span class="text-muted">sin dato</span>
+              {% endif %}
+            </td>
+            <td class="small text-muted">{{ p.ultimo|date:"d/m/Y"|default:"—" }}</td>
+            <td class="text-end small text-muted">{{ p.n_chars }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="text-muted small mb-0">Nadie lleva tanto tiempo sin conectarse.</p>
+    {% endif %}
+  </div></div>
+
   {% endif %}
 </div>
 

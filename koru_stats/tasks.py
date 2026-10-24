@@ -1722,7 +1722,16 @@ def emit_auditor_alerts(periods=None):
     created = 0
     dims = [
         ("score_huecos",  "huecos",  "cobertura",            "Cobertura/tokens del piloto en riesgo"),
-        ("score_fuga",    "fuga",    "inactividad",          "Caída de actividad / posible fuga"),
+        # ⚠ «inactividad» YA NO GENERA ALERTA (24/10/2026). Eran 16 de las 42
+        # alertas críticas vivas, y no son un problema de seguridad: son bajas
+        # pendientes de decidir. Una alerta del Auditor dice «investiga»; esto
+        # decía «echa a alguien», y mezcladas le quitaban sitio a un awox.
+        # Ahora la lista de inactivos vive en Salud de Corp, donde está quien
+        # decide las bajas.
+        #
+        # ⚠ El `score_fuga` SIGUE sumando al riesgo total. Quitarlo de ahí es
+        # otra decisión —cambia el ranking del semáforo entero— y no se toma
+        # de paso.
         ("score_espias",  "espias",  "concentracion_enemigo","Pérdidas concentradas ante una corp"),
         ("score_pvp",     "pvp",     "pvp_anomalo",          "Comportamiento PvP anómalo (incl. awox)"),
         ("score_ciclo",     "ciclo",      "ciclo_vida",  "Evento de ciclo de vida (salida/borrado/rotación)"),

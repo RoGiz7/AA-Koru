@@ -3,6 +3,33 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.50.0] — 2026-10-24
+
+### Cambiado
+
+- **La inactividad deja de ser una alerta del Auditor** y pasa a ser una lista
+  de bajas en Salud de Corp.
+  - ★ Son **dos acciones distintas**: una alerta del Auditor dice «investiga
+    esto»; la inactividad dice «decide si le das de baja». Mezcladas, las 16
+    bajas pendientes le quitaban sitio a un awox en la misma lista de críticas.
+  - Las críticas del Auditor pasan de 42 a **19**: PvP anómalo, financiero y
+    ciclo de vida. Eso sí es una lista de trabajo.
+  - ⚠ El `score_fuga` **sigue sumando al riesgo total**. Sacarlo de ahí cambia
+    el ranking del semáforo entero y es otra decisión; no se toma de paso.
+
+### Añadido
+
+- **Salud de Corp nombra a alguien, por fin.** Daba el % de churn y la
+  retención por cohorte, pero no decía **quién**: una cifra de rotación no se
+  puede accionar, una lista de nombres sí.
+  - Inactivos con 60 días o más, el último login, cuántos personajes tiene y
+    enlace a su ficha.
+  - ⚠ Mira el último login de **cualquiera** de sus personajes, no solo el
+    main: quien juega a diario con un alt no está inactivo. Mirando solo el
+    main, la lista daría bajas equivocadas.
+  - Quien no tiene dato de login sale como **«sin dato»**, no como inactivo, y
+    va al final. No es lo mismo no saber que saber que no.
+
 ## [0.49.0] — 2026-10-24
 
 ### Cambiado

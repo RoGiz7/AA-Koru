@@ -4987,6 +4987,72 @@ def tickets_stats(request):
 # Auditor — Directores/CEO (D1): Salud de corp
 # ---------------------------------------------------------------------------
 
+# Días sin conectarse a partir de los cuales un piloto entra en la lista de
+# inactivos. 60 es un mes y pico de margen: en EVE la gente se va de vacaciones
+# y vuelve, y una lista de bajas con gente de vacaciones no se usa dos veces.
+INACTIVO_DIAS = 60
+
+# ⚠ Pregunta por el MAIN pero mira TODOS sus personajes: alguien que juega a
+# diario con un alt no está inactivo aunque su main lleve meses sin entrar.
+# Mirar solo el main daría bajas equivocadas.
+SQL_INACTIVOS = """
+SELECT mec.character_id     AS main_id,
+       mec.character_name   AS main_name,
+       mec.corporation_name AS corp,
+       MAX(cau.last_known_login) AS ultimo,
+       COUNT(DISTINCT ec.id)     AS n_chars
+FROM authentication_userprofile up
+JOIN eveonline_evecharacter mec ON mec.id = up.main_character_id
+JOIN authentication_characterownership co ON co.user_id = up.user_id
+JOIN eveonline_evecharacter ec  ON ec.id = co.character_id
+LEFT JOIN corptools_characteraudit cau ON cau.character_id = ec.id
+WHERE mec.corporation_id IN %s
+GROUP BY mec.character_id, mec.character_name, mec.corporation_name
+"""
+
+
+def _inactivos():
+    """
+    Quién lleva mucho sin conectarse, y cuánto.
+
+    ★ VA EN SALUD DE CORP, NO EN EL AUDITOR. Son dos acciones distintas: una
+    alerta del Auditor dice «investiga esto»; esto dice «decide si le das de
+    baja». Mientras estuvieron juntas, dieciséis bajas pendientes le quitaban
+    sitio a un awox en la misma lista.
+    """
+    from datetime import date
+
+    from .models import TrackedCorporation
+
+    corps = list(TrackedCorporation.objects.filter(is_active=True)
+                 .values_list("corporation_id", flat=True))
+    if not corps:
+        return []
+
+    with connection.cursor() as cur:
+        cur.execute(SQL_INACTIVOS, [tuple(corps)])
+        filas = _fetchall(cur)
+
+    hoy = date.today()
+    fuera = []
+    for f in filas:
+        ultimo = f.get("ultimo")
+        if ultimo is None:
+            # Sin dato de login no se afirma que esté inactivo: se dice que no
+            # se sabe, que es otra cosa y se trata distinto.
+            fuera.append({"id": f["main_id"], "name": f["main_name"], "corp": f["corp"],
+                          "dias": None, "ultimo": None, "n_chars": f["n_chars"]})
+            continue
+        dias = (hoy - ultimo.date()).days
+        if dias >= INACTIVO_DIAS:
+            fuera.append({"id": f["main_id"], "name": f["main_name"], "corp": f["corp"],
+                          "dias": dias, "ultimo": ultimo, "n_chars": f["n_chars"]})
+
+    # Lo que se sabe primero; los «sin dato», al final.
+    fuera.sort(key=lambda x: (x["dias"] is None, -(x["dias"] or 0)))
+    return fuera
+
+
 @permission_required("koru_stats.auditor_corp_health")
 def corp_health_dashboard(request):
     from .models import CorpHealthSnapshot, CohortRetention
@@ -5047,6 +5113,8 @@ def corp_health_dashboard(request):
         "cohort_rows": cohort_rows,
         "cohort_offsets": OFFSETS,
     }
+    context["inactivos"] = _inactivos()
+    context["inactivo_dias"] = INACTIVO_DIAS
     return render(request, "koru_stats/corp_health_dashboard.html", context)
 
 
