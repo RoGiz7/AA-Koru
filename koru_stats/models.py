@@ -1851,8 +1851,26 @@ class RecruitNote(models.Model):
     # ⚠ Sin edicion a proposito. Esto es el expediente de una persona: si una
     # nota se puede reescribir despues, deja de servir para explicar por que se
     # decidio lo que se decidio.
+    # ★ QUIEN PUEDE LEERLA. Sin esto, una nota de Asuntos Internos del tipo
+    # «tiene un alt en una corp con la que tuvimos un problema, lo estamos
+    # mirando» la leeria el reclutador de turno — que puede ser alguien que
+    # entro hace dos meses, o que conoce al solicitante. Una investigacion que
+    # el investigado puede acabar sabiendo deja de ser una investigacion.
+    #
+    # ⚠ Las reservadas NO se enseñan NI SE INSINUAN a quien no puede leerlas:
+    # «hay algo que no puedo ver» ya es informacion, y quien escribe no deberia
+    # tener que calcular si el hueco delata algo.
+    TODOS     = "staff"
+    RESERVADA = "reservada"
+    VISIBILIDAD = (
+        (TODOS,     "Todo el staff de reclutamiento"),
+        (RESERVADA, "Solo Asuntos Internos y Dirección"),
+    )
+
     solicitud = models.ForeignKey(RecruitApplication, on_delete=models.CASCADE,
                                   related_name="notas")
+    visibilidad = models.CharField(max_length=10, choices=VISIBILIDAD, default=TODOS,
+                                   db_index=True)
     autor = models.ForeignKey(User, null=True, blank=True,
                               on_delete=models.SET_NULL, related_name="+")
     autor_nombre = models.CharField(max_length=100, blank=True, default="",

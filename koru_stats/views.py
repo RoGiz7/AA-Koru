@@ -3631,6 +3631,12 @@ def recruit_ficha(request, sol_id):
 
     puedo_rechazar, motivo_rechazo = recruit.puede(request.user, "rechazo")
 
+    from .models import RecruitNote
+    reservadas = recruit.lee_reservadas(request.user)
+    notas = sol.notas.all().select_related("autor")
+    if not reservadas:
+        notas = notas.exclude(visibilidad=RecruitNote.RESERVADA)
+
     # El enlace al canal necesita el guild, que no esta en el retrato: sale de
     # la configuracion del Auth, que es donde vive.
     from django.conf import settings
@@ -3643,7 +3649,10 @@ def recruit_ficha(request, sol_id):
         "cadena": cadena,
         "puedo_rechazar": puedo_rechazar,
         "motivo_rechazo": motivo_rechazo,
-        "notas": sol.notas.all().select_related("autor"),
+        # ⚠ Las reservadas se FILTRAN en la consulta, no se esconden en la
+        # plantilla: lo que no se puede leer no debe ni llegar a la pagina.
+        "notas": notas,
+        "puedo_reservar": reservadas,
         "finales": [(c, n) for c, n in RecruitApplication.ESTADOS
                     if c in RecruitApplication.CERRADOS],
     })
@@ -3687,9 +3696,18 @@ def recruit_accion(request, sol_id):
         if not texto:
             messages.error(request, "La nota estaba vacía.")
         else:
+            # Solo quien puede LEER reservadas puede escribirlas. Si no,
+            # cualquiera podria esconder una nota a quien tiene que verla.
+            pedida = request.POST.get("visibilidad") or RecruitNote.TODOS
+            if pedida == RecruitNote.RESERVADA and not recruit.lee_reservadas(request.user):
+                pedida = RecruitNote.TODOS
             RecruitNote.objects.create(solicitud=sol, autor=request.user,
-                                       autor_nombre=quien, texto=texto[:5000])
-            messages.success(request, "Nota guardada.")
+                                       autor_nombre=quien, texto=texto[:5000],
+                                       visibilidad=pedida)
+            messages.success(
+                request,
+                "Nota reservada guardada." if pedida == RecruitNote.RESERVADA
+                else "Nota guardada.")
 
     elif accion == "aprobar":
         paso = request.POST.get("paso") or ""

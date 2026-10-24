@@ -397,3 +397,19 @@ def puede(user, paso):
     _, que = PASOS[paso]
     return False, (f"No puedes dar {que}: eso lo hace "
                    + " o ".join(grupos) + ". Avísales y lo darán ellos.")
+
+
+def lee_reservadas(user):
+    """
+    ¿Puede leer —y escribir— notas reservadas?
+
+    Quien da el paso de Asuntos Internos o el de Dirección. Se deriva de la
+    misma configuración que la cadena: un sitio donde decidirlo, no dos.
+    """
+    if not user.is_authenticated:
+        return False
+    if user.is_superuser:
+        return True
+    mios = set(user.groups.values_list("name", flat=True))
+    permitidos = set(quien_puede("asuntos")) | set(quien_puede("directores"))
+    return bool(mios & permitidos)

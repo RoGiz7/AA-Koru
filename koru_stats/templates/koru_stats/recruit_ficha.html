@@ -21,6 +21,7 @@
 .nota { padding:.5rem .8rem; border-radius:10px; background:rgba(255,255,255,.05);
         margin-bottom:.4rem; font-size:.87rem; }
 .nota .quien { font-size:.76rem; opacity:.65; }
+.nota.reservada { border-left:3px solid rgba(220,53,69,.8); }
 .señal { font-size:.85rem; }
 </style>
 {% endblock %}
@@ -142,8 +143,13 @@
       <div class="card"><div class="card-body">
         <h6 class="card-title">Notas del staff</h6>
         {% for n in notas %}
-        <div class="nota">
-          <div class="quien">{{ n.autor_nombre|default:"—" }} · {{ n.created_at|date:"d/m/Y H:i" }}</div>
+        <div class="nota{% if n.visibilidad == 'reservada' %} reservada{% endif %}">
+          <div class="quien">
+            {{ n.autor_nombre|default:"—" }} · {{ n.created_at|date:"d/m/Y H:i" }}
+            {% if n.visibilidad == 'reservada' %}
+              <span class="badge bg-danger ms-1">🔒 Asuntos Internos y Dirección</span>
+            {% endif %}
+          </div>
           <div>{{ n.texto|linebreaksbr }}</div>
         </div>
         {% empty %}
@@ -155,6 +161,17 @@
           <input type="hidden" name="accion" value="nota">
           <textarea class="form-control form-control-sm mb-2" name="texto" rows="2"
                     placeholder="Lo que quieras dejar escrito de esta solicitud"></textarea>
+          {% if puedo_reservar %}
+{% comment %}
+Quien puede leer reservadas puede escribirlas. Al que no, ni se le ofrece — y
+tampoco ve que existan: una nota que no se puede leer, pero cuyo hueco se nota,
+ya está diciendo algo.
+{% endcomment %}
+          <select class="form-select form-select-sm mb-2" name="visibilidad">
+            <option value="staff">La ve todo el staff de reclutamiento</option>
+            <option value="reservada">Solo Asuntos Internos y Dirección</option>
+          </select>
+          {% endif %}
           <button class="btn btn-sm btn-outline-secondary">Añadir nota</button>
           <span class="small text-muted ms-2">Las notas no se editan ni se borran.</span>
         </form>

@@ -3,6 +3,33 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.35.0] — 2026-10-24
+
+### Añadido
+
+- **Pantalla del staff de reclutamiento**: lista con el contador de abiertas,
+  ficha con el retrato del piloto, las respuestas, las notas y la cadena de
+  aprobaciones. Cada paso solo lo da quien tiene su grupo, y al que no le toca
+  **se le dice quién tiene que darlo** en vez de esconderle el botón.
+- No se puede adelantar un paso: aprobar el tercero sin el primero dejaría un
+  expediente diciendo que pasó algo que no pasó.
+- **Notas reservadas a Asuntos Internos y Dirección.** Sin esto, una nota del
+  tipo «tiene un alt en una corp con la que tuvimos un problema, lo estamos
+  mirando» la leería el reclutador de turno — que puede ser alguien que entró
+  hace dos meses, o que conoce al solicitante.
+- **Ver y aprobar no son lo mismo**: Asuntos Internos y Dirección entran a la
+  pantalla aunque no tengan `recruit_manage`, porque su paso está dentro.
+
+### Cuidado
+
+- Las notas reservadas **ni se enseñan ni se insinúan** a quien no puede
+  leerlas: se filtran en la consulta, no en la plantilla. «Hay algo que no
+  puedo ver» ya es información, y quien escribe no debería tener que calcular
+  si el hueco delata algo.
+- Solo quien puede **leer** reservadas puede **escribirlas**: si no, cualquiera
+  podría esconder una nota a quien tiene que verla.
+- Lo ya escrito se queda como «todo el staff»: es lo que era cuando se escribió.
+
 ## [0.34.0] — 2026-10-24
 
 ### Añadido
