@@ -297,6 +297,11 @@ def ficha_discord(solicitud, retrato):
             lineas.append(f"- {s}")
 
     lineas.append("")
+    # ★ Los comandos, en el propio mensaje. Un comando que nadie sabe que
+    # existe es un comando que no existe.
+    lineas.append("*Desde aquí: `/recluta estado` · `/recluta entrevista` · "
+                  "`/recluta ok` · `/recluta invitacion`*")
+    lineas.append("")
     lineas.append("**📝 Lo que nos ha contado**")
     for item in para_leer(solicitud.respuestas):
         lineas.append(f"**{item['etiqueta']}**")

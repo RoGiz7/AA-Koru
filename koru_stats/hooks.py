@@ -248,3 +248,15 @@ def register_menu_reclutamiento_gestion():
         navactive=["koru_stats:recruit_lista"],
         order=1209,
     )
+
+
+@hooks.register("discord_cogs_hook")
+def register_cogs():
+    """
+    El cog de reclutamiento, para dar los pasos desde el canal de Discord.
+
+    ⚠ Corre en el proceso del bot (`myauth:authbot`), no en el web. Un cambio
+    aquí necesita reiniciar ese proceso — si algo «no se actualiza» en Discord
+    después de desplegar, es esto.
+    """
+    return ["koru_stats.cogs.reclutamiento"]

@@ -3,6 +3,41 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.42.0] — 2026-10-24
+
+### Añadido
+
+- **Cog de Discord**: los pasos de la solicitud se pueden dar desde su propio
+  canal, sin abrir el Auth.
+  - `/recluta estado` — en qué punto va
+  - `/recluta entrevista [nota]` — marcarla hecha
+  - `/recluta ok` — dar el OK al paso que toque
+  - `/recluta invitacion` — marcar la invitación enviada
+- Los comandos van escritos **en el propio mensaje de la ficha**: un comando que
+  nadie sabe que existe es un comando que no existe.
+
+### Decisiones
+
+- **Comandos y no botones.** Los botones quedan mejor, pero los persistentes se
+  pierden al reiniciar el bot si no se vuelven a registrar — y ese fallo no se
+  nota el día que pasa, se nota semanas después cuando alguien pulsa y no ocurre
+  nada. Los botones se pueden añadir encima más adelante.
+- **El cog no decide nada**: llama a las mismas funciones de `recruit.py` que la
+  pantalla web. Quién puede, en qué orden y qué se escribe está en un solo sitio.
+- La respuesta al que ejecuta es **efímera**; lo que se anuncia al canal es otra
+  cosa. Mezclarlas llenaría el canal de ruido.
+- Si quien ejecuta **no tiene Discord vinculado** en el Auth, se le dice — pasa
+  de verdad, y es mejor que dejarle ejecutando sin efecto.
+
+### ⚠ Sin probar
+
+El cog **no se ha ejecutado nunca**. Está comprobado que el Python es válido y
+que usa la misma lógica que la web, pero las interacciones de Discord solo se
+ven ejecutándolas. Cuenta con una o dos vueltas de ajuste.
+
+Corre en el proceso `myauth:authbot`, así que **hay que reiniciarlo** para que
+los comandos aparezcan, y Discord puede tardar unos minutos en registrarlos.
+
 ## [0.41.1] — 2026-10-24
 
 ### Cambiado (por dentro)
