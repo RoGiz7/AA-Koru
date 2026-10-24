@@ -193,3 +193,31 @@ def register_menu_regalos_gestion():
 @hooks.register("url_hook")
 def register_urls():
     return UrlHook(urls, "koru_stats", r"^koru/")
+
+
+class ReclutamientoMenuHook(MenuItemHook):
+    """
+    ★ SIN COMPROBAR NINGÚN PERMISO, a propósito. Esta entrada es justo para
+    quien todavía no es nadie en la corp: alguien que acaba de entrar al Auth y
+    no tiene grupo ninguno. Si pidiera `basic_access` la vería todo el mundo
+    menos las personas a las que va dirigida.
+    """
+
+    def render(self, request):
+        if not request.user.is_authenticated:
+            return ""
+        return super().render(request)
+
+
+@hooks.register("menu_item_hook")
+def register_menu_reclutamiento():
+    return ReclutamientoMenuHook(
+        "Únete a Rekium",
+        "fas fa-user-plus fa-fw",
+        "koru_stats:recruit_wizard",
+        navactive=["koru_stats:recruit_wizard"],
+        # Número bajo para que salga arriba, junto a Patreon, y no enterrado
+        # entre las pantallas de staff: quien lo necesita es el que menos sabe
+        # moverse por aquí.
+        order=15,
+    )

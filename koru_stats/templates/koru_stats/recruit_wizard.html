@@ -1,0 +1,248 @@
+{% extends 'allianceauth/base-bs5.html' %}
+{% load i18n %}
+
+{% block title %}Únete a Rekium{% endblock %}
+
+{% block page_title %}
+    {% include "framework/header/page-header.html" with title="Únete a Rekium" subtitle="Solicitud de ingreso" %}
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.pasos { display:flex; gap:.5rem; flex-wrap:wrap; margin-bottom:1.25rem; }
+.paso { flex:1 1 150px; padding:.6rem .8rem; border-radius:10px; font-size:.85rem;
+        background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.08); }
+.paso.hecho   { border-color:rgba(25,135,84,.5); }
+.paso.actual  { border-color:rgba(13,110,253,.7); background:rgba(13,110,253,.12); }
+.paso .n      { font-weight:700; opacity:.6; margin-right:.35rem; }
+.paso .q      { display:block; font-size:.78rem; opacity:.7; margin-top:.15rem; }
+
+/* El formulario, de una pregunta en una */
+.pregunta { display:none; }
+.pregunta.visible { display:block; animation:entra .25s ease-out; }
+@keyframes entra { from { opacity:0; transform:translateY(8px) } to { opacity:1; transform:none } }
+.contestada { padding:.5rem .8rem; border-radius:10px; background:rgba(255,255,255,.05);
+              margin-bottom:.5rem; font-size:.87rem; }
+.contestada .p { opacity:.65; font-size:.78rem; }
+.contestada .r { white-space:pre-wrap; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+  <div class="row justify-content-center"><div class="col-lg-8">
+
+    {% if ultima_cerrada %}
+    <div class="alert alert-secondary">
+      Tu solicitud anterior quedó como <strong>{{ ultima_cerrada.get_estado_display }}</strong>.
+      {% if ultima_cerrada.motivo_cierre %}<br><span class="small">{{ ultima_cerrada.motivo_cierre }}</span>{% endif %}
+    </div>
+    {% endif %}
+
+    {% comment %}
+    Los cuatro pasos siempre a la vista, también los que faltan. Saber cuánto
+    queda es la diferencia entre un trámite y un camino.
+    {% endcomment %}
+    <div class="pasos">
+      <div class="paso {% if datos.main_id %}hecho{% elif paso == 'personaje' %}actual{% endif %}">
+        <span class="n">1</span>Tu personaje
+        <span class="q">{% if datos.main_id %}✓ {{ datos.main_nombre }}{% else %}Pendiente{% endif %}</span>
+      </div>
+      <div class="paso {% if datos.personajes > 1 %}hecho{% elif paso == 'alts' %}actual{% endif %}">
+        <span class="n">2</span>Tus alts
+        <span class="q">{% if datos.personajes > 1 %}✓ {{ datos.personajes }} personajes{% else %}Opcional{% endif %}</span>
+      </div>
+      <div class="paso {% if datos.discord_uid %}hecho{% elif paso == 'discord' %}actual{% endif %}">
+        <span class="n">3</span>Discord
+        <span class="q">{% if datos.discord_uid %}✓ {{ datos.discord }}{% else %}Pendiente{% endif %}</span>
+      </div>
+      <div class="paso {% if paso == 'formulario' %}actual{% endif %}">
+        <span class="n">4</span>Cuéntanos de ti
+        <span class="q">{% if paso == 'formulario' %}Ahora{% else %}Al final{% endif %}</span>
+      </div>
+    </div>
+
+    {% if paso == 'personaje' %}
+    <div class="card"><div class="card-body">
+      <h5>Empecemos por tu personaje principal</h5>
+      <p class="text-muted">
+        Para entrar en Rekium necesitamos saber quién eres dentro del juego. Se hace
+        con el login oficial de EVE: nosotros no vemos tu contraseña en ningún momento.
+      </p>
+      <p class="text-muted small">
+        Es también lo que nos deja ver tus skills y tu historial de corps, así que
+        el reclutador no tendrá que preguntarte por ellos.
+      </p>
+      <a class="btn btn-primary" href="/account/characters/add/">
+        <i class="fas fa-plus me-1"></i>Registrar mi personaje
+      </a>
+      <div class="small text-muted mt-2">Cuando termines, vuelve a esta página.</div>
+    </div></div>
+
+    {% elif paso == 'alts' %}
+    <div class="card"><div class="card-body">
+      <h5>¿Tienes más personajes?</h5>
+      <p class="text-muted">
+        Si juegas con alts, regístralos también. No es obligatorio, pero ahorra la
+        conversación de después — y un alt que aparece más tarde, sin avisar, levanta
+        preguntas que no hacen falta.
+      </p>
+      <div class="d-flex gap-2 flex-wrap">
+        <a class="btn btn-primary" href="/account/characters/add/">
+          <i class="fas fa-plus me-1"></i>Añadir otro personaje
+        </a>
+        <a class="btn btn-outline-secondary" href="?sin_alts=1">
+          Solo tengo este, seguir
+        </a>
+      </div>
+    </div></div>
+
+    {% elif paso == 'discord' %}
+    <div class="card"><div class="card-body">
+      <h5>Vincula tu Discord</h5>
+      <p class="text-muted">
+        La entrevista y el día a día de la corp pasan en Discord. Al vincularlo,
+        tu cuenta de aquí y la de allí quedan unidas, y podremos abrirte tu canal
+        privado en cuanto envíes la solicitud.
+      </p>
+      <a class="btn btn-primary" href="/services/">
+        <i class="fab fa-discord me-1"></i>Ir a servicios y activar Discord
+      </a>
+      <div class="small text-muted mt-2">Cuando termines, vuelve a esta página.</div>
+    </div></div>
+
+    {% elif paso == 'formulario' %}
+    <div class="card"><div class="card-body">
+      <h5>Ya casi está, {{ datos.main_nombre }}</h5>
+      <p class="text-muted">
+        Solo nos falta conocerte un poco. Son {{ preguntas|length }} preguntas y
+        van de una en una.
+      </p>
+
+      <form method="post" action="{% url 'koru_stats:recruit_enviar' %}" id="formSolicitud">
+        {% csrf_token %}
+        <div id="contestadas"></div>
+
+        {% for p in preguntas %}
+        <div class="pregunta{% if forloop.first %} visible{% endif %}"
+             data-idx="{{ forloop.counter0 }}" data-clave="{{ p.clave }}"
+             data-etiqueta="{{ p.etiqueta }}">
+          <label class="form-label fw-semibold" for="q{{ p.clave }}">{{ p.etiqueta }}</label>
+          {% if p.ayuda %}<div class="form-text mb-2">{{ p.ayuda }}</div>{% endif %}
+
+          {% if p.tipo == 'larga' %}
+            <textarea class="form-control" id="q{{ p.clave }}" name="{{ p.clave }}" rows="4"
+                      {% if p.obligatoria %}required{% endif %}></textarea>
+          {% elif p.tipo == 'opcion' %}
+            <select class="form-select" id="q{{ p.clave }}" name="{{ p.clave }}"
+                    {% if p.obligatoria %}required{% endif %}>
+              <option value="">Elige una opción…</option>
+              {% for o in p.opciones %}<option value="{{ o }}">{{ o }}</option>{% endfor %}
+            </select>
+          {% else %}
+            <input class="form-control" id="q{{ p.clave }}" name="{{ p.clave }}" type="text"
+                   {% if p.obligatoria %}required{% endif %}>
+          {% endif %}
+
+          <div class="mt-3 d-flex gap-2">
+            <button type="button" class="btn btn-primary siguiente">
+              {% if forloop.last %}Enviar solicitud{% else %}Siguiente{% endif %}
+            </button>
+            {% if not forloop.first %}
+            <button type="button" class="btn btn-link text-muted atras">Atrás</button>
+            {% endif %}
+          </div>
+          <div class="small text-danger mt-2 aviso" style="display:none"></div>
+        </div>
+        {% endfor %}
+      </form>
+    </div></div>
+    {% endif %}
+
+  </div></div>
+</div>
+{% endblock %}
+
+{% block extra_javascript %}
+{% if paso == 'formulario' %}
+<script>
+(function () {
+  const form = document.getElementById('formSolicitud');
+  if (!form) return;
+  const preguntas = [...form.querySelectorAll('.pregunta')];
+  const hechas = document.getElementById('contestadas');
+  let i = 0;
+
+  // ⚠ Las respuestas se guardan en el navegador mientras se rellena. Son seis
+  // preguntas, pero una de ellas pide pensar: si alguien recarga sin querer a
+  // mitad, perder lo escrito es la forma más tonta de perder un solicitante.
+  const CAJA = 'koru_recruit_borrador';
+  function guardar() {
+    try {
+      const d = {};
+      preguntas.forEach(p => { const c = p.querySelector('[name]'); if (c && c.value) d[c.name] = c.value; });
+      localStorage.setItem(CAJA, JSON.stringify(d));
+    } catch (e) { /* modo privado, sin espacio: no es motivo para romper nada */ }
+  }
+  function recuperar() {
+    try {
+      const d = JSON.parse(localStorage.getItem(CAJA) || '{}');
+      preguntas.forEach(p => { const c = p.querySelector('[name]'); if (c && d[c.name]) c.value = d[c.name]; });
+    } catch (e) { /* idem */ }
+  }
+  recuperar();
+
+  function pintarHechas() {
+    hechas.innerHTML = '';
+    preguntas.slice(0, i).forEach(p => {
+      const c = p.querySelector('[name]');
+      const div = document.createElement('div');
+      div.className = 'contestada';
+      div.innerHTML = '<div class="p"></div><div class="r"></div>';
+      div.querySelector('.p').textContent = p.dataset.etiqueta;
+      div.querySelector('.r').textContent = c.value;
+      hechas.appendChild(div);
+    });
+  }
+
+  function mostrar(n) {
+    preguntas.forEach((p, k) => p.classList.toggle('visible', k === n));
+    i = n;
+    pintarHechas();
+    const c = preguntas[n].querySelector('[name]');
+    if (c) c.focus();
+  }
+
+  form.addEventListener('click', function (ev) {
+    const sig = ev.target.closest('.siguiente');
+    const atr = ev.target.closest('.atras');
+    if (!sig && !atr) return;
+
+    const actual = ev.target.closest('.pregunta');
+    const campo = actual.querySelector('[name]');
+    const aviso = actual.querySelector('.aviso');
+
+    if (atr) { mostrar(Math.max(0, i - 1)); return; }
+
+    if (campo.required && !campo.value.trim()) {
+      aviso.textContent = 'Esta no la podemos saltar.';
+      aviso.style.display = '';
+      campo.focus();
+      return;
+    }
+    aviso.style.display = 'none';
+    guardar();
+
+    if (i < preguntas.length - 1) { mostrar(i + 1); return; }
+
+    // Última: se envía. Se limpia el borrador DESPUÉS de enviar, no antes.
+    try { localStorage.removeItem(CAJA); } catch (e) {}
+    form.submit();
+  });
+
+  form.addEventListener('input', guardar);
+  pintarHechas();
+})();
+</script>
+{% endif %}
+{% endblock %}

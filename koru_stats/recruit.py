@@ -239,3 +239,94 @@ def retrato(user, main_id=0):
         # para eso esta el boton de abrir auditoria y Asuntos Internos detras.
         "señales": señales,
     }
+
+
+# ---------------------------------------------------------------------------
+# El canal de Discord de la solicitud
+# ---------------------------------------------------------------------------
+
+def _miles(n):
+    try:
+        return f"{int(n):,}".replace(",", ".")
+    except (TypeError, ValueError):
+        return "—"
+
+
+def ficha_discord(solicitud, retrato):
+    """
+    El texto que se publica en el canal: lo que el reclutador necesita para la
+    entrevista, y nada más.
+
+    ⚠ Es un RESUMEN, no una auditoría. Si se llena de datos, el reclutador deja
+    de leerlos todos y el filtro empeora. Lo que no está aquí está en la ficha
+    de AA, y lo que huele se manda a Asuntos Internos con su botón.
+    """
+    r = retrato or {}
+    lineas = [f"## 🪪 {solicitud.main_character_name}"]
+
+    if r.get("discord"):
+        lineas.append(f"**Discord:** {r['discord']}")
+    lineas.append(f"**Personajes:** {r.get('total_personajes', 0)} · "
+                  f"**SP totales:** {_miles(r.get('sp_total'))}")
+    lineas.append("")
+
+    for c in r.get("personajes", []):
+        marca = "★ " if c.get("es_main") else "• "
+        sp = "sin datos de ESI aún" if c.get("sin_datos_esi") else _miles(c.get("sp")) + " SP"
+        edad = f"{c['edad_dias']} días" if c.get("edad_dias") is not None else "edad ?"
+        lineas.append(f"{marca}**{c.get('nombre')}** — {sp} · cuenta de {edad} · "
+                      f"{c.get('corp') or '?'} · {c.get('corps_total', 0)} corps")
+
+    if r.get("señales"):
+        lineas.append("")
+        lineas.append("**⚠ A tener en cuenta**")
+        for s in r["señales"]:
+            lineas.append(f"- {s}")
+
+    lineas.append("")
+    lineas.append("**📝 Lo que nos ha contado**")
+    for item in para_leer(solicitud.respuestas):
+        lineas.append(f"**{item['etiqueta']}**")
+        lineas.append(item["valor"] or "—")
+        lineas.append("")
+
+    return "\n".join(lineas)
+
+
+def crear_canal(solicitud, retrato):
+    """
+    Abre el canal privado del solicitante y publica su ficha.
+
+    Devuelve el id del canal. Lanza ValueError con un motivo legible si falta
+    configuración: quien llama lo guarda en `discord_error` y la solicitud sigue
+    viva — el reclutador la ve igual, solo que marcada como «sin canal».
+    """
+    from .models import RecruitConfig
+    from . import discordapi
+
+    cfg = RecruitConfig.objects.filter(tag="default").first()
+    if not cfg or not cfg.activo:
+        raise ValueError("El reclutamiento por Discord está apagado en la configuración")
+    if not cfg.categoria_id:
+        raise ValueError("Falta la categoría de Discord en la configuración de reclutamiento")
+
+    nombre = discordapi.nombre_canal(cfg.prefijo_canal, solicitud.main_character_name)
+
+    # El uid del solicitante sale del retrato, que lo guardó como «nombre (uid)».
+    uid = ""
+    bruto = (retrato or {}).get("discord") or ""
+    if "(" in bruto and bruto.rstrip().endswith(")"):
+        uid = bruto.rsplit("(", 1)[1].rstrip(")").strip()
+
+    canal = discordapi.crear_canal(
+        nombre, cfg.categoria_id, roles_ver=cfg.roles_ver or [], uid_invitado=uid)
+
+    # ★ Si el canal se crea pero el mensaje falla, el canal NO se pierde: se
+    # devuelve igual y el fallo se anota. Un canal vacío es recuperable; uno
+    # que no sabemos que existe, no.
+    try:
+        discordapi.publicar(canal, ficha_discord(solicitud, retrato))
+    except Exception as exc:
+        logger.error("koru recruit: canal %s creado pero sin ficha: %s", canal, exc)
+
+    return canal

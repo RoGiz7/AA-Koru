@@ -5,6 +5,12 @@ app_name = "koru_stats"
 
 urlpatterns = [
     path("", views.dashboard, name="dashboard"),
+
+    # Reclutamiento: lo ve cualquiera que haya entrado, sea o no de la corp.
+    path("reclutamiento/", views.recruit_wizard, name="recruit_wizard"),
+    path("reclutamiento/enviar/", views.recruit_enviar, name="recruit_enviar"),
+    path("reclutamiento/enviada/", views.recruit_enviada, name="recruit_enviada"),
+
     path("personal/", views.mi_dashboard, name="mi_dashboard"),
     path("corp/", views.corp_dashboard, name="corp_dashboard"),
     path("lunas/", views.moon_dashboard_v2, name="moon_dashboard"),

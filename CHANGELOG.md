@@ -3,6 +3,47 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.33.0] — 2026-10-24
+
+### Añadido
+
+- **«Únete a Rekium»: el asistente del solicitante.** Entrada propia en el menú,
+  visible para cualquiera que haya entrado al Auth aunque no tenga ningún grupo
+  — que es justo a quien va dirigida. Cuatro pasos: personaje principal, alts
+  (saltables), Discord, y el formulario. Cada paso se **verifica contra la base**
+  al volver, no se fía de que el piloto diga que ya lo hizo.
+- El formulario va **de una pregunta en una**, con las contestadas a la vista
+  arriba. Se guarda un borrador en el navegador mientras se rellena: son seis
+  preguntas, pero una pide pensar, y perder lo escrito por una recarga es la
+  forma más tonta de perder un solicitante.
+- **El canal de Discord lo crea Koru**, no n8n (`discordapi.py`), con la ficha
+  del piloto publicada dentro. Configuración en *Reclutamiento — configuración*:
+  categoría, prefijo del canal y roles que lo ven.
+
+### Por qué directo a Discord y no por n8n
+
+El Auth ya tiene bot y token, y ya los usa. Mandar a n8n algo que podemos hacer
+aquí añade un workflow que mantener, un secreto más que cruzar y un sitio más
+donde mirar cuando falle. En n8n se queda lo que **nace** en Discord —botones y
+modales—, porque allí está el disparador.
+
+### Decisiones
+
+- **El canal se crea al enviar, no al aprobar**: la entrevista es el primer
+  filtro, así que el reclutador necesita hablar antes de decidir.
+- **Pero en segundo plano**: si Discord tarda o falla, la solicitud ya está
+  guardada y nadie pierde el formulario. Lo que falle queda en `discord_error`
+  y se ve en la pantalla del reclutador, no en un limbo silencioso.
+- **La configuración nace apagada y sin categoría.** Mejor que las solicitudes
+  salgan «sin canal» a que una migración se invente una categoría y aparezcan
+  canales sueltos en la raíz del Discord.
+- **Una solicitud abierta por persona.** Si ya tiene una en marcha se le enseña
+  en qué punto va, no el formulario otra vez: dos solicitudes abiertas son dos
+  reclutadores haciendo el mismo trabajo sin saberlo.
+- Los permisos del canal son **los mismos que usan las auditorías** creadas
+  desde Discord. Si aquí pusiéramos otros, dos canales del mismo tipo se
+  comportarían distinto según quién los creó.
+
 ## [0.32.1] — 2026-10-24
 
 ### Corregido

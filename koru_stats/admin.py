@@ -14,7 +14,7 @@ from .models import (
     GiftContribution, GiftContributionItem,
     Raffle, RaffleEntrant, RafflePrize, RaffleDraw, RaffleRosterFilter,
     GiftDelivery,
-    RecruitApplication, RecruitNote, RecruitQuestion,
+    RecruitApplication, RecruitNote, RecruitQuestion, RecruitConfig,
 )
 
 
@@ -632,3 +632,31 @@ class RecruitApplicationAdmin(admin.ModelAdmin):
 
     def has_add_permission(self, request):
         return False      # Una solicitud nace del formulario, no del admin
+
+
+@admin.register(RecruitConfig)
+class RecruitConfigAdmin(admin.ModelAdmin):
+    """Dónde nacen los canales de reclutamiento y quién los ve."""
+
+    list_display = ("__str__", "categoria_id", "prefijo_canal", "updated_at")
+
+    fieldsets = (
+        ("Interruptor", {
+            "fields": ("activo",),
+            "description": "Apagado: la solicitud se guarda igual, pero no se crea canal. "
+                           "La pantalla del reclutador la enseña marcada como «sin canal».",
+        }),
+        ("Discord", {
+            "fields": ("categoria_id", "prefijo_canal", "roles_ver", "avisar_en"),
+            "description": "⚠ Los ids se copian de Discord con el modo desarrollador activado "
+                           "(clic derecho → Copiar id). `roles_ver` es una lista JSON de ids "
+                           "de rol; quien no esté ahí no verá el canal.",
+        }),
+    )
+
+    def has_add_permission(self, request):
+        # Una sola configuración. La crea la migración.
+        return not RecruitConfig.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False

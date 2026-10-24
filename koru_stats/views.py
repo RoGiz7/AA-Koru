@@ -3371,6 +3371,173 @@ def auditor_abrir_auditoria(request, main_id):
     return redirect(destino)
 
 
+
+# ---------------------------------------------------------------------------
+# Reclutamiento — el asistente del solicitante
+# ---------------------------------------------------------------------------
+#
+# ★ UN ASISTENTE Y NO UN FORMULARIO SUELTO. Pedirle a alguien que registre sus
+# personajes por ESI y vincule Discord ANTES de dejarle solicitar es una barrera
+# que se nota. Guiarle paso a paso, diciendo en cada punto que falta y por que,
+# convierte esa barrera en un camino. El requisito es el mismo; la sensacion no.
+#
+# ⚠ Registrar personajes y vincular Discord son PANTALLAS DE AA, no nuestras.
+# El piloto sale a ellas y vuelve. Por eso cada paso se verifica contra la base
+# al volver, en vez de fiarnos de que diga que ya lo hizo.
+
+PASO_PERSONAJE = "personaje"
+PASO_ALTS      = "alts"
+PASO_DISCORD   = "discord"
+PASO_FORM      = "formulario"
+
+
+def _estado_registro(user):
+    """Que tiene ya este usuario. Todo verificado contra la base."""
+    datos = {"main_id": 0, "main_nombre": "", "personajes": 0,
+             "discord": "", "discord_uid": ""}
+    with connection.cursor() as cur:
+        cur.execute(
+            "SELECT mc.character_id, mc.character_name "
+            "FROM authentication_userprofile up "
+            "LEFT JOIN eveonline_evecharacter mc ON mc.id = up.main_character_id "
+            "WHERE up.user_id = %s", [user.id])
+        fila = cur.fetchone()
+        if fila and fila[0]:
+            datos["main_id"], datos["main_nombre"] = int(fila[0]), fila[1] or ""
+
+        cur.execute("SELECT COUNT(*) FROM authentication_characterownership WHERE user_id = %s",
+                    [user.id])
+        datos["personajes"] = int(cur.fetchone()[0] or 0)
+
+        # El modulo de Discord puede no estar instalado; no es motivo para que
+        # el asistente reviente.
+        try:
+            cur.execute("SELECT uid, username FROM discord_discorduser WHERE user_id = %s",
+                        [user.id])
+            fila = cur.fetchone()
+            if fila:
+                datos["discord_uid"] = str(fila[0] or "")
+                datos["discord"] = fila[1] or ""
+        except Exception:
+            pass
+    return datos
+
+
+def _paso_actual(datos, salto_alts):
+    """El primer paso que falta. Los alts se pueden saltar; lo demas no."""
+    if not datos["main_id"]:
+        return PASO_PERSONAJE
+    if datos["personajes"] < 2 and not salto_alts:
+        return PASO_ALTS
+    if not datos["discord_uid"]:
+        return PASO_DISCORD
+    return PASO_FORM
+
+
+@login_required
+def recruit_wizard(request):
+    """El camino del solicitante, de registrarse a enviar la solicitud."""
+    from .models import RecruitApplication
+    from . import recruit
+
+    datos = _estado_registro(request.user)
+
+    # ★ Si ya tiene una solicitud en marcha NO se le enseña el formulario otra
+    # vez: se le enseña en que punto esta. Dos solicitudes abiertas de la misma
+    # persona son dos reclutadores haciendo el mismo trabajo sin saberlo.
+    abierta = (RecruitApplication.objects
+               .filter(user=request.user)
+               .exclude(estado__in=RecruitApplication.CERRADOS)
+               .order_by("-created_at").first())
+    if abierta:
+        return render(request, "koru_stats/recruit_enviada.html",
+                      {"solicitud": abierta, "ya_estaba": True})
+
+    ultima = (RecruitApplication.objects.filter(user=request.user)
+              .order_by("-created_at").first())
+
+    salto_alts = request.GET.get("sin_alts") == "1"
+    paso = _paso_actual(datos, salto_alts)
+
+    return render(request, "koru_stats/recruit_wizard.html", {
+        "datos": datos,
+        "paso": paso,
+        "preguntas": recruit.preguntas_activas() if paso == PASO_FORM else [],
+        # Si solicito antes y le dijeron que no, se le dice: callarselo y
+        # dejarle rellenar otra vez seria hacerle perder el tiempo.
+        "ultima_cerrada": ultima if (ultima and not ultima.abierta) else None,
+    })
+
+
+@login_required
+def recruit_enviar(request):
+    """Recibe el formulario y crea la solicitud."""
+    from django.contrib import messages
+    from django.shortcuts import redirect
+    from django.urls import reverse
+
+    from .models import RecruitApplication
+    from . import recruit
+
+    destino = reverse("koru_stats:recruit_wizard")
+    if request.method != "POST":
+        return redirect(destino)
+
+    datos = _estado_registro(request.user)
+    # ⚠ Se vuelve a comprobar AQUI, no solo al pintar el formulario: entre que
+    # se cargo la pagina y se envio pudo cambiar cualquier cosa, y el POST es lo
+    # unico que de verdad crea la solicitud.
+    if _paso_actual(datos, True) != PASO_FORM:
+        messages.warning(request, "Antes de solicitar hay que terminar el registro.")
+        return redirect(destino)
+
+    if (RecruitApplication.objects.filter(user=request.user)
+            .exclude(estado__in=RecruitApplication.CERRADOS).exists()):
+        return redirect(destino)
+
+    respuestas, errores = recruit.limpiar_respuestas(request.POST)
+    if errores:
+        for e in errores:
+            messages.error(request, e)
+        return redirect(destino)
+
+    solicitud = RecruitApplication.objects.create(
+        user=request.user,
+        main_character_id=datos["main_id"],
+        main_character_name=datos["main_nombre"],
+        respuestas=respuestas,
+    )
+
+    # El retrato y el canal de Discord van en segundo plano: si Discord tarda o
+    # falla, la solicitud YA esta guardada y nadie pierde lo que acaba de
+    # escribir. Lo que falle se ve luego en la pantalla del reclutador.
+    try:
+        from .tasks import recruit_preparar
+        recruit_preparar.delay(solicitud.id)
+    except Exception as exc:
+        logger.error("koru recruit: no se pudo encolar la preparacion de %s: %s",
+                     solicitud.id, exc)
+
+    logger.info("koru recruit: %s (%s) envia solicitud %s",
+                datos["main_nombre"], request.user, solicitud.id)
+    return redirect(reverse("koru_stats:recruit_enviada"))
+
+
+@login_required
+def recruit_enviada(request):
+    """La pantalla de «ya esta». Enseña en que punto va."""
+    from django.shortcuts import redirect
+    from django.urls import reverse
+
+    from .models import RecruitApplication
+
+    solicitud = (RecruitApplication.objects.filter(user=request.user)
+                 .order_by("-created_at").first())
+    if not solicitud:
+        return redirect(reverse("koru_stats:recruit_wizard"))
+    return render(request, "koru_stats/recruit_enviada.html", {"solicitud": solicitud})
+
+
 # ---------------------------------------------------------------------------
 # Koru — Tickets (staff, por rol)
 # ---------------------------------------------------------------------------

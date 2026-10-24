@@ -1909,3 +1909,41 @@ class RecruitQuestion(models.Model):
 
     def __str__(self):
         return f"{self.orden}. {self.etiqueta}" + ("" if self.activa else " (inactiva)")
+
+
+class RecruitConfig(models.Model):
+    """Dónde y con qué permisos nacen los canales de reclutamiento."""
+
+    # ⚠ Nada de esto va en el código. Una categoría o un rol de Discord cambian
+    # sin avisar, y cada cambio no puede ser un despliegue.
+    tag = models.CharField(max_length=20, default="default", unique=True)
+
+    activo = models.BooleanField(
+        default=False,
+        help_text="Mientras esté apagado, la solicitud se guarda pero no se crea canal")
+
+    categoria_id = models.CharField(
+        max_length=30, blank=True, default="",
+        help_text="Id de la categoría de Discord donde van los canales de reclutamiento")
+    prefijo_canal = models.CharField(
+        max_length=30, default="reclutamiento-",
+        help_text="Delante del nombre del piloto")
+
+    # ★ Lista de ids de rol que PUEDEN ver el canal. Se guarda como lista para
+    # no tener que tocar el modelo cada vez que aparezca un rol nuevo.
+    roles_ver = models.JSONField(
+        default=list, blank=True,
+        help_text='Ids de los roles que ven el canal. Ej: ["954100891844231238"]')
+
+    avisar_en = models.CharField(
+        max_length=30, blank=True, default="",
+        help_text="Canal donde avisar de que hay solicitud nueva. Opcional")
+
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name        = "Reclutamiento — configuración"
+        verbose_name_plural = "Reclutamiento — configuración"
+
+    def __str__(self):
+        return "Reclutamiento" + ("" if self.activo else " (apagado)")

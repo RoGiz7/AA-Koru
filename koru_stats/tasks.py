@@ -3605,3 +3605,55 @@ def sync_gift_contributions(campaign_id=None):
     logger.info("koru sync_gift_contributions: %s aportaciones en '%s' (%s contratos, %s donaciones)",
                 guardados, campaign.nombre, len(contratos), len(donaciones))
     return guardados
+
+
+@shared_task
+def recruit_preparar(solicitud_id):
+    """
+    Lo que pasa justo despues de enviar una solicitud.
+
+    ★ EN SEGUNDO PLANO A PROPOSITO. Si esto fuera parte del envio, un Discord
+    lento dejaria al solicitante mirando una pagina colgada despues de haber
+    rellenado el formulario, y un Discord caido le haria perder lo escrito. La
+    solicitud ya esta guardada antes de llegar aqui: esto solo la completa.
+
+    ⚠ Los dos pasos se guardan por separado. El retrato es nuestro y no puede
+    fallar por nada externo; el canal depende de Discord y de n8n. Si lo segundo
+    falla, lo primero NO se pierde —y el reclutador ve la ficha igual, solo que
+    marcada como «sin canal».
+    """
+    from django.utils import timezone
+
+    from .models import RecruitApplication
+    from . import recruit
+
+    solicitud = RecruitApplication.objects.filter(id=solicitud_id).first()
+    if not solicitud:
+        logger.warning("koru recruit_preparar: la solicitud %s ya no existe", solicitud_id)
+        return "sin solicitud"
+
+    # --- 1. El retrato ------------------------------------------------------
+    retrato = {}
+    if solicitud.user:
+        try:
+            retrato = recruit.retrato(solicitud.user, solicitud.main_character_id)
+            solicitud.instantanea = retrato
+            solicitud.instantanea_en = timezone.now()
+            solicitud.save(update_fields=["instantanea", "instantanea_en", "updated_at"])
+        except Exception as exc:
+            logger.exception("koru recruit_preparar: retrato de %s: %s", solicitud_id, exc)
+
+    # --- 2. El canal de Discord --------------------------------------------
+    # \u2605 Lo crea KORU, no n8n: el Auth ya tiene bot de Discord y su token, asi
+    # que mandar esto fuera solo añadiria un workflow que mantener y un sitio
+    # mas donde mirar cuando falle. En n8n se queda lo que NACE en Discord.
+    try:
+        solicitud.discord_channel_id = recruit.crear_canal(solicitud, retrato)
+        solicitud.discord_error = ""
+    except Exception as exc:
+        # El texto se recorta: esto acaba en una pantalla y en un log.
+        solicitud.discord_error = str(exc)[:240]
+        logger.error("koru recruit_preparar: canal de %s: %s", solicitud_id, exc)
+
+    solicitud.save(update_fields=["discord_channel_id", "discord_error", "updated_at"])
+    return f"solicitud {solicitud_id}: canal={solicitud.discord_channel_id or 'no'}"

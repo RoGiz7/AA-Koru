@@ -1,0 +1,71 @@
+{% extends 'allianceauth/base-bs5.html' %}
+{% load i18n %}
+
+{% block title %}Tu solicitud — Rekium{% endblock %}
+
+{% block page_title %}
+    {% include "framework/header/page-header.html" with title="Tu solicitud" subtitle="Rekium" %}
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+  <div class="row justify-content-center"><div class="col-lg-7">
+
+    <div class="card mb-3"><div class="card-body">
+      {% if solicitud.abierta %}
+        <h4 class="mb-3">
+          {% if ya_estaba %}Ya tienes una solicitud en marcha{% else %}✅ Solicitud enviada{% endif %}
+        </h4>
+        <p>
+          Gracias por querer volar con Rekium, <strong>{{ solicitud.main_character_name }}</strong>.
+          Ya tenemos tus respuestas y los datos de tus personajes.
+        </p>
+
+        {% comment %}
+        El canal se crea en segundo plano, así que aquí NO se afirma que exista:
+        se dice «en unos segundos». Prometerle un canal que luego no está es
+        peor que pedirle que espere un momento.
+        {% endcomment %}
+        {% if solicitud.discord_channel_id %}
+          <p class="mb-1">
+            <strong>Tu canal privado en Discord ya está abierto.</strong>
+            Ahí te atenderá un reclutador.
+          </p>
+        {% else %}
+          <p class="mb-1">
+            <strong>En unos segundos se abrirá tu canal privado en Discord</strong>,
+            donde un reclutador te hará la entrevista.
+          </p>
+          <p class="text-muted small">
+            Si pasados unos minutos no lo ves, escríbenos en <strong>#bienvenida</strong>
+            y lo miramos. Tu solicitud está guardada: no tendrás que rellenar nada otra vez.
+          </p>
+        {% endif %}
+
+      {% else %}
+        <h4 class="mb-3">Tu solicitud quedó como «{{ solicitud.get_estado_display }}»</h4>
+        {% if solicitud.motivo_cierre %}
+          <p class="text-muted">{{ solicitud.motivo_cierre }}</p>
+        {% endif %}
+        <a class="btn btn-outline-primary" href="{% url 'koru_stats:recruit_wizard' %}">
+          Enviar una nueva solicitud
+        </a>
+      {% endif %}
+    </div></div>
+
+    <div class="card"><div class="card-body">
+      <h6 class="card-title">Lo que nos has contado</h6>
+      <dl class="row mb-0 small">
+        {% for item in solicitud.respuestas.values %}
+        <dt class="col-sm-5 text-muted">{{ item.etiqueta|default:"—" }}</dt>
+        <dd class="col-sm-7">{{ item.valor|default:item|linebreaksbr }}</dd>
+        {% endfor %}
+      </dl>
+      <div class="small text-muted mt-3">
+        Enviada el {{ solicitud.created_at|date:"d/m/Y H:i" }}.
+      </div>
+    </div></div>
+
+  </div></div>
+</div>
+{% endblock %}
