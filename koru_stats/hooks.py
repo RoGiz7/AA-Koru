@@ -29,11 +29,19 @@ class PanelMenuHook(MenuItemHook):
     ★ Un menú que lleva a una página vacía es peor que no tener el menú: el
     que lo pulsa se queda sin saber si le falta un permiso o si la pantalla
     está rota.
+
+    ⚠⚠ CADA PANEL NECESITA SU PROPIA SUBCLASE, y no es manía de estilo:
+    **Alliance Auth identifica cada elemento del menú por la clase del hook.**
+    Registrar los tres paneles con esta misma clase los colapsa en UNA sola
+    fila de `MenuItem`: la crea el primero y el último le pisa el texto.
+    Se vio en producción el 24/10/2026 — una única entrada «Koru — Dirección»
+    con el orden 1200, que es el de «Koru» a secas.
+
+    Por eso debajo hay tres subclases que no añaden nada: lo que aportan es
+    ser clases distintas.
     """
 
-    def __init__(self, area, *args, **kwargs):
-        self.area = area
-        super().__init__(*args, **kwargs)
+    area = None
 
     def render(self, request):
         if not request.user.is_authenticated:
@@ -43,10 +51,21 @@ class PanelMenuHook(MenuItemHook):
         return super().render(request)
 
 
+class PanelMioHook(PanelMenuHook):
+    area = paneles.MIO
+
+
+class PanelGestionHook(PanelMenuHook):
+    area = paneles.GESTION
+
+
+class PanelDireccionHook(PanelMenuHook):
+    area = paneles.DIRECCION
+
+
 @hooks.register("menu_item_hook")
 def register_menu_mio():
-    return PanelMenuHook(
-        paneles.MIO,
+    return PanelMioHook(
         "🌀 Koru",
         "fas fa-chart-bar fa-fw",
         # ⚠ Una URL propia por panel en vez de pasarle el área como argumento:
@@ -61,8 +80,7 @@ def register_menu_mio():
 
 @hooks.register("menu_item_hook")
 def register_menu_gestion():
-    return PanelMenuHook(
-        paneles.GESTION,
+    return PanelGestionHook(
         "🌀 Koru — Gestión",
         "fas fa-user-check fa-fw",
         "koru_stats:panel_gestion",
@@ -73,8 +91,7 @@ def register_menu_gestion():
 
 @hooks.register("menu_item_hook")
 def register_menu_direccion():
-    return PanelMenuHook(
-        paneles.DIRECCION,
+    return PanelDireccionHook(
         "🌀 Koru — Dirección",
         "fas fa-chart-line fa-fw",
         "koru_stats:panel_direccion",

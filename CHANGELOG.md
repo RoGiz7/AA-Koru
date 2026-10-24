@@ -3,6 +3,23 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.47.1] — 2026-10-24
+
+### Arreglado
+
+- **De los tres paneles solo aparecía uno.** Los tres se registraban con la
+  misma clase de hook, y **Alliance Auth identifica cada elemento del menú por
+  la clase**: los tres colapsaban en una sola fila de `MenuItem`, creada por el
+  primero y con el texto pisado por el último.
+  - Se vio en el admin: una única entrada «Koru — Dirección» con **orden
+    1200**, que es el de «Koru» a secas. El dato que lo delató no fue el
+    nombre, fue el número.
+  - Los once hooks antiguos funcionaban porque cada uno tenía su propia clase.
+    El refactor los unificó en una — más limpio de leer y roto en producción.
+  - Ahora hay tres subclases que no añaden nada: lo que aportan es **ser clases
+    distintas**. Queda escrito en el código para que a nadie le tiente
+    «simplificarlo» otra vez.
+
 ## [0.47.0] — 2026-10-24
 
 ### Cambiado
