@@ -34,6 +34,14 @@
 .koru-msg .cuerpo { white-space:pre-wrap; overflow-wrap:anywhere; }
 .koru-msg .adj { display:block; font-size:.8rem; margin-top:.2rem; }
 .koru-msg .cuando { font-size:.7rem; opacity:.5; text-align:right; margin-top:.15rem; }
+.koru-tabs .nav-link { font-size:.9rem; }
+.koru-tabs .nav-link.pelig.active { border-color:rgba(220,53,69,.6) rgba(220,53,69,.6) transparent; }
+.koru-check { padding:.6rem .8rem; border-radius:10px; margin-bottom:.5rem;
+              background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08); }
+.koru-check.pend  { border-left:3px solid rgba(108,117,125,.8); }
+.koru-check.ok    { border-left:3px solid rgba(25,135,84,.8); }
+.koru-check.duda  { border-left:3px solid rgba(255,193,7,.9); }
+.koru-check.mal   { border-left:3px solid rgba(220,53,69,.9); }
 </style>
 {% endblock %}
 
@@ -54,6 +62,52 @@
       </div>
       {% endif %}
 
+{% comment %}
+★ PESTAÑAS, NO UNA COLUMNA INTERMINABLE. Quien mas permisos tiene es quien mas
+bloques ve, asi que la ficha crecia justo para el que mas rapido necesita
+encontrar las cosas. Cada cosa en su pestaña, y la de auditoria con su contador
+de lo que falta.
+
+⚠ Las pestañas NO son seguridad: la de auditoria solo se dibuja si `checks`
+llego a la plantilla, y la vista lo pone a None para quien no puede leer
+reservadas. Lo que no se puede ver no llega a la pagina, y menos escondido
+detras de un clic.
+{% endcomment %}
+      <ul class="nav nav-tabs koru-tabs mb-3" role="tablist">
+        <li class="nav-item" role="presentation">
+          <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-tramite"
+                  type="button" role="tab">Trámite</button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-solicitud"
+                  type="button" role="tab">Lo que nos ha contado</button>
+        </li>
+        {% if conversacion %}
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-conversacion"
+                  type="button" role="tab">Conversación</button>
+        </li>
+        {% endif %}
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-notas"
+                  type="button" role="tab">
+            Notas {% if notas %}<span class="badge bg-secondary">{{ notas|length }}</span>{% endif %}
+          </button>
+        </li>
+        {% if checks %}
+        <li class="nav-item" role="presentation">
+          <button class="nav-link pelig text-danger" data-bs-toggle="tab"
+                  data-bs-target="#tab-auditoria" type="button" role="tab">
+            🔒 Auditoría
+            {% if checks_faltan %}<span class="badge bg-danger">{{ checks_faltan }}</span>{% endif %}
+          </button>
+        </li>
+        {% endif %}
+      </ul>
+
+      <div class="tab-content">
+
+      <div class="tab-pane fade show active" id="tab-tramite" role="tabpanel">
       <div class="card mb-3"><div class="card-body">
         <h6 class="card-title">La cadena</h6>
         {% for p in cadena %}
@@ -186,7 +240,10 @@ botón que explica por qué no está es mejor que uno que falla al pulsarlo.
         {% endif %}
       </div></div>
 
+      </div><!-- /tab-tramite -->
+
       {% if conversacion %}
+      <div class="tab-pane fade" id="tab-conversacion" role="tabpanel">
       <div class="card mb-3"><div class="card-body">
         <h6 class="card-title">La conversación</h6>
 {% comment %}
@@ -211,8 +268,10 @@ expediente existe para conservar: lo que se habló.
           Guardada el {{ sol.transcrita_en|date:"d/m/Y H:i" }}. El canal de Discord ya no existe.
         </div>
       </div></div>
+      </div><!-- /tab-conversacion -->
       {% endif %}
 
+      <div class="tab-pane fade" id="tab-solicitud" role="tabpanel">
       <div class="card mb-3"><div class="card-body">
         <h6 class="card-title">Lo que nos ha contado</h6>
         <dl class="row mb-0 small">
@@ -222,6 +281,7 @@ expediente existe para conservar: lo que se habló.
           {% endfor %}
         </dl>
       </div></div>
+      </div><!-- /tab-solicitud -->
 
 {% comment %}
 ★ LA AUDITORIA, DENTRO DE LA SOLICITUD. Asuntos Internos no tiene que irse a
@@ -234,6 +294,7 @@ None para quien no puede leer reservadas. No se esconde con CSS ni con un if
 cosmetico: lo que no se puede ver no llega a la pagina.
 {% endcomment %}
       {% if checks %}
+      <div class="tab-pane fade" id="tab-auditoria" role="tabpanel">
       <div class="card mb-3 border-danger" id="auditoria"><div class="card-body">
         <h6 class="card-title">🔒 Auditoría — Asuntos Internos</h6>
         <p class="small text-muted">
@@ -242,7 +303,7 @@ cosmetico: lo que no se puede ver no llega a la pagina.
         </p>
 
         {% for c in checks %}
-        <div class="border-top pt-2 mt-2">
+        <div class="koru-check {% if c.estado == 'ok' %}ok{% elif c.estado == 'duda' %}duda{% elif c.estado == 'problema' %}mal{% elif c.estado == 'na' %}ok{% else %}pend{% endif %}">
           <div class="d-flex align-items-start gap-2 flex-wrap">
             <strong class="small">{{ c.etiqueta }}</strong>
             {% if c.obligatorio %}<span class="badge bg-secondary">obligatorio</span>{% endif %}
@@ -317,8 +378,10 @@ cosmetico: lo que no se puede ver no llega a la pagina.
         </div>
         {% endfor %}
       </div></div>
+      </div><!-- /tab-auditoria -->
       {% endif %}
 
+      <div class="tab-pane fade" id="tab-notas" role="tabpanel">
       <div class="card"><div class="card-body">
         <h6 class="card-title">Notas del staff</h6>
         {% for n in notas %}
@@ -355,6 +418,9 @@ ya está diciendo algo.
           <span class="small text-muted ms-2">Las notas no se editan ni se borran.</span>
         </form>
       </div></div>
+      </div><!-- /tab-notas -->
+
+      </div><!-- /tab-content -->
 
     </div>
 
@@ -418,4 +484,19 @@ ya está diciendo algo.
 
   </div>
 </div>
+
+{% comment %}
+Tras guardar un check, la vista redirige con #auditoria. Sin esto la pagina
+vuelve a abrirse en «Trámite» y el auditor tiene que volver a buscar donde
+estaba — en una lista de nueve puntos, eso cansa a la tercera vez.
+{% endcomment %}
+<script>
+(function () {
+  var destinos = {"#auditoria": "#tab-auditoria", "#notas": "#tab-notas"};
+  var ir = destinos[window.location.hash];
+  if (!ir) { return; }
+  var boton = document.querySelector('[data-bs-target="' + ir + '"]');
+  if (boton && window.bootstrap) { new bootstrap.Tab(boton).show(); }
+})();
+</script>
 {% endblock %}

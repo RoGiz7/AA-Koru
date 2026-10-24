@@ -3671,6 +3671,8 @@ def recruit_ficha(request, sol_id):
         # que existe, porque «hay una pestaña que no puedo abrir» ya es
         # información sobre una investigación en curso.
         "checks": recruit.checks_de(sol) if reservadas else None,
+        # Para el contador de la pestaña: cuántos obligatorios faltan por mirar.
+        "checks_faltan": len(recruit.checks_pendientes(sol)) if reservadas else 0,
         "puedo_auditar": recruit.puede(request.user, "asuntos")[0],
         "estados_check": RecruitCheck.ESTADOS,
     })

@@ -3,6 +3,29 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.46.0] — 2026-10-24
+
+### Cambiado
+
+- **La ficha de una solicitud va por pestañas**: Trámite · Lo que nos ha
+  contado · Conversación · Notas · 🔒 Auditoría.
+  - ★ **El problema era justo al revés de lo que parece**: cuantos más
+    permisos tiene alguien, más bloques se le dibujan — así que la pantalla
+    se volvía más larga precisamente para quien más rápido necesita encontrar
+    las cosas. Dirección lo veía todo de golpe.
+  - La pestaña de auditoría lleva **un contador de puntos obligatorios sin
+    mirar**: se ve lo que falta sin abrirla.
+  - Tras guardar un check se vuelve a la pestaña de auditoría, no al principio.
+    En una lista de nueve puntos, tener que buscar dónde estabas cansa a la
+    tercera vez.
+  - El retrato del piloto se queda **fuera de las pestañas**, en su columna: es
+    lo que se consulta mientras se mira cualquier otra cosa.
+  - ⚠ **Las pestañas no son seguridad.** La de auditoría solo se dibuja si los
+    checks llegaron a la plantilla, y la vista los pone a `None` para quien no
+    puede leer reservadas. Lo que no se puede ver no llega a la página — y
+    menos escondido detrás de un clic.
+  - Cada check se colorea por su estado, para leer la lista de un vistazo.
+
 ## [0.45.0] — 2026-10-24
 
 ### Añadido
