@@ -3737,6 +3737,9 @@ def recruit_accion(request, sol_id):
                 f"✅ **{etiquetas.get(paso, paso)}** dan su OK — {quien}.\n"
                 f"{siguiente.get(paso, '')}",
                 mencionar=True, rol_siguiente=paso)
+            # La tarea, al canal de staff: el piloto no entra ahí.
+            if paso in recruit.SIGUIENTE_ROL:
+                _tarea_al_staff(sol, paso, quien)
             messages.success(request, msg)
 
     elif accion == "cerrar":
@@ -3845,6 +3848,47 @@ def recruit_accion(request, sol_id):
                     "borrado. Míralo antes de borrarlo a mano.")
 
     return redirect(destino)
+
+
+def _tarea_al_staff(sol, paso, quien):
+    """
+    Avisa en el canal de STAFF de que hay algo esperando, con el enlace directo.
+
+    ★ EN EL CANAL DE STAFF Y NO EN EL DEL PILOTO. Un mensaje de canal lo ve
+    todo el que entra, y en el canal de la solicitud está también el
+    solicitante: ahí no se le puede poner a nadie una tarea «en privado».
+    Discord solo tiene mensajes efímeros como respuesta a un botón o un
+    comando, que es lo que se descartó.
+    #
+    ★ Y es MEJOR que un efímero: un efímero desaparece y solo lo ve quien
+    pulsó. Esto se queda, así que subiendo un poco se ve todo lo pendiente —
+    una lista de tareas en un sitio que ya miran.
+    """
+    from django.conf import settings
+
+    from .models import RecruitConfig
+    from . import discordapi, recruit
+
+    cfg = RecruitConfig.objects.filter(tag="default").first()
+    if not cfg or not cfg.avisar_en:
+        return
+
+    campo = recruit.SIGUIENTE_ROL.get(paso)
+    rol = getattr(cfg, campo, "") if campo else ""
+    quienes = {"reclutadores": "Asuntos Internos", "asuntos": "Dirección",
+               "directores": "quien manda las invitaciones"}
+
+    base = str(getattr(settings, "SITE_URL", "") or "").rstrip("/")
+    enlace = f"{base}/koru/reclutamiento/gestion/{sol.id}/" if base else ""
+
+    texto = (f"{'<@&' + str(rol) + '> ' if rol else ''}"
+             f"📋 **{sol.main_character_name}** espera a {quienes.get(paso, 'alguien')}"
+             f" — {quien} acaba de dar su OK."
+             + (f"\n{enlace}" if enlace else ""))
+    try:
+        discordapi.publicar(cfg.avisar_en, texto)
+    except Exception as exc:
+        logger.warning("koru recruit: no se pudo avisar al staff: %s", exc)
 
 
 def _conversacion_de(texto, nombre_piloto=""):

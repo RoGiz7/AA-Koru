@@ -250,13 +250,15 @@ def register_menu_reclutamiento_gestion():
     )
 
 
-@hooks.register("discord_cogs_hook")
-def register_cogs():
-    """
-    El cog de reclutamiento, para dar los pasos desde el canal de Discord.
-
-    ⚠ Corre en el proceso del bot (`myauth:authbot`), no en el web. Un cambio
-    aquí necesita reiniciar ese proceso — si algo «no se actualiza» en Discord
-    después de desplegar, es esto.
-    """
-    return ["koru_stats.cogs.reclutamiento"]
+# ⚠ EL COG ESTA DESACTIVADO A PROPOSITO (24/10/2026). Ver el comentario de
+# `koru_stats/cogs/reclutamiento.py`. Resumen: el comando se quedaba colgado
+# sin error ni respuesta, el log del bot no escribe nada despues de arrancar, y
+# depurarlo costaba un despliegue por hipotesis. El trabajo se hace en el Auth
+# y Discord lo refleja; es mas facil de mantener y no se rompe solo.
+#
+# Para reactivarlo: descomentar, y ANTES arreglar el log del authbot — sin
+# rastro no hay forma de saber por que falla.
+#
+# @hooks.register("discord_cogs_hook")
+# def register_cogs():
+#     return ["koru_stats.cogs.reclutamiento"]

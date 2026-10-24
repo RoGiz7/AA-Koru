@@ -3,6 +3,39 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.43.0] — 2026-10-24
+
+### Quitado
+
+- **El cog de Discord queda desactivado.** No está registrado en `hooks.py`; el
+  código se conserva documentado por si se retoma.
+  - El comando se quedaba colgado sin error ni respuesta. Se probaron cuatro
+    cosas y ninguna lo resolvió.
+  - **La causa raíz de no poder arreglarlo es que el log del `authbot` no
+    escribe nada después del arranque.** Sin rastro, cada intento es una
+    hipótesis que cuesta un despliegue. Antes de retomarlo, arreglar el log.
+  - Lo que el cog ahorraba era abrir el navegador: comodidad, no capacidad.
+    Todo lo que hacía está en la pantalla web, verificado.
+
+### Añadido
+
+- **La tarea se avisa en el canal de staff, con enlace directo a la ficha.**
+  Cuando alguien da su OK, en `#general-reclutamiento` aparece a quién le toca
+  ahora y el enlace a la solicitud.
+  - ⚠ **En el canal de staff y no en el del piloto**: un mensaje de canal lo ve
+    todo el que entra, y en el canal de la solicitud está el solicitante.
+    Discord solo tiene mensajes efímeros como respuesta a un botón o comando,
+    que es justo lo que se ha descartado.
+  - Y es **mejor** que un efímero: el efímero desaparece y solo lo ve quien
+    pulsó. Esto se queda, así que subiendo un poco se ve todo lo pendiente —
+    una lista de tareas en un sitio que ya miran.
+
+### El enfoque, fijado
+
+El trabajo se hace **en el Auth**; Discord lo **refleja** y guarda la
+conversación, que luego se transcribe con sus adjuntos. Una sola pieza que
+mantener, y que no se rompe sola.
+
 ## [0.42.3] — 2026-10-24
 
 ### Corregido

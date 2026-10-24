@@ -1,23 +1,26 @@
 """
-El reclutamiento, desde el propio canal de Discord.
+⚠⚠ DESACTIVADO EL 24/10/2026. NO ESTÁ REGISTRADO EN `hooks.py`.
 
-★ POR QUÉ COMANDOS Y NO BOTONES. Los botones quedan más bonitos, pero los
-persistentes se pierden cuando el bot reinicia si no se vuelven a registrar — y
-ese fallo no se nota el día que pasa: se nota semanas después, cuando alguien
-pulsa y no ocurre nada. Un comando no tiene ese modo de fallo.
+Qué pasó, para quien lo retome:
 
-★ ESTE COG NO DECIDE NADA. Toda la lógica —quién puede, en qué orden, qué se
-escribe— vive en `recruit.py` y la comparte con la pantalla web. Si aquí se
-reimplementara, aprobar desde Discord y aprobar desde la web harían cosas
-distintas a la primera modificación, sin que nadie se diera cuenta.
+- El comando se quedaba en «está pensando…» para siempre. Ni error ni
+  respuesta: un bloqueo, no un fallo.
+- Se probó: py-cord en vez de discord.py (ese sí era un error real, y se
+  arregló), capturar y responder las excepciones, y `thread_sensitive=False`
+  en `sync_to_async`. Ninguna lo resolvió.
+- **La causa raíz de no poder arreglarlo es que el log del `authbot` no
+  escribe nada después del arranque.** Sin rastro, cada intento es una
+  hipótesis que cuesta un despliegue. Van cuatro.
 
-⚠ LA LIBRERÍA ES PY-CORD, NO discord.py. Lo comprobamos en producción:
-`py-cord 2.8.1`. No existe `discord.app_commands` — los comandos se declaran
-con `SlashCommandGroup` y se responde con `ctx.respond(...)`. La primera
-versión de este fichero usaba discord.py y el cog no llegó a cargar.
+Antes de volver a intentarlo: **arreglar el log del bot**. Con un traceback
+esto se resuelve en diez minutos; sin él, no se resuelve.
 
-⚠ Django es síncrono y py-cord asíncrono: TODO lo que toque la base va envuelto
-en `sync_to_async`, o el bot se bloquea.
+Y la decisión de fondo (Zigor, 24/10): el trabajo se hace en el Auth y Discord
+lo refleja. Lo que el cog ahorraba era abrir el navegador — comodidad, no
+capacidad. Todo lo que hace está en la pantalla web, verificado y funcionando.
+
+El código se deja porque la lógica es correcta y la mitad del camino está
+hecha: llama a `recruit.py`, igual que la web.
 """
 
 import logging
