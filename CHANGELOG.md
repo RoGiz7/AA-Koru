@@ -3,6 +3,40 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.36.0] — 2026-10-24
+
+### Añadido
+
+- **La conversación se guarda antes de borrar el canal.** Al cerrar una
+  solicitud, Koru lee todos los mensajes del canal de Discord, los guarda en la
+  ficha y **sólo entonces** borra el canal. Se pinta como chat, con el mismo
+  formato que las transcripciones de los tickets viejos.
+- **El progreso se anota en el canal**: quién reclama la solicitud, qué paso se
+  aprueba y cómo se cierra. El aviso de cierre se publica **antes** de archivar,
+  así que entra en la transcripción: queda escrito cómo acabó y quién lo decidió.
+
+### Por qué
+
+Hasta ahora estábamos en el peor sitio posible: ni se borraban canales (se
+acumulaban) ni se guardaba nada (si alguien borraba uno a mano, se perdía la
+entrevista). Y el expediente existe **precisamente** para conservar qué se
+habló: una solicitud cerrada sin la conversación dentro es media solicitud.
+
+Lo del progreso es el mismo fallo que arreglamos en los tickets viejos:
+reclamabas en la web y en el canal seguía figurando sin reclamar.
+
+### Cuidado
+
+- **El orden no es negociable**: primero guardar, después borrar. Si el guardado
+  falla, el canal **no** se borra y la pantalla lo avisa — una conversación
+  perdida no se recupera; un canal de más se borra a mano en diez segundos.
+- De los adjuntos se guarda **solo el nombre**. El enlace de Discord caduca a
+  las pocas horas: guardarlo sería guardar un enlace muerto y hacer creer que
+  el fichero sigue ahí.
+- ⚠ El parser de conversaciones está **duplicado** con el de `ticket_detail`, a
+  sabiendas: unificarlos al final de una sesión larga arriesgaba una pantalla
+  que ya funciona. Si se toca el formato, hay que tocar los dos.
+
 ## [0.35.0] — 2026-10-24
 
 ### Añadido

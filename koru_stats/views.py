@@ -3653,6 +3653,9 @@ def recruit_ficha(request, sol_id):
         # plantilla: lo que no se puede leer no debe ni llegar a la pagina.
         "notas": notas,
         "puedo_reservar": reservadas,
+        # Se pinta con el mismo visor que las transcripciones de los tickets:
+        # mismo formato, mismo codigo.
+        "conversacion": _conversacion_de(sol.transcripcion, sol.main_character_name),
         "finales": [(c, n) for c, n in RecruitApplication.ESTADOS
                     if c in RecruitApplication.CERRADOS],
     })
@@ -3689,6 +3692,7 @@ def recruit_accion(request, sol_id):
         if sol.estado == RecruitApplication.NUEVO:
             sol.estado = RecruitApplication.EN_CURSO
         sol.save(update_fields=["claim_por", "claim_en", "estado", "updated_at"])
+        _avisar_canal(sol, f"✋ **{quien}** se encarga de esta solicitud.")
         messages.success(request, f"La llevas tú, {quien}.")
 
     elif accion == "nota":
@@ -3725,6 +3729,9 @@ def recruit_accion(request, sol_id):
             if sol.estado == RecruitApplication.NUEVO:
                 sol.estado = RecruitApplication.EN_CURSO
             sol.save()
+            etiquetas = {"reclutadores": "Reclutadores",
+                         "asuntos": "Asuntos Internos", "directores": "Dirección"}
+            _avisar_canal(sol, f"✅ **{etiquetas.get(paso, paso)}** dan su OK — {quien}.")
             messages.success(request, f"Paso «{paso}» aprobado por {quien}.")
 
     elif accion == "cerrar":
@@ -3748,7 +3755,85 @@ def recruit_accion(request, sol_id):
             sol.save()
             messages.success(request, f"Solicitud cerrada como «{sol.get_estado_display()}».")
 
+            # Se avisa ANTES de archivar, para que el aviso entre en la
+            # transcripcion: así queda escrito cómo acabó y quién lo decidió.
+            _avisar_canal(
+                sol, f"📁 **Solicitud cerrada** como «{sol.get_estado_display()}» "
+                     f"por {quien}.\n{texto}\n\nEste canal se guarda y se cierra.")
+
+            # ⚠ EL ORDEN NO ES NEGOCIABLE: primero guardar la conversación,
+            # después borrar el canal. Si el guardado falla, el canal se queda
+            # — una conversación perdida no se recupera; un canal de más se
+            # borra a mano en diez segundos.
+            try:
+                recruit.archivar_canal(sol)
+            except Exception as exc:
+                logger.error("koru recruit: no se pudo archivar el canal de %s: %s",
+                             sol.id, exc)
+                messages.warning(
+                    request,
+                    "La solicitud está cerrada, pero no se pudo guardar la conversación "
+                    "del canal. El canal NO se ha borrado: míralo antes de borrarlo a mano.")
+
     return redirect(destino)
+
+
+def _conversacion_de(texto, nombre_piloto=""):
+    """
+    Pasa «[24/10/2026, 12:47:31] Fulano: lo que dijo» a globos de chat.
+
+    ⚠ ESTO ESTA DUPLICADO con el parser de `ticket_detail`, y es a sabiendas:
+    unificarlos hoy, al final de una sesion larga, arriesga la pantalla de
+    tickets que ya funciona. Si se toca el formato, hay que tocar los dos — y
+    lo suyo es unificarlos con calma.
+    """
+    import re as _re
+
+    LINEA = _re.compile(
+        r"^\[(\d{1,2}/\d{1,2}/\d{4}),\s*(\d{1,2}:\d{2}(?::\d{2})?)\]\s*([^:]{1,60}?):\s?(.*)$")
+    ADJ = _re.compile(r"\[ADJUNTO:\s*([^\]]+)\]")
+
+    piloto = (nombre_piloto or "").strip().lower()
+    fuera = []
+    for linea in (texto or "").splitlines():
+        m = LINEA.match(linea)
+        if not m:
+            if fuera and linea.strip():
+                fuera[-1]["texto"] += "\n" + linea
+            continue
+        dia, hora, autor, cuerpo = m.groups()
+        autor = autor.strip()
+        adjuntos = [a.strip() for a in ADJ.findall(cuerpo)]
+        cuerpo = ADJ.sub("", cuerpo).strip()
+        fuera.append({
+            "autor": autor, "dia": dia, "hora": hora, "texto": cuerpo,
+            "adjuntos": adjuntos,
+            # Aqui si sabemos quien es el piloto: es el de la solicitud.
+            "del_piloto": autor.lower() == piloto,
+        })
+    return fuera
+
+
+def _avisar_canal(sol, texto):
+    """
+    Una linea en el canal del solicitante contando lo que acaba de pasar.
+
+    ★ Si no, el reclutador que esta trabajando EN DISCORD no se entera de que
+    alguien reclamo la solicitud o dio un paso desde la web. Es el mismo fallo
+    que arreglamos en los tickets viejos: reclamabas en Koru y en el canal
+    seguia figurando sin reclamar.
+
+    ⚠ Nunca revienta la accion: que no se pueda avisar no deshace lo que ya
+    se hizo, y la solicitud es la fuente de verdad, no el canal.
+    """
+    if not sol.discord_channel_id:
+        return
+    try:
+        from . import discordapi
+        discordapi.publicar(sol.discord_channel_id, texto)
+    except Exception as exc:
+        logger.warning("koru recruit: no se pudo avisar en el canal %s: %s",
+                       sol.discord_channel_id, exc)
 
 
 def _quien_main(user):

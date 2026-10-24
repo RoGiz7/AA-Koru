@@ -204,3 +204,56 @@ def listar_canales(tipo=CANAL_TEXTO):
     fuera.sort(key=lambda x: x[1].lower())
     cache.set(clave, fuera, 600)
     return fuera
+
+
+def leer_canal(canal_id, tope=2000):
+    """
+    Todos los mensajes de un canal, del más viejo al más nuevo.
+
+    Devuelve [(cuando, autor, texto, [adjuntos])]. ⚠ Discord los da del más
+    NUEVO al más viejo y de 100 en 100, así que hay que paginar hacia atrás con
+    `before` y darle la vuelta al final. Quedarse con la primera página sería
+    guardar el final de la conversación y tirar el principio.
+    """
+    fuera = []
+    antes = None
+
+    while len(fuera) < tope:
+        url = f"{API}/channels/{canal_id}/messages?limit=100"
+        if antes:
+            url += f"&before={antes}"
+        r = requests.get(url, headers=_cabeceras(), timeout=ESPERA)
+        if r.status_code >= 400:
+            logger.error("koru discord: leer canal %s devolvio %s — %s",
+                         canal_id, r.status_code, r.text[:200])
+            raise RuntimeError(f"Discord respondió {r.status_code} al leer el canal")
+
+        lote = r.json()
+        if not lote:
+            break
+
+        for m in lote:
+            autor = (m.get("author") or {})
+            fuera.append((
+                m.get("timestamp") or "",
+                autor.get("global_name") or autor.get("username") or "?",
+                m.get("content") or "",
+                [a.get("filename") or "" for a in (m.get("attachments") or [])],
+            ))
+        antes = lote[-1].get("id")
+        if len(lote) < 100:
+            break
+
+    fuera.reverse()
+    return fuera
+
+
+def borrar_canal(canal_id):
+    """Borra el canal. Solo después de haberlo guardado."""
+    r = requests.delete(f"{API}/channels/{canal_id}",
+                        headers=_cabeceras(), timeout=ESPERA)
+    if r.status_code >= 400:
+        logger.error("koru discord: borrar canal %s devolvio %s — %s",
+                     canal_id, r.status_code, r.text[:200])
+        raise RuntimeError(f"Discord respondió {r.status_code} al borrar el canal")
+    return True

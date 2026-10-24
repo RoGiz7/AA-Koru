@@ -413,3 +413,65 @@ def lee_reservadas(user):
     mios = set(user.groups.values_list("name", flat=True))
     permitidos = set(quien_puede("asuntos")) | set(quien_puede("directores"))
     return bool(mios & permitidos)
+
+
+# ---------------------------------------------------------------------------
+# Guardar la conversación antes de que desaparezca
+# ---------------------------------------------------------------------------
+
+def transcribir(canal_id):
+    """
+    La conversación de un canal, en el MISMO formato que guardaba el bot viejo:
+
+        [24/10/2026, 12:47:31] Fulano: lo que dijo
+
+    ★ Se usa ese formato a propósito: el visor de conversaciones que ya tiene
+    Koru lo entiende, así que una solicitud archivada se lee igual que un
+    ticket antiguo sin escribir nada nuevo.
+    """
+    from datetime import datetime
+
+    from . import discordapi
+
+    lineas = []
+    for cuando, autor, texto, adjuntos in discordapi.leer_canal(canal_id):
+        try:
+            t = datetime.fromisoformat(str(cuando).replace("Z", "+00:00"))
+            sello = t.strftime("%d/%m/%Y, %H:%M:%S")
+        except (ValueError, TypeError):
+            sello = str(cuando)
+        cuerpo = texto or ""
+        for nombre in adjuntos:
+            # ⚠ Solo el NOMBRE del adjunto. El enlace de Discord caduca a las
+            # pocas horas, así que guardarlo sería guardar un enlace muerto y
+            # hacer creer que el fichero está.
+            cuerpo += f" [ADJUNTO: {nombre}]"
+        lineas.append(f"[{sello}] {autor}: {cuerpo}".rstrip())
+
+    return "\n".join(lineas)
+
+
+def archivar_canal(solicitud):
+    """
+    Guarda la conversación en la solicitud y luego borra el canal.
+
+    ⚠ EL ORDEN IMPORTA Y NO ES NEGOCIABLE: si el guardado falla, el canal NO se
+    borra. Una conversación perdida no se recupera; un canal de más se borra a
+    mano en diez segundos.
+    """
+    from django.utils import timezone
+
+    from . import discordapi
+
+    if not solicitud.discord_channel_id:
+        return "sin canal"
+
+    texto = transcribir(solicitud.discord_channel_id)
+    solicitud.transcripcion = texto
+    solicitud.transcrita_en = timezone.now()
+    solicitud.save(update_fields=["transcripcion", "transcrita_en", "updated_at"])
+
+    discordapi.borrar_canal(solicitud.discord_channel_id)
+    solicitud.discord_channel_id = ""
+    solicitud.save(update_fields=["discord_channel_id", "updated_at"])
+    return f"{len(texto)} caracteres guardados"

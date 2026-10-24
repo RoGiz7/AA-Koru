@@ -23,6 +23,17 @@
 .nota .quien { font-size:.76rem; opacity:.65; }
 .nota.reservada { border-left:3px solid rgba(220,53,69,.8); }
 .señal { font-size:.85rem; }
+.koru-chat { max-height:460px; overflow:auto; padding:.5rem .25rem; display:flex; flex-direction:column; gap:.4rem; }
+.koru-msg { display:flex; }
+.koru-msg.izq { justify-content:flex-start; }
+.koru-msg.der { justify-content:flex-end; }
+.koru-msg .burbuja { max-width:min(78%, 560px); padding:.45rem .7rem; border-radius:12px;
+                     background:rgba(255,255,255,.07); font-size:.87rem; }
+.koru-msg.der .burbuja { background:rgba(13,110,253,.18); }
+.koru-msg .quien { font-weight:600; font-size:.78rem; opacity:.85; }
+.koru-msg .cuerpo { white-space:pre-wrap; overflow-wrap:anywhere; }
+.koru-msg .adj { display:block; font-size:.8rem; margin-top:.2rem; }
+.koru-msg .cuando { font-size:.7rem; opacity:.5; text-align:right; margin-top:.15rem; }
 </style>
 {% endblock %}
 
@@ -129,6 +140,33 @@
           </div>
         {% endif %}
       </div></div>
+
+      {% if conversacion %}
+      <div class="card mb-3"><div class="card-body">
+        <h6 class="card-title">La conversación</h6>
+{% comment %}
+Guardada al cerrar la solicitud, antes de borrar el canal. Es lo que el
+expediente existe para conservar: lo que se habló.
+{% endcomment %}
+        <div class="koru-chat">
+          {% for m in conversacion %}
+          <div class="koru-msg {% if m.del_piloto %}izq{% else %}der{% endif %}">
+            <div class="burbuja">
+              <div class="quien">{{ m.autor }}</div>
+              {% if m.texto %}<div class="cuerpo">{{ m.texto|urlizetrunc:60|linebreaksbr }}</div>{% endif %}
+              {% for a in m.adjuntos %}
+                <span class="adj text-muted"><i class="fas fa-paperclip me-1"></i>{{ a }}</span>
+              {% endfor %}
+              <div class="cuando">{{ m.dia }} · {{ m.hora }}</div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="small text-muted mt-1">
+          Guardada el {{ sol.transcrita_en|date:"d/m/Y H:i" }}. El canal de Discord ya no existe.
+        </div>
+      </div></div>
+      {% endif %}
 
       <div class="card mb-3"><div class="card-body">
         <h6 class="card-title">Lo que nos ha contado</h6>

@@ -1813,6 +1813,16 @@ class RecruitApplication(models.Model):
     discord_channel_id = models.CharField(max_length=30, blank=True, default="")
     discord_error      = models.CharField(max_length=250, blank=True, default="")
 
+    # ★ LA CONVERSACION, GUARDADA ANTES DE BORRAR EL CANAL. El expediente
+    # justifica su existencia por conservar QUE SE HABLO; una solicitud cerrada
+    # sin la entrevista dentro es media solicitud. Y el canal de Discord es
+    # desechable solo si esto existe antes.
+    #
+    # Mismo formato que el bot viejo —«[24/10/2026, 12:47:31] Fulano: …»— para
+    # que el visor de conversaciones de Koru lo pinte sin tocar nada.
+    transcripcion = models.TextField(blank=True, default="")
+    transcrita_en = models.DateTimeField(null=True, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
 
