@@ -676,9 +676,14 @@ class RecruitConfigForm(forms.ModelForm):
         self._lista(discordapi, "categoria_id", discordapi.CATEGORIA,
                     "Categoría donde van los canales",
                     "Los canales de reclutamiento nacerán dentro de ésta.")
-        self._lista(discordapi, "avisar_en", discordapi.CANAL_TEXTO,
-                    "Avisar en",
-                    "Dónde avisar de que hay solicitud nueva. Déjalo vacío para no avisar.")
+        for campo, etiqueta, ayuda in (
+                ("avisar_en", "Solicitud nueva · canal",
+                 "Dónde avisar de que ha entrado una solicitud."),
+                ("canal_asuntos", "Le toca a Asuntos Internos · canal",
+                 "⚠ No uses el de reclutadores: les estarías contando que hay una revisión."),
+                ("canal_directores", "Le toca a Dirección · canal", ""),
+                ("canal_invitacion", "Falta la invitación · canal", "")):
+            self._lista(discordapi, campo, discordapi.CANAL_TEXTO, etiqueta, ayuda)
 
         # El rol a mencionar sale de la misma lista que los demás.
         for campo, etiqueta, ayuda in (
@@ -740,8 +745,10 @@ class RecruitConfigAdmin(admin.ModelAdmin):
         }),
         ("Discord", {
             "fields": ("categoria_id", "prefijo_canal", "roles_ver",
-                       "rol_avisar", "rol_asuntos", "rol_directores",
-                       "rol_invitacion", "avisar_en"),
+                       "rol_avisar", "avisar_en",
+                       "rol_asuntos", "canal_asuntos",
+                       "rol_directores", "canal_directores",
+                       "rol_invitacion", "canal_invitacion"),
             "description": "⚠ Los ids se copian de Discord con el modo desarrollador activado "
                            "(clic derecho → Copiar id). Los roles se eligen de la lista: "
                            "quien no esté marcado no verá el canal.",

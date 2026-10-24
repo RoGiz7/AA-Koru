@@ -2014,6 +2014,20 @@ class RecruitConfig(models.Model):
         max_length=30, blank=True, default="",
         help_text="A quién avisar cuando Dirección da su OK (los que mandan la invitación)")
 
+    # ⚠ UN CANAL POR PASO, Y NO ES COMODIDAD. Avisar en el canal de
+    # reclutadores de que Asuntos Internos tiene algo que revisar es contarles
+    # que hay una revision en curso — justo lo que se protege con las notas
+    # reservadas. Cada aviso va donde solo lo ve quien debe.
+    canal_asuntos = models.CharField(
+        max_length=30, blank=True, default="",
+        help_text="Dónde avisar de que le toca a Asuntos Internos. Vacío = no avisar")
+    canal_directores = models.CharField(
+        max_length=30, blank=True, default="",
+        help_text="Dónde avisar de que le toca a Dirección. Vacío = no avisar")
+    canal_invitacion = models.CharField(
+        max_length=30, blank=True, default="",
+        help_text="Dónde avisar de que falta mandar la invitación. Vacío = no avisar")
+
     # ⚠ CUAL ES LA ACADEMIA. Sin esto no se puede distinguir «Pasa a Corp» de
     # «Pasa a Academia» al detectar la entrada, y adivinarlo por el nombre
     # seria inventarse el resultado de una solicitud.

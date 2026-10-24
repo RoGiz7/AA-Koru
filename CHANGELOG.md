@@ -3,6 +3,37 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.44.0] — 2026-10-24
+
+### Añadido
+
+- **Un canal de aviso por paso, no uno para todo.** En la configuración hay
+  ahora cuatro: solicitud nueva, le toca a Asuntos Internos, le toca a
+  Dirección y falta la invitación.
+  - ⚠ **No es comodidad, es una fuga.** Avisar en `#general-reclutamiento` de
+    que Asuntos Internos tiene algo que revisar le está contando a los
+    reclutadores que hay una revisión en marcha — justo lo que protegen las
+    notas reservadas. Cada aviso va donde solo lo ve quien debe verlo.
+  - Un canal vacío significa «no avisar de ese paso». No se inventa un destino.
+
+### Arreglado
+
+- **Las menciones ya no salen como `<@&951128547316076614>`.** En la ficha de
+  reclutamiento y en la de tickets se traducen a `@Asuntos Internos`,
+  `@Fulano` y `#canal`.
+  - ★ **Se traducen al MOSTRAR, no al guardar.** Lo que Discord manda son ids
+    y así se archiva la transcripción. Si se tradujera al guardar, todo lo ya
+    archivado seguiría enseñando ids para siempre y un rol renombrado se
+    quedaría congelado con el nombre viejo. Traduciendo al leer, el histórico
+    entero se arregla solo y sin tocar un dato.
+  - Para las personas se mira **primero en Auth**, que es gratis y además da el
+    nombre que importa: el del personaje principal, no el apodo de Discord.
+    Solo si Auth no lo conoce se le pregunta a Discord, y la respuesta se
+    cachea una hora — también cuando no se sabe quién es, porque volver a
+    preguntarlo en cada carga no lo va a averiguar mejor.
+  - Un id que ya no existe sale como `@desconocido`. Si Discord no responde,
+    se ven los ids: feo, pero la ficha se abre igual.
+
 ## [0.43.0] — 2026-10-24
 
 ### Quitado

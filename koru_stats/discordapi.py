@@ -12,6 +12,7 @@ qué lo deciden los llamantes con lo que haya en la configuración.
 """
 
 import logging
+import re
 
 import requests
 from django.conf import settings
@@ -204,6 +205,96 @@ def listar_canales(tipo=CANAL_TEXTO):
     fuera.sort(key=lambda x: x[1].lower())
     cache.set(clave, fuera, 600)
     return fuera
+
+
+MENCION = re.compile(r"<(@[!&]?|#)(\d{5,25})>")
+
+
+def _nombre_de_uid(uid):
+    """
+    El nombre de quien tiene ese id de Discord.
+
+    ★ Primero se mira en Auth, que es gratis y además da el nombre QUE NOS
+    IMPORTA: el del personaje principal, no el apodo de Discord. Solo si Auth
+    no lo conoce — un invitado que nunca se registró — se le pregunta a
+    Discord.
+    """
+    try:
+        from allianceauth.services.modules.discord.models import DiscordUser
+        du = (DiscordUser.objects
+              .filter(uid=int(uid))
+              .select_related("user__profile__main_character")
+              .first())
+        if du:
+            main = getattr(getattr(du.user, "profile", None), "main_character", None)
+            if main and main.character_name:
+                return main.character_name
+            if du.username:
+                return du.username
+    except Exception:
+        pass
+
+    try:
+        r = requests.get(f"{API}/guilds/{_guild()}/members/{uid}",
+                         headers=_cabeceras(), timeout=ESPERA)
+        if r.status_code < 400:
+            d = r.json()
+            u = d.get("user") or {}
+            return (d.get("nick") or u.get("global_name")
+                    or u.get("username") or "")
+    except Exception as exc:
+        logger.debug("koru discord: no se pudo leer el miembro %s — %s", uid, exc)
+    return ""
+
+
+def resolver_menciones(texto):
+    """
+    Cambia «<@&951128547316076614>» por «@Asuntos Internos».
+
+    ⚠ SE HACE AL MOSTRAR, NO AL GUARDAR. Lo que Discord manda son ids, y así
+    es como se archiva la transcripción: si se tradujera al guardar, lo ya
+    archivado seguiría enseñando ids para siempre y un rol renombrado quedaría
+    congelado con el nombre viejo. Traduciendo al leer, el histórico entero se
+    arregla solo.
+
+    Un id que ya no existe — rol borrado, persona que se fue — se queda como
+    «@desconocido» en vez de reventar la ficha.
+    """
+    texto = texto or ""
+    if "<" not in texto:
+        return texto
+
+    from django.core.cache import cache
+
+    try:
+        roles = dict(listar_roles())
+    except Exception:
+        roles = {}
+    try:
+        canales = dict(listar_canales(CANAL_TEXTO))
+    except Exception:
+        canales = {}
+
+    def _uno(m):
+        tipo, ident = m.group(1), m.group(2)
+        if tipo == "#":
+            nombre = canales.get(ident, "")
+            # listar_canales devuelve «Categoría / #canal»; aquí sobra.
+            nombre = nombre.split("/")[-1].strip().lstrip("#")
+            return f"#{nombre}" if nombre else "#desconocido"
+        if tipo == "@&":
+            return f"@{roles.get(ident) or 'desconocido'}"
+
+        clave = f"koru_discord_nombre_{ident}"
+        nombre = cache.get(clave)
+        if nombre is None:
+            nombre = _nombre_de_uid(ident) or ""
+            # Se cachea incluso el fallo: si no se sabe quién es, preguntarlo
+            # otra vez en cada carga de la ficha no lo va a saber mejor.
+            cache.set(clave, nombre, 3600)
+        return f"@{nombre or 'desconocido'}"
+
+    return MENCION.sub(_uno, texto)
 
 
 def leer_canal(canal_id, tope=2000):

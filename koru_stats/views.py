@@ -3870,7 +3870,15 @@ def _tarea_al_staff(sol, paso, quien):
     from . import discordapi, recruit
 
     cfg = RecruitConfig.objects.filter(tag="default").first()
-    if not cfg or not cfg.avisar_en:
+    if not cfg:
+        return
+
+    # ⚠ CADA PASO A SU CANAL. Mandar al canal de reclutadores que Asuntos
+    # Internos tiene algo pendiente les cuenta que hay una revisión en marcha.
+    canal = {"reclutadores": cfg.canal_asuntos,
+             "asuntos": cfg.canal_directores,
+             "directores": cfg.canal_invitacion}.get(paso, "")
+    if not canal:
         return
 
     campo = recruit.SIGUIENTE_ROL.get(paso)
@@ -3886,7 +3894,7 @@ def _tarea_al_staff(sol, paso, quien):
              f" — {quien} acaba de dar su OK."
              + (f"\n{enlace}" if enlace else ""))
     try:
-        discordapi.publicar(cfg.avisar_en, texto)
+        discordapi.publicar(canal, texto)
     except Exception as exc:
         logger.warning("koru recruit: no se pudo avisar al staff: %s", exc)
 
@@ -3905,6 +3913,17 @@ def _conversacion_de(texto, nombre_piloto=""):
     LINEA = _re.compile(
         r"^\[(\d{1,2}/\d{1,2}/\d{4}),\s*(\d{1,2}:\d{2}(?::\d{2})?)\]\s*([^:]{1,60}?):\s?(.*)$")
     ADJ = _re.compile(r"\[ADJUNTO:\s*([^\]]+)\]")
+
+    # Las menciones se archivan como ids («<@&951128547316076614>») porque es
+    # lo que manda Discord. Se traducen AQUI, al mostrar, no al guardar: asi
+    # el historico ya archivado tambien se arregla y un rol renombrado sale
+    # con su nombre de hoy. Si Discord no responde, se ven los ids: feo, pero
+    # la ficha se abre igual.
+    try:
+        from . import discordapi
+        texto = discordapi.resolver_menciones(texto)
+    except Exception as exc:
+        logger.debug("koru recruit: no se pudieron traducir menciones: %s", exc)
 
     piloto = (nombre_piloto or "").strip().lower()
     fuera = []
@@ -4322,6 +4341,15 @@ def ticket_detail(request, ticket_id):
     # nombre del campo: si las lineas empiezan por «[fecha, hora] alguien:», es
     # una conversacion venga de donde venga.
     def _parsear(texto):
+        # Mismo criterio que en reclutamiento: las menciones se traducen al
+        # MOSTRAR, no al guardar, para que el historico ya archivado tambien
+        # salga con nombres y un rol renombrado salga con el de hoy.
+        try:
+            from . import discordapi
+            texto = discordapi.resolver_menciones(texto)
+        except Exception as exc:
+            logger.debug("koru tickets: no se tradujeron menciones: %s", exc)
+
         quien_pide = _llano(t.main_character_name)
         fuera = []
         for linea in (texto or "").splitlines():
