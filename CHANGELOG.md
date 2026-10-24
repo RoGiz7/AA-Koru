@@ -3,6 +3,30 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.33.2] — 2026-10-24
+
+### Corregido
+
+- **El retrato enseñaba los SP y las corps de OTRA PERSONA.** En corptools no
+  todos los `character_id` significan lo mismo:
+  - `corptools_characteraudit.character_id` → PK de `EveCharacter`
+  - `corptools_skilltotals.character_id` → PK del **audit**
+  - `corptools_corporationhistory.character_id` → PK del **audit**
+
+  El retrato cruzaba los dos últimos contra `EveCharacter`. No fallaba: cuando
+  los números coincidían devolvía los datos de otro personaje. A RoGiz7 le
+  salían 16,4 M de SP y 7 corps; los suyos son 657.755 y 4. Los demás alts
+  salían «sin datos de ESI» teniéndolos.
+- Comprobado que el fallo **no estaba en ningún otro sitio**: las otras
+  consultas de historial usan la tabla de `alumni`, que es otra cosa.
+
+### Nota de método
+
+La primera «verificación» de ese join comprobaba que la consulta devolviera
+filas, no que devolviera las correctas — y con eso pasó por buena. Para este
+tipo de cruce la comprobación válida es mirar que el número de un personaje
+conocido sea **el suyo**.
+
 ## [0.33.1] — 2026-10-24
 
 ### Cambiado

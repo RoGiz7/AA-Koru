@@ -121,9 +121,21 @@ class RecruitQuestionTipos:
 # venir None y la ficha tiene que decir «aun sin datos de ESI» — enseñar un 0
 # se leeria como «cuenta vacia», que es justo lo contrario.
 #
-# ⚠ Y OJO CON LOS IDs: en corptools `character_id` es el PK de EveCharacter
-# (`ec.id`), NO el id de EVE. Cruzarlo con el de EVE da filas de otra persona
-# sin que nada falle.
+# ⚠⚠ OJO CON LOS IDs DE CORPTOOLS, QUE NO SON TODOS IGUALES. Comprobado
+# contra produccion el 24/10/2026:
+#
+#   corptools_characteraudit.character_id   -> PK de EveCharacter  (ec.id)
+#   corptools_skilltotals.character_id      -> PK del AUDIT        (characteraudit.id)
+#   corptools_corporationhistory.character_id -> PK del AUDIT      (characteraudit.id)
+#
+# La primera version de este fichero cruzaba skilltotals e historial contra
+# ec.id. No fallaba: devolvia los datos DE OTRA PERSONA cuando los numeros
+# coincidian. A RoGiz7 le salian 16,4 M de SP y 7 corps que eran de otro
+# personaje; los suyos son 657.755 y 4.
+#
+# ★ Y LA COMPROBACION TIENE QUE SER LA BUENA: que una consulta devuelva filas
+# no prueba nada. Hay que mirar que el numero de SieteHierros sea el de
+# SieteHierros.
 
 SQL_PERSONAJES = """
 SELECT ec.id                AS pk,
@@ -139,21 +151,22 @@ SELECT ec.id                AS pk,
        cau.last_known_login AS ultimo_login
 FROM authentication_characterownership co
 JOIN eveonline_evecharacter ec        ON ec.id = co.character_id
-LEFT JOIN corptools_skilltotals st    ON st.character_id = ec.id
 LEFT JOIN corptools_characteraudit cau ON cau.character_id = ec.id
+LEFT JOIN corptools_skilltotals st     ON st.character_id = cau.id
 WHERE co.user_id = %s
 ORDER BY ec.character_name
 """
 
 SQL_HISTORIAL = """
-SELECT ch.character_id AS pk,
+SELECT ca.character_id   AS pk,
        ch.corporation_id AS corp_id,
        ch.start_date     AS desde,
        en.name           AS corp
 FROM corptools_corporationhistory ch
+JOIN corptools_characteraudit ca ON ca.id = ch.character_id
 LEFT JOIN corptools_evename en ON en.eve_id = ch.corporation_name_id
-WHERE ch.character_id IN %s
-ORDER BY ch.character_id, ch.start_date DESC
+WHERE ca.character_id IN %s
+ORDER BY ca.character_id, ch.start_date DESC
 """
 
 CUENTA_NUEVA_DIAS = 90      # por debajo de esto, la cuenta es reciente
