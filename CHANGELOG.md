@@ -3,6 +3,21 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.42.3] — 2026-10-24
+
+### Corregido
+
+- **El comando se quedaba colgado en «está pensando…» para siempre**, sin error
+  y sin respuesta. No fallaba: **esperaba**. `sync_to_async` ejecuta por defecto
+  (`thread_sensitive=True`) el código de Django en el hilo principal — que en un
+  bot es justo el que atiende el bucle de eventos. Se quedaban esperándose el
+  uno al otro.
+- Con `thread_sensitive=False` va a un hilo aparte. **No es opcional** en un
+  cog: cualquier acceso a la base desde aquí lo necesita.
+
+El síntoma es la pista: un error se ve, un bloqueo no. Cuando un comando ni
+responde ni falla, el sospechoso es el hilo, no el código.
+
 ## [0.42.2] — 2026-10-24
 
 ### Cambiado

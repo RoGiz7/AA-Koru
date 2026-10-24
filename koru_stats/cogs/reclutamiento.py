@@ -145,7 +145,13 @@ class Reclutamiento(commands.Cog):
             # `ctx.channel.id` y no `ctx.channel_id`: el primero existe en
             # todas las versiones, el segundo no siempre.
             canal = ctx.channel.id if ctx.channel else 0
-            ok, msg, aviso = await sync_to_async(_hacer)(
+            # ⚠⚠ `thread_sensitive=False` NO ES OPCIONAL AQUI. Por defecto
+            # `sync_to_async` ejecuta el codigo de Django en el hilo principal
+            # — que en un bot es justo el que atiende el bucle de eventos. Se
+            # quedan esperandose el uno al otro y el comando no responde NUNCA:
+            # ni error ni respuesta, solo «esta pensando…» para siempre.
+            # Con False va a un hilo aparte y no hay bloqueo.
+            ok, msg, aviso = await sync_to_async(_hacer, thread_sensitive=False)(
                 canal, ctx.author.id, accion, dato)
         except Exception as exc:
             logger.exception("koru cog: fallo en /recluta %s", accion)
