@@ -3,6 +3,23 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.42.1] — 2026-10-24
+
+### Corregido
+
+- **El cog no cargaba: la librería no es discord.py, es py-cord.** Comprobado en
+  producción: `py-cord 2.8.1`. No existe `discord.app_commands`, así que el
+  import reventaba y el bot lo registraba como extensión fallida. Reescrito con
+  `SlashCommandGroup` y `ctx.respond(...)`, y `setup()` **síncrono**, que es
+  como lo llama py-cord.
+- **Los comandos se registran en el servidor, no globalmente.** Los globales
+  tardan hasta una hora en aparecer; los de guild son inmediatos. Sale de
+  `DISCORD_GUILD_ID`; sin él se cae a global, que funciona pero tarda.
+
+Fue el único trozo de la sesión escrito sin poder ejecutarlo, y falló por donde
+se avisó. El fallo fue de los buenos: ruidoso, en el log del bot, y sin tocar
+nada de lo que ya funcionaba.
+
 ## [0.42.0] — 2026-10-24
 
 ### Añadido

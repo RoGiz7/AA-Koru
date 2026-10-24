@@ -2,49 +2,51 @@
 El reclutamiento, desde el propio canal de Discord.
 
 ★ POR QUÉ COMANDOS Y NO BOTONES. Los botones quedan más bonitos, pero los
-botones persistentes se pierden cuando el bot reinicia si no se vuelven a
-registrar — y ese fallo no se nota el día que pasa: se nota semanas después,
-cuando alguien pulsa y no ocurre nada. Un comando no tiene ese modo de fallo.
-Los botones se pueden añadir encima más adelante.
+persistentes se pierden cuando el bot reinicia si no se vuelven a registrar — y
+ese fallo no se nota el día que pasa: se nota semanas después, cuando alguien
+pulsa y no ocurre nada. Un comando no tiene ese modo de fallo.
 
 ★ ESTE COG NO DECIDE NADA. Toda la lógica —quién puede, en qué orden, qué se
 escribe— vive en `recruit.py` y la comparte con la pantalla web. Si aquí se
 reimplementara, aprobar desde Discord y aprobar desde la web harían cosas
 distintas a la primera modificación, sin que nadie se diera cuenta.
 
-⚠ Django es síncrono y discord.py es asíncrono: TODO lo que toque la base va
-envuelto en `sync_to_async`. Sin eso, el bot se bloquea o Django protesta.
+⚠ LA LIBRERÍA ES PY-CORD, NO discord.py. Lo comprobamos en producción:
+`py-cord 2.8.1`. No existe `discord.app_commands` — los comandos se declaran
+con `SlashCommandGroup` y se responde con `ctx.respond(...)`. La primera
+versión de este fichero usaba discord.py y el cog no llegó a cargar.
+
+⚠ Django es síncrono y py-cord asíncrono: TODO lo que toque la base va envuelto
+en `sync_to_async`, o el bot se bloquea.
 """
 
 import logging
 
 from asgiref.sync import sync_to_async
+from django.conf import settings
 
 import discord
-from discord import app_commands
 from discord.ext import commands
 
 logger = logging.getLogger(__name__)
 
 
+def _guilds():
+    """
+    Registrar los comandos EN EL SERVIDOR y no globalmente.
+
+    Los globales tardan hasta una hora en aparecer; los de guild son
+    inmediatos. Si no hay guild configurado, se cae a global — tardará, pero
+    funcionará.
+    """
+    g = str(getattr(settings, "DISCORD_GUILD_ID", "") or "")
+    return [int(g)] if g.isdigit() else None
+
+
 # --- Lo que toca la base, aislado -------------------------------------------
 
-def _solicitud_del_canal(canal_id):
-    from koru_stats.models import RecruitApplication
-
-    return (RecruitApplication.objects
-            .filter(discord_channel_id=str(canal_id))
-            .order_by("-created_at").first())
-
-
-def _quien(uid):
-    from koru_stats import recruit
-
-    return recruit.usuario_de_discord(uid)
-
-
 def _resumen(sol):
-    """En qué punto va, en una línea."""
+    """En qué punto va la solicitud."""
     pasos = [
         ("Entrevista", sol.entrevista_en),
         ("Reclutadores", sol.ok_reclutadores_en),
@@ -54,14 +56,15 @@ def _resumen(sol):
     ]
     hechos = " · ".join(f"{'✅' if c else '⬜'} {n}" for n, c in pasos)
     if not sol.abierta:
-        return f"**{sol.main_character_name}** — cerrada como «{sol.get_estado_display()}»\n{hechos}"
+        return (f"**{sol.main_character_name}** — cerrada como "
+                f"«{sol.get_estado_display()}»\n{hechos}")
 
     falta = {
-        "entrevista": "Falta marcar la entrevista (`/recluta entrevista`)",
-        "reclutadores": "Falta el OK de reclutadores (`/recluta ok`)",
-        "asuntos": "Falta el OK de Asuntos Internos (`/recluta ok`)",
-        "directores": "Falta el OK de Dirección (`/recluta ok`)",
-        "invitacion": "Falta mandar la invitación (`/recluta invitacion`)",
+        "entrevista": "Falta marcar la entrevista — `/recluta entrevista`",
+        "reclutadores": "Falta el OK de reclutadores — `/recluta ok`",
+        "asuntos": "Falta el OK de Asuntos Internos — `/recluta ok`",
+        "directores": "Falta el OK de Dirección — `/recluta ok`",
+        "invitacion": "Falta mandar la invitación — `/recluta invitacion`",
         "esperando_entrada": "Invitación enviada: esperando a que entre en la corp",
     }.get(sol.fase, sol.fase)
     return f"**{sol.main_character_name}**\n{hechos}\n\n{falta}"
@@ -69,30 +72,36 @@ def _resumen(sol):
 
 def _hacer(canal_id, uid, accion, dato=""):
     """
-    Resuelve quién pulsa, encuentra la solicitud y llama a `recruit`.
+    Resuelve quién ejecuta, encuentra la solicitud del canal y llama a `recruit`.
 
-    Devuelve (ok, mensaje, aviso_publico). El aviso público es lo que se manda
-    al canal; vacío significa que no hay nada que anunciar.
+    Devuelve (ok, respuesta_privada, aviso_publico). El aviso vacío significa
+    que no hay nada que anunciar al canal.
     """
     from koru_stats import recruit
+    from koru_stats.models import RecruitApplication
 
-    sol = _solicitud_del_canal(canal_id)
+    sol = (RecruitApplication.objects
+           .filter(discord_channel_id=str(canal_id))
+           .order_by("-created_at").first())
     if not sol:
         return False, "Este canal no es el de ninguna solicitud.", ""
 
-    user = _quien(uid)
+    user = recruit.usuario_de_discord(uid)
     if not user:
-        # ⚠ Pasa de verdad: alguien del staff que no ha vinculado Discord en el
-        # Auth. Mejor decírselo que dejarle pulsando sin efecto.
+        # ⚠ Pasa de verdad: alguien del staff con el rol en Discord pero sin el
+        # servicio activado en el Auth. Mejor decírselo que dejarle ejecutando
+        # comandos sin efecto.
         return False, ("Tu Discord no está vinculado a ninguna cuenta del Auth, "
                        "así que no puedo saber qué permisos tienes."), ""
+
+    quien = recruit._nombre(user)
 
     if accion == "estado":
         return True, _resumen(sol), ""
 
     if accion == "entrevista":
         ok, msg = recruit.marcar_entrevista(sol, user, dato)
-        return ok, msg, (f"🎙️ **Entrevista hecha** por {recruit._nombre(user)}." if ok else "")
+        return ok, msg, (f"🎙️ **Entrevista hecha** por {quien}." if ok else "")
 
     if accion == "ok":
         paso = sol.fase
@@ -103,11 +112,11 @@ def _hacer(canal_id, uid, accion, dato=""):
             return False, msg, ""
         etiquetas = {"reclutadores": "Reclutadores", "asuntos": "Asuntos Internos",
                      "directores": "Dirección"}
-        return True, msg, f"✅ **{etiquetas.get(paso, paso)}** dan su OK — {recruit._nombre(user)}."
+        return True, msg, f"✅ **{etiquetas.get(paso, paso)}** dan su OK — {quien}."
 
     if accion == "invitacion":
         ok, msg = recruit.marcar_invitacion(sol, user)
-        return ok, msg, (f"📨 **Invitación enviada** por {recruit._nombre(user)}. "
+        return ok, msg, (f"📨 **Invitación enviada** por {quien}. "
                          f"Acéptala desde el juego." if ok else "")
 
     return False, "No sé hacer eso.", ""
@@ -121,44 +130,42 @@ class Reclutamiento(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    grupo = app_commands.Group(
-        name="recluta",
-        description="Pasos de la solicitud de este canal")
+    grupo = discord.SlashCommandGroup(
+        "recluta", "Pasos de la solicitud de este canal", guild_ids=_guilds())
 
-    async def _responder(self, interaction, canal_id, uid, accion, dato=""):
-        ok, msg, aviso = await sync_to_async(_hacer)(canal_id, uid, accion, dato)
+    async def _responder(self, ctx, accion, dato=""):
+        ok, msg, aviso = await sync_to_async(_hacer)(
+            ctx.channel_id, ctx.author.id, accion, dato)
 
-        # ⚠ La respuesta al que pulsa va SIEMPRE en efímero: lo que se anuncia
-        # al canal es otra cosa, y mezclarlas llena el canal de ruido.
-        await interaction.response.send_message(msg, ephemeral=True)
+        # ⚠ La respuesta a quien ejecuta va SIEMPRE en efímero; lo que se
+        # anuncia al canal es otra cosa. Mezclarlas llena el canal de ruido.
+        await ctx.respond(msg, ephemeral=True)
 
         if ok and aviso:
             try:
-                await interaction.channel.send(aviso)
+                await ctx.channel.send(aviso)
             except Exception as exc:
                 logger.warning("koru cog: no se pudo avisar en el canal: %s", exc)
 
     @grupo.command(name="estado", description="En qué punto va esta solicitud")
-    async def estado(self, interaction: discord.Interaction):
-        await self._responder(interaction, interaction.channel_id,
-                              interaction.user.id, "estado")
+    async def estado(self, ctx: discord.ApplicationContext):
+        await self._responder(ctx, "estado")
 
     @grupo.command(name="entrevista", description="Marcar que ya has hecho la entrevista")
-    @app_commands.describe(nota="Lo que quieras dejar escrito (opcional)")
-    async def entrevista(self, interaction: discord.Interaction, nota: str = ""):
-        await self._responder(interaction, interaction.channel_id,
-                              interaction.user.id, "entrevista", nota)
+    async def entrevista(
+            self, ctx: discord.ApplicationContext,
+            nota: discord.Option(str, "Lo que quieras dejar escrito", required=False) = ""):
+        await self._responder(ctx, "entrevista", nota or "")
 
     @grupo.command(name="ok", description="Dar tu OK al paso que toque ahora")
-    async def ok(self, interaction: discord.Interaction):
-        await self._responder(interaction, interaction.channel_id,
-                              interaction.user.id, "ok")
+    async def ok(self, ctx: discord.ApplicationContext):
+        await self._responder(ctx, "ok")
 
     @grupo.command(name="invitacion", description="Marcar la invitación in-game como enviada")
-    async def invitacion(self, interaction: discord.Interaction):
-        await self._responder(interaction, interaction.channel_id,
-                              interaction.user.id, "invitacion")
+    async def invitacion(self, ctx: discord.ApplicationContext):
+        await self._responder(ctx, "invitacion")
 
 
-async def setup(bot):
-    await bot.add_cog(Reclutamiento(bot))
+def setup(bot):
+    # ⚠ `setup` SÍNCRONO: py-cord lo llama así, no como corrutina.
+    bot.add_cog(Reclutamiento(bot))
