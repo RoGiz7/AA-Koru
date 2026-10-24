@@ -1,0 +1,31 @@
+{% comment %}
+Retoques de estilo comunes a las pantallas de Koru.
+
+★ POR QUE UN PARCIAL Y NO EDITAR CADA BOTON. `btn-outline-secondary` sale en
+28 sitios repartidos por 14 pantallas, y en varias lo escribe JavaScript al
+vuelo (las paginaciones, el «copiado» de los dashboards de lunas). Cambiarlos
+a mano es mucha superficie para un problema que es de color, y los que genera
+el JS se quedarian igual.
+
+El fallo: el borde gris de `outline-secondary` sobre el fondo oscuro del tema
+queda casi del mismo tono que el fondo. El boton esta ahi y funciona, pero no
+se ve — que para un boton es lo mismo que no estar.
+{% endcomment %}
+<style>
+.btn-outline-secondary {
+  border-color: rgba(173,181,189,.7);
+  color: #ced4da;
+}
+.btn-outline-secondary:hover,
+.btn-outline-secondary:focus {
+  background-color: #adb5bd;
+  border-color: #adb5bd;
+  color: #212529;
+}
+/* Un botón deshabilitado SÍ debe verse apagado: es información. */
+.btn-outline-secondary:disabled,
+.btn-outline-secondary.disabled {
+  border-color: rgba(173,181,189,.3);
+  color: rgba(206,212,218,.45);
+}
+</style>

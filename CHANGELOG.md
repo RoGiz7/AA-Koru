@@ -3,6 +3,22 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.46.1] — 2026-10-24
+
+### Arreglado
+
+- **Los botones secundarios casi no se veían** sobre el fondo oscuro: el borde
+  de `btn-outline-secondary` quedaba del mismo tono que el fondo. El botón
+  estaba y funcionaba, pero no se veía — que para un botón es lo mismo que no
+  estar.
+  - ★ Se arregla con **un parcial de estilos compartido**, no botón a botón:
+    esa clase sale en 28 sitios de 14 pantallas, y en varias la escribe
+    JavaScript al vuelo (paginaciones, el «copiado» de los dashboards de
+    lunas). Esos no se habrían arreglado tocando plantillas.
+  - Un botón deshabilitado sigue viéndose apagado: eso **es** información.
+  - Incluido de momento en reclutamiento (ficha, lista, asistente) y tickets
+    (detalle y panel). El resto de pantallas lo heredarán añadiendo una línea.
+
 ## [0.46.0] — 2026-10-24
 
 ### Cambiado

@@ -3,6 +3,10 @@
 
 {% block title %}Koru — Reclutamiento{% endblock %}
 
+{% block extra_css %}
+{% include "koru_stats/includes/koru_estilos.html" %}
+{% endblock %}
+
 {% block page_title %}
     {% include "framework/header/page-header.html" with title="Reclutamiento" subtitle="Solicitudes" %}
 {% endblock %}
