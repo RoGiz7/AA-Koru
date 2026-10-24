@@ -3,6 +3,29 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.40.0] — 2026-10-24
+
+### Cambiado
+
+- **La invitación la puede marcar quien tiene el rol in-game**, no solo quien
+  esté en un grupo de AA. A quién puede invitar a la corp lo decide el CEO
+  dentro del juego: sacarlo de ahí hace que la lista se mantenga sola — el día
+  que alguien deja de ser Personnel Manager, deja de poder marcar invitaciones
+  sin que nadie toque nada.
+- Los grupos de AA siguen valiendo como **respaldo**, por si corptools no tiene
+  el dato.
+
+### Cuidado
+
+- ⚠ **El rol es por corp.** En la base hay 258 personnel managers, y muchos son
+  alts de nuestros miembros en corps ajenas —«The Dark Techno Club», «La
+  Forja»…—. Mandar en otra corp no da derecho a invitar a la nuestra, así que
+  se exigen **las dos cosas**: el rol y estar en una corp rastreada.
+- ⚠ **Y otra vez los ids de corptools.** `characterroles.character_id` es el PK
+  del **audit**, no el de `EveCharacter` — como `skilltotals` y
+  `corporationhistory`. Van ya tres tablas con la misma trampa; comprobado
+  contra producción antes de escribir la consulta.
+
 ## [0.39.1] — 2026-10-24
 
 ### Corregido

@@ -417,9 +417,18 @@ def puede(user, paso):
     if user.is_superuser:
         return True, ""
 
+    # ★ La invitacion tiene DOS caminos: el rol in-game o el grupo de AA.
+    # El primero es el que manda de verdad; el segundo es el respaldo para
+    # cuando el dato de corptools no esta.
+    if paso == "invitacion" and tiene_rol_invitar(user):
+        return True, ""
+
     grupos = quien_puede(paso)
     if not grupos:
         _, que = PASOS.get(paso, ("", "este paso"))
+        if paso == "invitacion":
+            return False, ("Para marcar la invitación hace falta el rol de "
+                           "Personnel Manager o Director en una corp de Rekium.")
         return False, (f"Todavía no está configurado quién puede dar {que}. "
                        "Dilo en la configuración de reclutamiento del admin.")
 
@@ -428,6 +437,10 @@ def puede(user, paso):
         return True, ""
 
     _, que = PASOS[paso]
+    if paso == "invitacion":
+        return False, ("Para marcar la invitación hace falta el rol de "
+                       "Personnel Manager o Director en una corp de Rekium, "
+                       "o estar en: " + " o ".join(grupos) + ".")
     return False, (f"No puedes dar {que}: eso lo hace "
                    + " o ".join(grupos) + ". Avísales y lo darán ellos.")
 
@@ -516,3 +529,52 @@ def archivar_canal(solicitud):
     solicitud.discord_channel_id = ""
     solicitud.save(update_fields=["discord_channel_id", "updated_at"])
     return f"{len(texto)} caracteres guardados"
+
+
+# ---------------------------------------------------------------------------
+# Quién puede invitar de verdad
+# ---------------------------------------------------------------------------
+#
+# ★ EL ROL IN-GAME MANDA MÁS QUE UNA LISTA. A quién puede invitar a la corp lo
+# decide el CEO dentro del juego, no una casilla del admin. Si lo sacamos de
+# ahí, la lista se mantiene sola: el día que alguien deja de ser Personnel
+# Manager, deja de poder marcar invitaciones sin que nadie toque nada.
+#
+# ⚠ PERO EL ROL ES POR CORP. En la base hay 258 personnel managers, y muchos
+# son alts de nuestros miembros en corps ajenas —«The Dark Techno Club», «La
+# Forja»…—. Mandar en otra corp no da derecho a invitar a la nuestra, así que
+# hay que exigir las dos cosas: el rol Y estar en una corp rastreada.
+#
+# ⚠ Y los ids de corptools otra vez: `characterroles.character_id` es el PK del
+# AUDIT, no el de EveCharacter. Comprobado contra producción, igual que pasaba
+# con los SP y el historial.
+
+SQL_PUEDE_INVITAR = """
+SELECT 1
+FROM authentication_characterownership co
+JOIN eveonline_evecharacter ec      ON ec.id = co.character_id
+JOIN corptools_characteraudit ca    ON ca.character_id = ec.id
+JOIN corptools_characterroles cr    ON cr.character_id = ca.id
+JOIN koru_stats_trackedcorporation tc
+       ON tc.corporation_id = ec.corporation_id AND tc.is_active = 1
+WHERE co.user_id = %s
+  AND (cr.personnel_manager = 1 OR cr.director = 1)
+LIMIT 1
+"""
+
+
+def tiene_rol_invitar(user):
+    """¿Alguno de sus personajes puede invitar a una corp nuestra, in-game?"""
+    from django.db import connection
+
+    if not user.is_authenticated:
+        return False
+    try:
+        with connection.cursor() as cur:
+            cur.execute(SQL_PUEDE_INVITAR, [user.id])
+            return cur.fetchone() is not None
+    except Exception as exc:
+        # Si corptools no tiene el dato, no se bloquea a nadie: se cae a los
+        # grupos de AA, que es el respaldo.
+        logger.warning("koru recruit: no se pudo mirar el rol in-game: %s", exc)
+        return False
