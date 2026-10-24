@@ -1967,6 +1967,14 @@ class RecruitConfig(models.Model):
         max_length=30, blank=True, default="",
         help_text="Canal donde avisar de que hay solicitud nueva. Opcional")
 
+    # ⚠ SIN MENCION NO HAY AVISO. Un canal privado recien creado aparece en la
+    # lista de Discord y ya esta: ni al piloto ni a los reclutadores les salta
+    # nada. Mencionar al rol en el primer mensaje es lo que convierte el canal
+    # en algo que alguien abre.
+    rol_avisar = models.CharField(
+        max_length=30, blank=True, default="",
+        help_text="Rol al que mencionar cuando entra una solicitud. Vacío = no mencionar a nadie")
+
     # --- Quién aprueba cada paso -------------------------------------------
     #
     # ★ CONFIGURABLE, Y CON VARIOS GRUPOS POR PASO. En n8n esto era una sola

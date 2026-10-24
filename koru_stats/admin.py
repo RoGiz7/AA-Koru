@@ -680,6 +680,14 @@ class RecruitConfigForm(forms.ModelForm):
                     "Avisar en",
                     "Dónde avisar de que hay solicitud nueva. Déjalo vacío para no avisar.")
 
+        # El rol a mencionar sale de la misma lista que los demás.
+        actual_rol = str(self.initial.get("rol_avisar") or "")
+        self.fields["rol_avisar"] = forms.ChoiceField(
+            choices=[("", "— no mencionar a nadie —")] + opciones,
+            initial=actual_rol, required=False,
+            label="Mencionar a",
+            help_text="Sin mención, nadie se entera de que el canal existe.")
+
     def _lista(self, discordapi, campo, tipo, etiqueta, ayuda):
         from django import forms as f
         try:
@@ -724,7 +732,8 @@ class RecruitConfigAdmin(admin.ModelAdmin):
                            "Se pueden poner varios grupos por paso.",
         }),
         ("Discord", {
-            "fields": ("categoria_id", "prefijo_canal", "roles_ver", "avisar_en"),
+            "fields": ("categoria_id", "prefijo_canal", "roles_ver",
+                       "rol_avisar", "avisar_en"),
             "description": "⚠ Los ids se copian de Discord con el modo desarrollador activado "
                            "(clic derecho → Copiar id). Los roles se eligen de la lista: "
                            "quien no esté marcado no verá el canal.",

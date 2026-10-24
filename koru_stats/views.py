@@ -3768,6 +3768,45 @@ def recruit_accion(request, sol_id):
                      f"Si necesitas algo de aquí, cópialo antes.",
                 mencionar=True)
 
+    elif accion == "reabrir":
+        # ★ SOLO MIENTRAS EL CANAL VIVA. Reabrir una solicitud ya archivada
+        # dejaria un expediente abierto sin sitio donde hablar, y crear un canal
+        # nuevo sobrescribiria la transcripcion del primero — que es perder
+        # justo lo que esto existe para guardar. Cerrar por error se detecta en
+        # minutos, asi que la ventana de 24 h cubre el caso real.
+        ok, motivo = recruit.puede(request.user, "rechazo")
+        if not ok:
+            messages.error(request, motivo)
+        elif sol.abierta:
+            messages.info(request, "Esta solicitud ya está abierta.")
+        elif not sol.discord_channel_id:
+            messages.error(
+                request,
+                "Su canal ya se archivó y se borró, así que no se puede reabrir. "
+                "El piloto puede enviar una solicitud nueva: la antigua queda "
+                "aquí con su conversación.")
+        else:
+            # ⚠ El cierre NO se borra en silencio: queda escrito en una nota.
+            # Limpiar los campos sin mas dejaria la ficha como si nunca se
+            # hubiera cerrado, y eso es falso — el error tambien es historia.
+            antes = sol.get_estado_display()
+            RecruitNote.objects.create(
+                solicitud=sol, autor=request.user, autor_nombre=quien,
+                texto=(f"Reabierta por {quien}. Estaba cerrada como «{antes}»"
+                       + (f": {sol.motivo_cierre}" if sol.motivo_cierre else "") + "."))
+
+            sol.estado = RecruitApplication.EN_CURSO
+            sol.motivo_cierre = ""
+            sol.cerrada_por = None
+            sol.fecha_cierre = None
+            sol.save()
+
+            _avisar_canal(
+                sol, f"↩️ **Tu solicitud se ha reabierto** por {quien}. "
+                     f"Seguimos donde lo dejamos; este canal ya no se borrará.",
+                mencionar=True)
+            messages.success(request, f"Reabierta. Estaba cerrada como «{antes}».")
+
     elif accion == "archivar":
         # Mismo permiso que cerrar: quien decide el final decide el archivo.
         ok, motivo = recruit.puede(request.user, "rechazo")

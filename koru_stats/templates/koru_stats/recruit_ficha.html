@@ -150,7 +150,16 @@ botón es para no esperar.
               El canal sigue abierto. Se guardará y borrará solo a las 24 h del cierre.
             </span>
             {% if puedo_rechazar %}
+{% comment %}
+Reabrir solo se ofrece mientras el canal exista. Después no es posible, y un
+botón que explica por qué no está es mejor que uno que falla al pulsarlo.
+{% endcomment %}
             <form method="post" action="{% url 'koru_stats:recruit_accion' sol.pk %}" class="ms-auto">
+              {% csrf_token %}
+              <input type="hidden" name="accion" value="reabrir">
+              <button class="btn btn-sm btn-outline-secondary">↩️ Reabrir</button>
+            </form>
+            <form method="post" action="{% url 'koru_stats:recruit_accion' sol.pk %}">
               {% csrf_token %}
               <input type="hidden" name="accion" value="archivar">
               <button class="btn btn-sm btn-outline-danger">Guardar y borrar ya</button>

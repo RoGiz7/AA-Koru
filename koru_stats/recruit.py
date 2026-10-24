@@ -333,13 +333,37 @@ def crear_canal(solicitud, retrato):
     canal = discordapi.crear_canal(
         nombre, cfg.categoria_id, roles_ver=cfg.roles_ver or [], uid_invitado=uid)
 
+    # ⚠ LA MENCIÓN ES LO QUE HACE QUE ESTO EXISTA PARA ALGUIEN. Un canal
+    # privado recién creado aparece en la lista de Discord y ya está: ni al
+    # piloto ni a los reclutadores les salta nada. Sin ping, el canal se queda
+    # ahí sin que nadie lo abra.
+    saludo = ""
+    if cfg.rol_avisar:
+        saludo += f"<@&{cfg.rol_avisar}> "
+    if uid:
+        saludo += f"<@{uid}> "
+    if saludo:
+        saludo = saludo.strip() + "\n\n"
+
     # ★ Si el canal se crea pero el mensaje falla, el canal NO se pierde: se
     # devuelve igual y el fallo se anota. Un canal vacío es recuperable; uno
     # que no sabemos que existe, no.
     try:
-        discordapi.publicar(canal, ficha_discord(solicitud, retrato))
+        discordapi.publicar(canal, saludo + ficha_discord(solicitud, retrato))
     except Exception as exc:
         logger.error("koru recruit: canal %s creado pero sin ficha: %s", canal, exc)
+
+    # Y un aviso en el canal general, si está configurado: el que no tenga el
+    # canal privado a la vista se entera igual de que ha entrado alguien.
+    if cfg.avisar_en:
+        try:
+            discordapi.publicar(
+                cfg.avisar_en,
+                (f"<@&{cfg.rol_avisar}> " if cfg.rol_avisar else "")
+                + f"📥 **Solicitud nueva** de **{solicitud.main_character_name}** "
+                  f"— <#{canal}>")
+        except Exception as exc:
+            logger.warning("koru recruit: no se pudo avisar en %s: %s", cfg.avisar_en, exc)
 
     return canal
 

@@ -3,6 +3,34 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.38.0] — 2026-10-24
+
+### Corregido
+
+- **Nadie se enteraba de que el canal existía.** Un canal privado recién creado
+  aparece en la lista de Discord y ya está: ni al piloto ni a los reclutadores
+  les saltaba nada. Ahora el primer mensaje **menciona al rol de reclutamiento
+  y al piloto**, y además se avisa en el canal general con un enlace al nuevo.
+  El rol se elige en la configuración (`Mencionar a`); vacío = no mencionar.
+- El campo `avisar_en` llevaba configurado desde el principio **sin usarse**.
+  Ahora sirve para algo.
+
+### Añadido
+
+- **Reabrir una solicitud cerrada por error**, mientras su canal siga vivo —las
+  primeras 24 h—. El cierre **no se borra en silencio**: queda una nota
+  automática con quién reabrió, cómo estaba cerrada y por qué. Limpiar los
+  campos sin más dejaría la ficha como si nunca se hubiera cerrado, y eso es
+  falso: el error también es historia.
+
+### Decidido
+
+- **Reabrir solo dentro de la ventana.** Después, el canal ya no existe y crear
+  uno nuevo sobrescribiría la transcripción del primero — perder justo lo que
+  esto existe para guardar. Cerrar por error se detecta en minutos, así que las
+  24 h cubren el caso real. Si con el uso hace falta reabrir algo archivado,
+  habrá que **acumular** transcripciones en vez de reemplazarlas.
+
 ## [0.37.0] — 2026-10-24
 
 ### Cambiado
