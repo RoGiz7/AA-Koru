@@ -3657,3 +3657,48 @@ def recruit_preparar(solicitud_id):
 
     solicitud.save(update_fields=["discord_channel_id", "discord_error", "updated_at"])
     return f"solicitud {solicitud_id}: canal={solicitud.discord_channel_id or 'no'}"
+
+
+# ★ LA PROMESA SE CUMPLE AQUI. Al cerrar una solicitud se le dice al piloto
+# que el canal se borra en 24 horas. Si nada lo borrara, habriamos vuelto a
+# acumular canales — y encima habiendo prometido lo contrario, que es peor que
+# no prometer nada.
+HORAS_DE_GRACIA = 24
+
+
+@shared_task
+def recruit_archivar_vencidas():
+    """
+    Guarda la conversacion y borra el canal de las solicitudes cerradas hace
+    mas de un dia.
+
+    ⚠ Una a una y cada una en su try: que una falle —canal borrado a mano,
+    Discord de mal humor— no puede dejar sin archivar a las demas.
+    """
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from .models import RecruitApplication
+    from . import recruit
+
+    limite = timezone.now() - timedelta(hours=HORAS_DE_GRACIA)
+    vencidas = (RecruitApplication.objects
+                .filter(estado__in=RecruitApplication.CERRADOS,
+                        fecha_cierre__lt=limite)
+                .exclude(discord_channel_id=""))
+
+    hechas, fallos = 0, 0
+    for sol in vencidas:
+        try:
+            recruit.archivar_canal(sol)
+            hechas += 1
+        except Exception as exc:
+            fallos += 1
+            # El canal se queda: sin transcripcion no se borra nada. Se
+            # reintentara en la siguiente pasada.
+            logger.error("koru recruit_archivar: solicitud %s: %s", sol.id, exc)
+
+    if hechas or fallos:
+        logger.info("koru recruit_archivar: %s archivadas, %s con fallo", hechas, fallos)
+    return f"archivadas {hechas}, fallos {fallos}"

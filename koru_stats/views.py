@@ -3731,7 +3731,8 @@ def recruit_accion(request, sol_id):
             sol.save()
             etiquetas = {"reclutadores": "Reclutadores",
                          "asuntos": "Asuntos Internos", "directores": "Dirección"}
-            _avisar_canal(sol, f"✅ **{etiquetas.get(paso, paso)}** dan su OK — {quien}.")
+            _avisar_canal(sol, f"✅ **{etiquetas.get(paso, paso)}** dan su OK — {quien}.",
+                          mencionar=True)
             messages.success(request, f"Paso «{paso}» aprobado por {quien}.")
 
     elif accion == "cerrar":
@@ -3755,25 +3756,37 @@ def recruit_accion(request, sol_id):
             sol.save()
             messages.success(request, f"Solicitud cerrada como «{sol.get_estado_display()}».")
 
-            # Se avisa ANTES de archivar, para que el aviso entre en la
-            # transcripcion: así queda escrito cómo acabó y quién lo decidió.
+            # ★ CERRAR NO BORRA EL CANAL. Son dos decisiones distintas y una
+            # de ellas no tiene vuelta atrás. Al piloto se le avisa de que
+            # tiene un día antes de que el canal desaparezca: si quiere copiar
+            # algo, preguntar o despedirse, puede. Borrarlo en el mismo
+            # segundo en que se le dice que no es innecesariamente brusco.
             _avisar_canal(
-                sol, f"📁 **Solicitud cerrada** como «{sol.get_estado_display()}» "
-                     f"por {quien}.\n{texto}\n\nEste canal se guarda y se cierra.")
+                sol, f"📁 **Tu solicitud se ha cerrado** como "
+                     f"«{sol.get_estado_display()}».\n{texto}\n\n"
+                     f"Este canal se borrará dentro de **24 horas**. "
+                     f"Si necesitas algo de aquí, cópialo antes.",
+                mencionar=True)
 
-            # ⚠ EL ORDEN NO ES NEGOCIABLE: primero guardar la conversación,
-            # después borrar el canal. Si el guardado falla, el canal se queda
-            # — una conversación perdida no se recupera; un canal de más se
-            # borra a mano en diez segundos.
+    elif accion == "archivar":
+        # Mismo permiso que cerrar: quien decide el final decide el archivo.
+        ok, motivo = recruit.puede(request.user, "rechazo")
+        if not ok:
+            messages.error(request, motivo)
+        elif sol.abierta:
+            messages.error(request, "Primero hay que cerrar la solicitud.")
+        elif not sol.discord_channel_id:
+            messages.info(request, "Esta solicitud ya no tiene canal.")
+        else:
             try:
-                recruit.archivar_canal(sol)
+                resultado = recruit.archivar_canal(sol)
+                messages.success(request, f"Canal guardado y borrado ({resultado}).")
             except Exception as exc:
-                logger.error("koru recruit: no se pudo archivar el canal de %s: %s",
-                             sol.id, exc)
+                logger.error("koru recruit: archivar %s: %s", sol.id, exc)
                 messages.warning(
                     request,
-                    "La solicitud está cerrada, pero no se pudo guardar la conversación "
-                    "del canal. El canal NO se ha borrado: míralo antes de borrarlo a mano.")
+                    "No se pudo guardar la conversación, así que el canal NO se ha "
+                    "borrado. Míralo antes de borrarlo a mano.")
 
     return redirect(destino)
 
@@ -3814,7 +3827,7 @@ def _conversacion_de(texto, nombre_piloto=""):
     return fuera
 
 
-def _avisar_canal(sol, texto):
+def _avisar_canal(sol, texto, mencionar=False):
     """
     Una linea en el canal del solicitante contando lo que acaba de pasar.
 
@@ -3829,7 +3842,15 @@ def _avisar_canal(sol, texto):
     if not sol.discord_channel_id:
         return
     try:
-        from . import discordapi
+        from . import discordapi, recruit
+
+        if mencionar:
+            # ★ Al piloto se le MENCIONA en lo que le afecta, para que le salte
+            # la notificacion. Un cambio en su solicitud que solo ve quien ya
+            # estaba mirando el canal no es un aviso, es un apunte.
+            uid = recruit.uid_piloto(sol)
+            if uid:
+                texto = f"<@{uid}> " + texto
         discordapi.publicar(sol.discord_channel_id, texto)
     except Exception as exc:
         logger.warning("koru recruit: no se pudo avisar en el canal %s: %s",

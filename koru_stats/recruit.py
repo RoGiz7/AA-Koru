@@ -326,10 +326,9 @@ def crear_canal(solicitud, retrato):
     nombre = discordapi.nombre_canal(cfg.prefijo_canal, solicitud.main_character_name)
 
     # El uid del solicitante sale del retrato, que lo guardó como «nombre (uid)».
-    uid = ""
     bruto = (retrato or {}).get("discord") or ""
-    if "(" in bruto and bruto.rstrip().endswith(")"):
-        uid = bruto.rsplit("(", 1)[1].rstrip(")").strip()
+    uid = bruto.rsplit("(", 1)[1].rstrip(")").strip() if (
+        "(" in bruto and bruto.rstrip().endswith(")")) else ""
 
     canal = discordapi.crear_canal(
         nombre, cfg.categoria_id, roles_ver=cfg.roles_ver or [], uid_invitado=uid)
@@ -449,6 +448,14 @@ def transcribir(canal_id):
         lineas.append(f"[{sello}] {autor}: {cuerpo}".rstrip())
 
     return "\n".join(lineas)
+
+
+def uid_piloto(solicitud):
+    """El id de Discord del solicitante, para mencionarle. Vacío si no lo hay."""
+    bruto = (solicitud.instantanea or {}).get("discord") or ""
+    if "(" in bruto and bruto.rstrip().endswith(")"):
+        return bruto.rsplit("(", 1)[1].rstrip(")").strip()
+    return ""
 
 
 def archivar_canal(solicitud):

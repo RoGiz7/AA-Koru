@@ -3,6 +3,36 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.37.0] — 2026-10-24
+
+### Cambiado
+
+- **Cerrar una solicitud ya no borra su canal.** Son dos decisiones distintas y
+  una de ellas no tiene vuelta atrás; juntarlas hacía que una reversible
+  arrastrase a la otra. Al cerrar, al piloto se le dice que **tiene 24 horas**
+  antes de que el canal desaparezca: si quiere copiar algo, preguntar o
+  despedirse, puede. Borrarlo en el mismo segundo en que se le dice que no es
+  innecesariamente brusco.
+- **Al piloto se le menciona** en lo que le afecta — los OK y el cierre — para
+  que le salte la notificación. Un cambio en su solicitud que solo ve quien ya
+  estaba mirando el canal no es un aviso, es un apunte.
+- Botón **«Guardar y borrar ya»** para no esperar las 24 h, con el mismo
+  permiso que cerrar: quien decide el final decide el archivo.
+
+### Añadido
+
+- Tarea `recruit_archivar_vencidas`: archiva y borra los canales de las
+  solicitudes cerradas hace más de 24 h. **Si el mensaje promete que el canal
+  desaparece, algo tiene que borrarlo de verdad** — si no, volveríamos a
+  acumular canales habiendo prometido lo contrario, que es peor que no
+  prometer nada.
+  - Va una a una y cada una en su `try`: que falle un canal borrado a mano no
+    puede dejar sin archivar a los demás. Lo que falla se reintenta en la
+    siguiente pasada, porque sin transcripción no se borra nada.
+
+⚠ **Hay que darla de alta en el programador de tareas** (cada hora vale). Hasta
+entonces el botón manual funciona, pero el plazo de 24 h no se cumple solo.
+
 ## [0.36.0] — 2026-10-24
 
 ### Añadido
