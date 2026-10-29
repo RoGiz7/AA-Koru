@@ -3,6 +3,14 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.54.1] — 2026-10-29
+
+### Corregido
+
+- **Aviso de migraciones pendientes en cada `migrate`.** La 0050 creó el `id` de
+  `AuditorExclusion` como `BigAutoField` y el plugin usa `AutoField`; la
+  migración 0051 lo iguala.
+
 ## [0.54.0] — 2026-10-29
 
 ### Cambiado
