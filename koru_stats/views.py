@@ -3160,6 +3160,10 @@ def auditor_dashboard(request):
 
     subidas.sort(key=lambda x: -x["delta"])
 
+    for row in rows:
+        prev = antes.get(row["id"])
+        row["delta"] = (row["total"] - prev.risk_total) if prev else None
+
     cfg = AuditorConfig.objects.filter(tag="default").first()
 
     context = {
@@ -3228,6 +3232,8 @@ def _auditor_porque(latest):
     if (d.get("losses") or 0) >= 3 and d.get("top_enemy_losses"):
         txt = (f"{d['losses']} pérdidas, {d['top_enemy_losses']} ante "
                f"{d.get('top_enemy_corp_name') or 'la misma corp'}.")
+        if d.get("cuota_corp_top") is not None:
+            txt += f" Al resto de la corp le pasa en el {d['cuota_corp_top']}% de sus pérdidas."
     else:
         txt = f"{d.get('losses') or 0} pérdidas; hacen falta 3 para valorar."
     add("espias", "Espías", "fa-user-secret", latest.score_espias, txt)
@@ -3468,6 +3474,17 @@ def _auditor_pilot(request, main_id):
     # --- El «por qué»: la explicación de cada nota, en la ficha y no solo en
     # la ventanita del panel. Es lo primero que se lee.
     porque = _auditor_porque(latest)
+    # ★ Lo que asusta es el CAMBIO, no el número: alguien que siempre ha estado
+    # en 30 preocupa menos que alguien que pasa de 0 a 30.
+    previo = scores[-2] if len(scores) >= 2 else None
+    if previo:
+        campos = {"pvp": "score_pvp", "espias": "score_espias", "financiero": "score_financiero",
+                  "ciclo": "score_ciclo", "fuga": "score_fuga", "huecos": "score_huecos"}
+        for d in porque:
+            d["delta"] = d["score"] - int(getattr(previo, campos[d["clave"]]) or 0)
+        latest_delta = latest.risk_total - previo.risk_total
+    else:
+        latest_delta = None
     alertas_abiertas = [a for a in alerts if a.estado == "abierta"]
     for k in awox_kills:
         k["marca"] = marcas.get(("kill", int(k["killmail_id"])))
@@ -3476,6 +3493,7 @@ def _auditor_pilot(request, main_id):
 
     context = {
         "porque": porque, "alertas_abiertas": alertas_abiertas, "n_awox": n_awox,
+        "latest_delta": latest_delta, "previo": previo,
         "marcas": list(marcas.values()),
         "aviso_pvp": bool(n_awox) or sc.get("pvp", 0) >= 40 or sc.get("espias", 0) >= 40,
         "aviso_dinero": sc.get("financiero", 0) >= 40,

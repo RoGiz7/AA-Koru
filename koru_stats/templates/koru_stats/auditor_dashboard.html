@@ -190,25 +190,35 @@ enterrado a media tabla.
     <div class="card">
         <div class="card-body">
             <h6 class="card-title mb-1">Semáforo — miembros × dimensiones</h6>
-            <p class="text-muted small mb-3">Cuanto más rojo, mayor la señal. Pasa el ratón por una celda o haz clic en la fila para ver el detalle.</p>
+            <p class="text-muted small mb-2">Cuanto más rojo, mayor la señal. Clic en la fila para el detalle, en el nombre para la ficha, en una cabecera para ordenar.</p>
+            <div class="d-flex flex-wrap gap-2 mb-2">
+                <input type="search" id="heatBuscar" class="form-control form-control-sm" style="max-width:220px" placeholder="Buscar piloto…">
+                <select id="heatDim" class="form-select form-select-sm" style="max-width:230px">
+                    <option value="">Todas las dimensiones</option>
+                    {% for lbl in dim_labels %}<option value="{{ forloop.counter0 }}">Solo con {{ lbl }} &gt; 0</option>{% endfor %}
+                </select>
+                <span class="small text-muted align-self-center" id="heatCuenta"></span>
+            </div>
             <div class="table-responsive">
                 <table class="table table-sm table-hover heat-table align-middle">
                     <thead>
                         <tr>
-                            <th class="text-start">Piloto</th>
-                            <th>Riesgo</th>
-                            {% for lbl in dim_labels %}<th>{{ lbl }}</th>{% endfor %}
+                            <th class="text-start ordenable" data-col="nombre">Piloto</th>
+                            <th class="ordenable" data-col="total">Riesgo</th>
+                            <th class="ordenable" data-col="delta" title="Cambio respecto al mes anterior">Δ</th>
+                            {% for lbl in dim_labels %}<th class="ordenable" data-col="d{{ forloop.counter0 }}">{{ lbl }}</th>{% endfor %}
                         </tr>
                     </thead>
                     <tbody id="heatBody">
                     {% for r in rows %}
                         <tr class="heat-row" data-idx="{{ forloop.counter0 }}" style="cursor:pointer;" title="Clic para ver el detalle">
-                            <td class="name text-start">{{ r.name }}</td>
+                            <td class="name text-start"><a href="{% url 'koru_stats:auditor_pilot' r.id %}" class="link-light text-decoration-none ir-ficha">{{ r.name }}</a></td>
                             <td><span class="badge badge-lvl lvl-{{ r.nivel }}">{{ r.total }}</span></td>
+                            <td class="small {% if r.delta and r.delta > 0 %}text-danger{% elif r.delta and r.delta < 0 %}text-success{% else %}text-muted{% endif %}">{% if r.delta %}{% if r.delta > 0 %}+{% endif %}{{ r.delta }}{% else %}·{% endif %}</td>
                             {% for v in r.dims %}<td class="heat" data-val="{{ v }}">{{ v }}</td>{% endfor %}
                         </tr>
                     {% empty %}
-                        <tr><td colspan="8" class="text-center text-muted py-4">
+                        <tr><td colspan="9" class="text-center text-muted py-4">
                             No hay scores para este periodo todavía. Ejecuta <code>run_auditor_pipeline</code>.
                         </td></tr>
                     {% endfor %}
@@ -252,6 +262,60 @@ enterrado a media tabla.
 
     // --- Detalle al hacer clic en una fila ---
     var rowsData = {{ rows_json|safe }};
+
+    // --- Semáforo: ordenar, buscar y filtrar ---
+    (function(){
+        var body = document.getElementById('heatBody');
+        if (!body) return;
+        var filas = Array.prototype.slice.call(body.querySelectorAll('tr.heat-row'));
+        var orden = { col: 'total', asc: false };
+        function valor(tr, col){
+            var r = rowsData[+tr.dataset.idx] || {};
+            if (col === 'nombre') return (r.name || '').toLowerCase();
+            if (col === 'total') return r.total || 0;
+            if (col === 'delta') return (r.delta === null || r.delta === undefined) ? -999 : r.delta;
+            return (r.dims || [])[+col.slice(1)] || 0;
+        }
+        function aplicar(){
+            var q = (document.getElementById('heatBuscar').value || '').toLowerCase();
+            var dim = document.getElementById('heatDim').value;
+            filas.sort(function(a, b){
+                var va = valor(a, orden.col), vb = valor(b, orden.col);
+                if (va < vb) return orden.asc ? -1 : 1;
+                if (va > vb) return orden.asc ? 1 : -1;
+                return 0;
+            });
+            var n = 0;
+            filas.forEach(function(tr){
+                var r = rowsData[+tr.dataset.idx] || {};
+                var ok = (!q || (r.name || '').toLowerCase().indexOf(q) >= 0)
+                      && (dim === '' || ((r.dims || [])[+dim] || 0) > 0);
+                tr.style.display = ok ? '' : 'none';
+                if (ok) n++;
+                body.appendChild(tr);
+            });
+            document.getElementById('heatCuenta').textContent = n + ' de ' + filas.length + ' pilotos';
+            document.querySelectorAll('th.ordenable').forEach(function(th){
+                th.textContent = th.textContent.replace(/ [▲▼]$/, '');
+                if (th.dataset.col === orden.col) th.textContent += orden.asc ? ' ▲' : ' ▼';
+            });
+        }
+        document.querySelectorAll('th.ordenable').forEach(function(th){
+            th.style.cursor = 'pointer';
+            th.addEventListener('click', function(){
+                if (orden.col === th.dataset.col) orden.asc = !orden.asc;
+                else { orden.col = th.dataset.col; orden.asc = (th.dataset.col === 'nombre'); }
+                aplicar();
+            });
+        });
+        document.getElementById('heatBuscar').addEventListener('input', aplicar);
+        document.getElementById('heatDim').addEventListener('change', aplicar);
+        // El nombre lleva a la ficha sin abrir además la ventanita de detalle
+        body.querySelectorAll('a.ir-ficha').forEach(function(a){
+            a.addEventListener('click', function(ev){ ev.stopPropagation(); });
+        });
+        aplicar();
+    })();
     var modalEl  = document.getElementById('modalDetalle');
     var bsModal  = (modalEl && window.bootstrap) ? new bootstrap.Modal(modalEl) : null;
 

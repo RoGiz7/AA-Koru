@@ -1615,6 +1615,13 @@ def compute_auditor_scores(periods=None, full=False):
             if ecorp_name:
                 corp_names[ecorp] = ecorp_name
 
+        # Pérdidas de TODA la corp por corp enemiga, para comparar en Espías
+        corp_loss_by_enemy = defaultdict(int)
+        for cell in loss_by_main.values():
+            for ecorp, v in cell.items():
+                corp_loss_by_enemy[ecorp] += v[0]
+        corp_losses_total = sum(corp_loss_by_enemy.values())
+
         # Awox: kills contra corp propia / blue, solo naves y sin contar alts propios
         awox_by_main = defaultdict(lambda: [0, 0, 0])  # [awox, blue, pods]
         from .models import AuditorExclusion as _AE
@@ -1715,13 +1722,26 @@ def compute_auditor_scores(periods=None, full=False):
             else:
                 score_huecos = 0
             # ESPÍAS
+            # ★ Perder mucho contra la misma corp solo es raro si el RESTO de la
+            # corp no pierde contra ella. Si media Rekium cae ante el enemigo
+            # habitual de la zona, que tú también caigas no dice nada. Se
+            # compara la cuota del piloto con la de la corp y solo puntúa el
+            # exceso.
             enemy = loss_by_main.get(mid, {})
             total_losses = sum(v[0] for v in enemy.values())
             if total_losses >= 3:
                 herf = sum((v[0] / total_losses) ** 2 for v in enemy.values())
-                score_espias = _auditor_clamp(herf * 100)
                 top = max(enemy.items(), key=lambda kv: kv[1][0])
+                cuota_piloto = top[1][0] / total_losses
+                # La corp SIN este piloto: si no, un piloto que pierde mucho
+                # se fabrica su propia «normalidad».
+                resto_top = corp_loss_by_enemy.get(top[0], 0) - top[1][0]
+                resto_total = corp_losses_total - total_losses
+                cuota_corp = (resto_top / resto_total) if resto_total > 0 else 0.0
+                factor = max(0.0, 1.0 - (cuota_corp / cuota_piloto)) if cuota_piloto else 0.0
+                score_espias = _auditor_clamp(herf * 100 * factor)
                 det["losses"] = total_losses
+                det["cuota_corp_top"] = round(cuota_corp * 100, 1)
                 det["concentracion"] = round(herf, 2)
                 det["top_enemy_corp_id"] = top[0]
                 det["top_enemy_corp_name"] = corp_names.get(top[0], "")

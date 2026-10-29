@@ -66,7 +66,8 @@
       <div class="flex-grow-1">
         <h4 class="mb-1">{{ main_name }}
           {% if latest %}<span class="badge lvl-{{ latest.nivel }} ms-2">Riesgo {{ latest.risk_total }}</span>
-          <small class="text-muted fs-6 ms-1">{{ latest.period }}</small>{% endif %}
+          {% if latest_delta %}<span class="fs-6 ms-1 {% if latest_delta > 0 %}text-danger{% else %}text-success{% endif %}">{% if latest_delta > 0 %}▲ +{% else %}▼ {% endif %}{{ latest_delta }}</span>{% endif %}
+          <small class="text-muted fs-6 ms-1">{{ latest.period }}{% if previo %} · respecto a {{ previo.period }}{% endif %}</small>{% endif %}
         </h4>
         <div class="text-muted small d-flex flex-wrap align-items-center gap-2">
           <span><img src="https://images.evetech.net/corporations/{{ corp_id }}/logo?size=32" width="18" height="18" class="rounded" onerror="this.style.display='none'"> {{ corp_name|default:corp_id }}</span>
@@ -91,7 +92,7 @@
       <div class="card dim-card n-{{ d.nivel }}"><div class="card-body py-2 px-3">
         <div class="d-flex justify-content-between align-items-start">
           <span class="dim-nombre"><i class="fas {{ d.icono }} me-1"></i>{{ d.nombre }}</span>
-          <span class="dim-score">{{ d.score }}</span>
+          <span class="dim-score">{{ d.score }}{% if d.delta %}<small class="ms-1 fs-6 {% if d.delta > 0 %}text-danger{% else %}text-success{% endif %}">{% if d.delta > 0 %}▲{% else %}▼{% endif %}{{ d.delta }}</small>{% endif %}</span>
         </div>
         <div class="dim-texto mt-1">{{ d.texto }}</div>
       </div></div>

@@ -3,6 +3,26 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.54.0] — 2026-10-29
+
+### Cambiado
+
+- **Espías se compara con la corp.** Perder mucho contra la misma corp solo es
+  raro si el resto de Rekium no pierde contra ella: caer ante el enemigo
+  habitual de la zona no dice nada. Ahora solo puntúa el **exceso** sobre la
+  cuota del resto de la corp (calculada sin el propio piloto, para que nadie
+  se fabrique su normalidad). La ficha dice qué porcentaje es esa cuota.
+
+### Añadido
+
+- **Variación respecto al mes anterior** en la ficha: junto al riesgo y en
+  cada tarjeta del «por qué», ▲ en rojo o ▼ en verde.
+- **El semáforo del panel se ordena, se busca y se filtra**:
+  - clic en cualquier cabecera para ordenar (Piloto, Riesgo, Δ, cada dimensión);
+  - columna **Δ** con el cambio respecto al mes anterior;
+  - buscador por nombre y filtro «solo con PvP > 0» y similares;
+  - el nombre lleva directo a la ficha.
+
 ## [0.53.0] — 2026-10-29
 
 ### Añadido
