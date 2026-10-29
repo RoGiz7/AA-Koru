@@ -3,6 +3,34 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.51.0] — 2026-10-29
+
+### Corregido
+
+- **El awox contaba cualquier cosa con dueño propio o blue.** A un piloto le
+  salían 11 «awox» de los que 8 eran *CONCORD Rogue Analysis Beacon*; a otro,
+  8 pods. Y uno solo ponía PvP a 100: los primeros del ranking estaban ahí por
+  eso.
+  - Solo cuentan **naves** (categoría Ship del SDE): fuera balizas, MTUs,
+    disruptores móviles y estructuras.
+  - Fuera la víctima que es **un alt del mismo jugador**. Para eso el killmail
+    guarda ahora quién iba dentro (`victim_char_id`, migración 0049); los
+    registros viejos lo tienen vacío hasta que se vuelvan a bajar.
+  - La nota sube por grados: una nave 50, dos 100, un pod 20.
+  - La ficha aplica el mismo filtro, y marca los pods.
+- **Las donaciones contaban el ISK que uno se pasa a sus propios alts**, en
+  cualquier corp. El financiero ya no los suma, y la ficha los separa en una
+  línea aparte. Los destinatarios sin nombre se buscan en corptools antes de
+  salir como «externo #id».
+- **Los retratos de la cobertura no cargaban**: se pedían a tamaño 28 y el
+  servidor de imágenes de EVE solo sirve 32, 64, 128…
+- **Las cantidades negativas salían en cifras crudas** (`-197,552,950,522`):
+  `rkisk` medía el umbral sin quitar el signo.
+- **La corp salía como número** en la cabecera de la ficha; ahora con su
+  logo, nombre y alianza.
+- Textos viejos del panel que decían que Ciclo y Financiero «llegan en fases
+  posteriores».
+
 ## [0.50.0] — 2026-10-24
 
 ### Cambiado

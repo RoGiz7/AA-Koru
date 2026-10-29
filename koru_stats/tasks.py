@@ -1197,6 +1197,7 @@ def fetch_pvp_from_zkillboard(periods=None, full=False):
                                     solo=is_solo and got_final,
                                     victim_corp_id=v_corp,
                                     victim_alliance_id=v_alli,
+                                    victim_char_id=victim.get("character_id"),
                                 ),
                             )
 
@@ -1458,6 +1459,68 @@ def sync_blue_standings():
     return {"blue_states": blue_states, "blue_alliances": cfg.blue_alliance_ids, "own_states": own_states}
 
 
+CATEGORIA_NAVE = 6        # SDE: Ship
+GRUPO_CAPSULA  = 29       # SDE: Capsule (todas las variantes de pod)
+
+
+def _tipos_nave(type_ids):
+    """
+    {type_id: es_capsula} SOLO de los que son naves.
+
+    ★ Lo que no esta aqui no es awox: balizas (CONCORD Rogue Analysis Beacon),
+    MTUs, warp disruptors moviles, estructuras… Se disparan como parte de una
+    actividad normal y antes contaban igual que matar a un compañero.
+    """
+    ids = [int(x) for x in set(type_ids) if x]
+    if not ids:
+        return {}
+    ph = ",".join(["%s"] * len(ids))
+    with connection.cursor() as c:
+        c.execute(
+            "SELECT it.id, it.group_id FROM eve_sde_itemtype it "
+            "JOIN eve_sde_itemgroup g ON g.id = it.group_id "
+            "WHERE g.category_id = %s AND it.id IN (" + ph + ")",
+            [CATEGORIA_NAVE] + ids)
+        return {int(i): int(g) == GRUPO_CAPSULA for i, g in c.fetchall()}
+
+
+def awox_reales(filas):
+    """
+    Filtra kills contra propios/blues y deja solo lo que es awox de verdad.
+
+    `filas`: dicts con main_character_id, ship_type_id y victim_char_id.
+    Devuelve [(fila, "nave"|"capsula")].
+
+    Se descarta:
+      · lo que no es una nave (ver `_tipos_nave`)
+      · la victima que es un personaje del MISMO jugador: podear tu propio alt
+        no es traicionar a nadie
+    Las filas viejas sin `victim_char_id` no se pueden comprobar contra los
+    alts y se quedan; se rellenan al volver a bajar los killmails.
+    """
+    filas = list(filas)
+    if not filas:
+        return []
+    naves = _tipos_nave(f["ship_type_id"] for f in filas)
+    victimas = {int(f["victim_char_id"]) for f in filas if f.get("victim_char_id")}
+    main_de = {a: m for a, (m, _) in _resolve_mains(victimas).items()} if victimas else {}
+    out = []
+    for f in filas:
+        tid = int(f["ship_type_id"] or 0)
+        if tid not in naves:
+            continue
+        v = f.get("victim_char_id")
+        if v and main_de.get(int(v)) == int(f["main_character_id"]):
+            continue
+        out.append((f, "capsula" if naves[tid] else "nave"))
+    return out
+
+
+def awox_score(n_naves, n_capsulas):
+    """Una nave = 50, dos = 100; un pod suma 20. Antes UNO de lo que fuera = 100."""
+    return _auditor_clamp(50 * n_naves + 20 * n_capsulas)
+
+
 @shared_task
 def compute_auditor_scores(periods=None, full=False):
     """Calcula scores de riesgo por main/periodo — 6 dimensiones (Fase 2).
@@ -1542,14 +1605,20 @@ def compute_auditor_scores(periods=None, full=False):
             if ecorp_name:
                 corp_names[ecorp] = ecorp_name
 
-        # Awox: kills contra corp propia / blue
-        awox_by_main = defaultdict(int)
+        # Awox: kills contra corp propia / blue, solo naves y sin contar alts propios
+        awox_by_main = defaultdict(lambda: [0, 0])     # [naves, capsulas]
         if awox_corps or awox_allis:
-            for mid, vcorp, valli in CharacterKillRecord.objects.filter(
-                    period=period, is_loss=False, main_character_id__in=main_ids
-            ).values_list("main_character_id", "victim_corp_id", "victim_alliance_id"):
-                if (vcorp and vcorp in awox_corps) or (valli and valli in awox_allis):
-                    awox_by_main[mid] += 1
+            from django.db.models import Q as _Q
+            q = _Q()
+            if awox_corps:
+                q |= _Q(victim_corp_id__in=awox_corps)
+            if awox_allis:
+                q |= _Q(victim_alliance_id__in=awox_allis)
+            sospechosas = CharacterKillRecord.objects.filter(
+                q, period=period, is_loss=False, main_character_id__in=main_ids
+            ).values("main_character_id", "ship_type_id", "victim_char_id")
+            for f, tipo in awox_reales(sospechosas):
+                awox_by_main[f["main_character_id"]][0 if tipo == "nave" else 1] += 1
 
         # Ciclo de vida: eventos del periodo
         ciclo_by_main = defaultdict(list)
@@ -1575,6 +1644,11 @@ def compute_auditor_scores(periods=None, full=False):
                     "AND wj.date >= %s AND wj.date < %s "
                     f"AND ec.corporation_id IN ({ph}) "
                     f"AND wj.second_party_id NOT IN ({ph_excl}) "
+                    # ★ Sus propios alts, aunque esten fuera de la corp: pasarse
+                    # ISK a uno mismo no es sacarlo de la corp.
+                    "AND NOT EXISTS (SELECT 1 FROM eveonline_evecharacter ec2 "
+                    "  JOIN authentication_characterownership co2 ON co2.character_id = ec2.id "
+                    "  WHERE ec2.character_id = wj.second_party_id AND co2.user_id = co.user_id) "
                     "GROUP BY main_ec.character_id",
                     [inicio, fin] + corp_ids + excl_ids)
                 for mid, tot in c.fetchall():
@@ -1634,7 +1708,7 @@ def compute_auditor_scores(periods=None, full=False):
                 score_espias = 0
                 det["losses"] = total_losses
             # PvP (feeding sostenido + AWOX)
-            awox = awox_by_main.get(mid, 0)
+            awox_n, awox_p = awox_by_main.get(mid, (0, 0))
             p = pvp.get(mid)
             score_feed = 0
             if p:
@@ -1644,9 +1718,10 @@ def compute_auditor_scores(periods=None, full=False):
                     score_feed = _auditor_clamp((50 - eff) * 2)
                 det["isk_efficiency"] = round(eff, 1)
                 det["ships_lost"] = p.ships_lost
-            if awox > 0:
-                score_pvp = 100
-                det["awox_kills"] = awox
+            if awox_n or awox_p:
+                det["awox_kills"] = awox_n
+                det["awox_pods"] = awox_p
+                score_pvp = max(score_feed, awox_score(awox_n, awox_p))
             else:
                 score_pvp = score_feed
             # CICLO DE VIDA

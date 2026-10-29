@@ -190,7 +190,7 @@ enterrado a media tabla.
     <div class="card">
         <div class="card-body">
             <h6 class="card-title mb-1">Semáforo — miembros × dimensiones</h6>
-            <p class="text-muted small mb-3">Cuanto más rojo, mayor la señal. Pasa el ratón por una celda para ver el detalle. Las dimensiones Ciclo y Financiero llegan en fases posteriores.</p>
+            <p class="text-muted small mb-3">Cuanto más rojo, mayor la señal. Pasa el ratón por una celda o haz clic en la fila para ver el detalle.</p>
             <div class="table-responsive">
                 <table class="table table-sm table-hover heat-table align-middle">
                     <thead>
@@ -284,8 +284,8 @@ enterrado a media tabla.
             L.push(['Espías', dims[2], (d.losses || 0) + ' pérdidas (mínimo 3 para evaluar concentración).']);
         // PvP (idx 0)
         var pvpTxt;
-        if (d.awox_kills) {
-            pvpTxt = '⚠️ <b>AWOX</b>: ' + d.awox_kills + ' kill(s) contra corp propia/blue. Revisar con prioridad.';
+        if (d.awox_kills || d.awox_pods) {
+            pvpTxt = '⚠️ <b>AWOX</b>: ' + d.awox_kills + ' nave(s) y ' + (d.awox_pods || 0) + ' pod(s) de corp propia/blue. Revisar.';
         } else if (d.isk_efficiency !== undefined) {
             var pl = (d.ships_lost !== undefined) ? d.ships_lost : '?';
             pvpTxt = 'Eficiencia ISK <b>' + d.isk_efficiency + '%</b>, <b>' + pl + '</b> naves perdidas. Solo puntúa con 3+ pérdidas sostenidas (feeding).';
@@ -312,7 +312,7 @@ enterrado a media tabla.
             document.getElementById('mdTitulo').innerHTML =
                 r.name + ' — Riesgo <span class="badge badge-lvl lvl-' + r.nivel + '">' + r.total + '</span>';
             var html = '<a href="/koru/auditor/piloto/' + r.id + '/" class="btn btn-sm btn-primary mb-3"><i class="fas fa-id-card-clip me-1"></i>Ver ficha completa del piloto →</a>';
-            html += '<p class="text-muted small">Desglose de señales (0–100). El riesgo total combina las dimensiones activas en esta fase (PvP, Espías, Fuga, Huecos).</p>';
+            html += '<p class="text-muted small">Desglose de señales (0–100). El riesgo total combina las seis dimensiones; Fuga y Huecos solo cuentan en el mes en curso.</p>';
             html += '<table class="table table-sm align-middle"><tbody>';
             explica(r).forEach(function(item) {
                 var sc = item[1] || 0;

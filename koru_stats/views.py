@@ -3211,6 +3211,18 @@ def auditor_pilot(request, main_id):
     main_row = next((a for a in alts if a["character_id"] == main_id), (alts[0] if alts else None))
     main_name = main_row["character_name"] if main_row else f"#{main_id}"
     corp_id = main_row["corporation_id"] if main_row else 0
+    corp_name, alli_id, alli_name = "", None, ""
+    if corp_id:
+        with connection.cursor() as cur:
+            cur.execute(
+                "SELECT eci.corporation_name, eai.alliance_id, eai.alliance_name "
+                "FROM eveonline_evecorporationinfo eci "
+                "LEFT JOIN eveonline_eveallianceinfo eai ON eai.id = eci.alliance_id "
+                "WHERE eci.corporation_id = %s",
+                [corp_id])
+            fila = cur.fetchone()
+            if fila:
+                corp_name, alli_id, alli_name = fila[0] or "", fila[1], fila[2] or ""
 
     # --- Cobertura: salud de token por alt ---
     with connection.cursor() as cur:
@@ -3259,8 +3271,25 @@ def auditor_pilot(request, main_id):
             "LEFT JOIN eveonline_evecharacter rc ON rc.character_id = wj.second_party_id "
             "LEFT JOIN eveonline_evecorporationinfo rco ON rco.corporation_id = wj.second_party_id "
             "WHERE main_ec.character_id=%s AND wj.ref_type='player_donation' AND wj.amount<0 AND wj.date>=%s "
-            "GROUP BY wj.second_party_id, party_name ORDER BY total DESC LIMIT 20", [main_id, desde])
-        donaciones_out = _fetchall(cur)
+            "GROUP BY wj.second_party_id, party_name ORDER BY total DESC LIMIT 60", [main_id, desde])
+        donaciones_todas = _fetchall(cur)
+
+    # ★ Pasarse ISK entre tus alts NO es donar. Antes salian mezclados y el
+    # primero de la lista solia ser el propio piloto donandose a si mismo.
+    ids_propios = {a["character_id"] for a in alts}
+    sin_nombre = [d["party_id"] for d in donaciones_todas if not d["party_name"] and d["party_id"]]
+    if sin_nombre:
+        with connection.cursor() as cur:
+            cur.execute("SELECT eve_id, name FROM corptools_evename WHERE eve_id IN ("
+                        + ",".join(["%s"] * len(sin_nombre)) + ")", sin_nombre)
+            nombres = {int(i): n for i, n in cur.fetchall() if n}
+        for d in donaciones_todas:
+            if not d["party_name"]:
+                d["party_name"] = nombres.get(int(d["party_id"] or 0), "")
+    donaciones_out = [d for d in donaciones_todas if d["party_id"] not in ids_propios][:20]
+    propias = [d for d in donaciones_todas if d["party_id"] in ids_propios]
+    donaciones_propias = {"total": sum(float(d["total"] or 0) for d in propias),
+                          "n": sum(int(d["n"] or 0) for d in propias)}
 
     # --- Patrimonio + balance en el tiempo (snapshots) ---
     val = (CharacterValueSnapshot.objects.filter(main_character_id=main_id)
@@ -3290,10 +3319,15 @@ def auditor_pilot(request, main_id):
             q |= Q(victim_corp_id__in=awox_corps)
         if awox_allis:
             q |= Q(victim_alliance_id__in=awox_allis)
-        awox_kills = list(CharacterKillRecord.objects.filter(q, main_character_id=main_id, is_loss=False)
-                          .order_by("-kill_date").values(
-                              "killmail_id", "victim_corp_id", "victim_corp_name",
-                              "ship_name", "value_isk", "kill_date")[:50])
+        from .tasks import awox_reales
+        crudas = (CharacterKillRecord.objects.filter(q, main_character_id=main_id, is_loss=False)
+                  .order_by("-kill_date").values(
+                      "killmail_id", "victim_corp_id", "victim_corp_name", "main_character_id",
+                      "ship_type_id", "victim_char_id",
+                      "ship_name", "value_isk", "kill_date")[:200])
+        # Mismo criterio que el score: si la ficha enseñara balizas como awox,
+        # contradiria al numero que tiene encima.
+        awox_kills = [dict(f, tipo=tipo) for f, tipo in awox_reales(crudas)][:50]
 
     # --- PvP detalle (solo si hay alerta de pvp/espías) ---
     kill_feed = []
@@ -3350,6 +3384,8 @@ def auditor_pilot(request, main_id):
 
     context = {
         "main_id": main_id, "main_name": main_name, "corp_id": corp_id,
+        "corp_name": corp_name, "alli_id": alli_id, "alli_name": alli_name,
+        "donaciones_propias": donaciones_propias,
         "alts": alts, "cobertura": cobertura,
         "tickets_piloto": tickets_piloto, "tickets_resumen": tickets_resumen,
         "puede_auditar": puede_auditar, "auditoria_abierta": auditoria_abierta,

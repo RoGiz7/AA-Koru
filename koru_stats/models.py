@@ -310,6 +310,9 @@ class CharacterKillRecord(models.Model):
     victim_corp_id      = models.IntegerField(null=True, blank=True, db_index=True)
     victim_corp_name    = models.CharField(max_length=255, default="", blank=True)
     victim_alliance_id  = models.IntegerField(null=True, blank=True, db_index=True)
+    # ★ Quien iba DENTRO. Sin esto un awox no se distingue de matar a tu propio
+    # alt, y una baliza o un MTU (que no llevan piloto) parecian awox.
+    victim_char_id      = models.BigIntegerField(null=True, blank=True, db_index=True)
 
     class Meta:
         verbose_name        = "Registro killmail"

@@ -18,14 +18,17 @@ def rkisk(value):
     """ISK con sufijo legible estilo EVE. Ej: 1234567890 → 1.23 B"""
     try:
         v = float(value or 0)
-        if v >= 1e12:
-            return f"{v/1e12:.2f} T"
-        if v >= 1e9:
-            return f"{v/1e9:.2f} B"
-        if v >= 1e6:
-            return f"{v/1e6:.2f} M"
-        if v >= 1e3:
-            return f"{v/1e3:.1f} K"
+        # ★ Los umbrales van sobre el valor ABSOLUTO: con `v >= 1e9` un gasto de
+        # -197 mil millones caia hasta el final y salia en cifras crudas.
+        s, a = ("-" if v < 0 else ""), abs(v)
+        if a >= 1e12:
+            return f"{s}{a/1e12:.2f} T"
+        if a >= 1e9:
+            return f"{s}{a/1e9:.2f} B"
+        if a >= 1e6:
+            return f"{s}{a/1e6:.2f} M"
+        if a >= 1e3:
+            return f"{s}{a/1e3:.1f} K"
         return f"{v:,.0f}"
     except (ValueError, TypeError):
         return value
