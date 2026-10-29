@@ -1617,6 +1617,9 @@ def compute_auditor_scores(periods=None, full=False):
 
         # Awox: kills contra corp propia / blue, solo naves y sin contar alts propios
         awox_by_main = defaultdict(lambda: [0, 0, 0])  # [awox, blue, pods]
+        from .models import AuditorExclusion as _AE
+        kills_marcadas = set(_AE.objects.filter(tipo=_AE.TIPO_KILL)
+                             .values_list("main_character_id", "objetivo_id"))
         if awox_corps or awox_allis:
             from django.db.models import Q as _Q
             q = _Q()
@@ -1627,9 +1630,12 @@ def compute_auditor_scores(periods=None, full=False):
             sospechosas = CharacterKillRecord.objects.filter(
                 q, period=period, is_loss=False, main_character_id__in=main_ids
             ).values("main_character_id", "ship_type_id", "victim_char_id",
-                     "victim_corp_id", "victim_alliance_id")
+                     "victim_corp_id", "victim_alliance_id", "killmail_id")
             idx = {"awox": 0, "blue": 1, "pod": 2}
             for f, tipo in awox_reales(sospechosas, own_corp, own_alli):
+                # Un director dijo que esta no es awox (duelo, acuerdo…)
+                if (int(f["main_character_id"]), int(f["killmail_id"])) in kills_marcadas:
+                    continue
                 awox_by_main[f["main_character_id"]][idx[tipo]] += 1
 
         # Ciclo de vida: eventos del periodo
@@ -1661,6 +1667,10 @@ def compute_auditor_scores(periods=None, full=False):
                     "AND NOT EXISTS (SELECT 1 FROM eveonline_evecharacter ec2 "
                     "  JOIN authentication_characterownership co2 ON co2.character_id = ec2.id "
                     "  WHERE ec2.character_id = wj.second_party_id AND co2.user_id = co.user_id) "
+                    # ★ …y los que un director ha marcado como alt sin registrar
+                    "AND NOT EXISTS (SELECT 1 FROM koru_stats_auditorexclusion x "
+                    "  WHERE x.main_character_id = main_ec.character_id AND x.tipo = 'alt' "
+                    "  AND x.objetivo_id = wj.second_party_id) "
                     "GROUP BY main_ec.character_id",
                     [inicio, fin] + corp_ids + excl_ids)
                 for mid, tot in c.fetchall():
@@ -1772,7 +1782,10 @@ def compute_auditor_scores(periods=None, full=False):
             sc_d = dict(pvp=score_pvp, ciclo=score_ciclo, espias=score_espias,
                         fuga=score_fuga, huecos=score_huecos, financiero=score_financiero)
             if is_current:
-                active = ["pvp", "ciclo", "espias", "fuga", "huecos", "financiero"]
+                # ★ Fuga se calcula y se enseña, pero NO suma (0.53): la
+                # inactividad es una baja que se decide en Salud de Corp, y
+                # sumandola llenaba el semaforo de amarillos que no decian nada.
+                active = ["pvp", "ciclo", "espias", "huecos", "financiero"]
             else:
                 active = ["pvp", "ciclo", "espias", "financiero"]
             sw = sum(w[d] for d in active) or 1
@@ -1799,6 +1812,15 @@ def compute_auditor_scores(periods=None, full=False):
             saved += 1
     logger.info("koru compute_auditor_scores: %s scores (periodos=%s)", saved, periods)
     return saved
+
+
+@shared_task
+def recalcular_auditor(periods=None):
+    """Recalcula notas y alertas tras marcar o desmarcar un falso positivo."""
+    periods = periods or _default_periods(6)
+    compute_auditor_scores(periods=periods)
+    emit_auditor_alerts()
+    return len(periods)
 
 
 @shared_task

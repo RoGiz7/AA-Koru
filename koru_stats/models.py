@@ -426,6 +426,44 @@ class AuditorRiskScore(models.Model):
         return f"{self.main_character_name} | {self.period} | {self.risk_total} ({self.nivel})"
 
 
+class AuditorExclusion(models.Model):
+    """
+    Un falso positivo que un director ha marcado a mano.
+
+    ★ El sistema no puede saber que «Uomaa Po» es un alt sin registrar, ni que
+    aquella Apocalypse fue un duelo pactado. Una persona sí. Sin esto, la misma
+    señal falsa vuelve cada mes y la gente aprende a no mirar el Auditor.
+
+    Se guarda QUIÉN y POR QUÉ: marcar algo como falso positivo es una decisión,
+    y tiene que poder revisarse.
+    """
+    TIPO_ALT  = "alt"     # destinatario de donaciones que es alt suyo sin registrar
+    TIPO_KILL = "kill"    # killmail que no es awox (duelo, acuerdo…)
+    TIPOS = [(TIPO_ALT, "Alt sin registrar"), (TIPO_KILL, "Kill que no es awox")]
+
+    main_character_id = models.BigIntegerField(db_index=True)
+    tipo        = models.CharField(max_length=10, choices=TIPOS)
+    objetivo_id = models.BigIntegerField(help_text="character_id del destinatario o killmail_id")
+    etiqueta    = models.CharField(max_length=150, blank=True, default="",
+                                   help_text="Nombre o nave, para leerlo sin buscar el id")
+    motivo      = models.CharField(max_length=300)
+    creado_por  = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True,
+                                    related_name="auditor_exclusiones")
+    created_at  = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name        = "Auditor — falso positivo marcado"
+        verbose_name_plural = "Auditor — falsos positivos marcados"
+        ordering            = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["main_character_id", "tipo", "objetivo_id"],
+                                    name="uniq_auditor_exclusion"),
+        ]
+
+    def __str__(self):
+        return f"{self.main_character_id} · {self.tipo} · {self.etiqueta or self.objetivo_id}"
+
+
 class AuditorAlert(models.Model):
     """Evento de alerta — el 'aviso' que se revisa y se acusa de recibo."""
     main_character_id   = models.IntegerField(db_index=True)

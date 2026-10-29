@@ -3,6 +3,27 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.53.0] — 2026-10-29
+
+### Añadido
+
+- **Marcar falsos positivos desde la ficha.** El sistema no puede saber que
+  un destinatario de donaciones es un alt sin registrar, ni que una kill fue
+  un duelo pactado; un director sí. Sin esto la misma señal falsa volvía cada
+  mes.
+  - Botón **«Es alt suyo»** en cada donación y **«No es awox»** en cada kill
+    contra los nuestros. Piden motivo y quedan a nombre de quien lo marca
+    (`AuditorExclusion`, migración 0050).
+  - La nota se recalcula sola (tarea `recalcular_auditor`, últimos 6 meses).
+  - Se puede deshacer, y la pestaña Historial lista todo lo marcado.
+
+### Cambiado
+
+- **Fuga ya no suma al riesgo total.** Se sigue calculando y enseñando, pero
+  la inactividad es una baja que se decide en Salud de Corp; sumándola, 14
+  pilotos salían en amarillo sólo por no conectarse.
+- Botones «zKill» de las tablas con más contraste.
+
 ## [0.52.0] — 2026-10-29
 
 ### Cambiado

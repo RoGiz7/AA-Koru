@@ -3253,7 +3253,8 @@ def _auditor_porque(latest):
     else:
         dl = d.get("dias_sin_login")
         add("fuga", "Fuga", "fa-door-open", latest.score_fuga,
-            "Sin dato de conexión." if dl is None else f"Última conexión hace {dl} días.")
+            ("Sin dato de conexión." if dl is None else f"Última conexión hace {dl} días.")
+            + " No suma al riesgo.")
         add("huecos", "Huecos", "fa-eye-slash", latest.score_huecos,
             f"{d.get('chars_ciegos') or 0} de {d.get('n_chars') or 0} personajes sin datos al día.")
     return out
@@ -3361,7 +3362,12 @@ def _auditor_pilot(request, main_id):
         for d in donaciones_todas:
             if not d["party_name"]:
                 d["party_name"] = nombres.get(int(d["party_id"] or 0), "")
+    from .models import AuditorExclusion
+    marcas = {(m.tipo, int(m.objetivo_id)): m
+              for m in AuditorExclusion.objects.filter(main_character_id=main_id).select_related("creado_por")}
     donaciones_out = [d for d in donaciones_todas if d["party_id"] not in ids_propios][:20]
+    for d in donaciones_out:
+        d["marca"] = marcas.get(("alt", int(d["party_id"] or 0)))
     propias = [d for d in donaciones_todas if d["party_id"] in ids_propios]
     donaciones_propias = {"total": sum(float(d["total"] or 0) for d in propias),
                           "n": sum(int(d["n"] or 0) for d in propias)}
@@ -3463,11 +3469,14 @@ def _auditor_pilot(request, main_id):
     # la ventanita del panel. Es lo primero que se lee.
     porque = _auditor_porque(latest)
     alertas_abiertas = [a for a in alerts if a.estado == "abierta"]
-    n_awox = sum(1 for k in awox_kills if k["tipo"] == "awox")
+    for k in awox_kills:
+        k["marca"] = marcas.get(("kill", int(k["killmail_id"])))
+    n_awox = sum(1 for k in awox_kills if k["tipo"] == "awox" and not k["marca"])
     sc = {d["clave"]: d["score"] for d in porque}
 
     context = {
         "porque": porque, "alertas_abiertas": alertas_abiertas, "n_awox": n_awox,
+        "marcas": list(marcas.values()),
         "aviso_pvp": bool(n_awox) or sc.get("pvp", 0) >= 40 or sc.get("espias", 0) >= 40,
         "aviso_dinero": sc.get("financiero", 0) >= 40,
         "aviso_personajes": sc.get("huecos", 0) >= 40 or sc.get("ciclo", 0) >= 40,
@@ -3492,6 +3501,54 @@ def _auditor_pilot(request, main_id):
 # ---------------------------------------------------------------------------
 # Auditor — Abrir auditoria de Asuntos Internos (K2)
 # ---------------------------------------------------------------------------
+
+@permission_required("koru_stats.auditor_access")
+def auditor_marcar(request, main_id):
+    """
+    Marca (o desmarca) un falso positivo y manda recalcular.
+
+    Marcar pide motivo: es una decisión que alguien puede preguntar dentro de
+    tres meses, y «porque sí» no se puede revisar.
+    """
+    from django.contrib import messages
+    from django.shortcuts import redirect
+    from django.urls import reverse
+
+    from .models import AuditorExclusion
+    from .tasks import recalcular_auditor
+
+    main_id = int(main_id)
+    if request.method != "POST":
+        return redirect(reverse("koru_stats:auditor_pilot", args=[main_id]))
+
+    tipo = request.POST.get("tipo")
+    ancla = "#dinero" if tipo == AuditorExclusion.TIPO_ALT else "#pvp"
+    destino = reverse("koru_stats:auditor_pilot", args=[main_id]) + ancla
+    try:
+        objetivo = int(request.POST.get("objetivo") or 0)
+    except ValueError:
+        objetivo = 0
+    if tipo not in (AuditorExclusion.TIPO_ALT, AuditorExclusion.TIPO_KILL) or not objetivo:
+        messages.error(request, "Petición incompleta.")
+        return redirect(destino)
+
+    if request.POST.get("accion") == "quitar":
+        AuditorExclusion.objects.filter(main_character_id=main_id, tipo=tipo, objetivo_id=objetivo).delete()
+        messages.info(request, "Marca quitada. La nota se recalcula en un momento.")
+    else:
+        motivo = (request.POST.get("motivo") or "").strip()
+        if len(motivo) < 5:
+            messages.error(request, "Hace falta un motivo: alguien preguntará por qué.")
+            return redirect(destino)
+        AuditorExclusion.objects.update_or_create(
+            main_character_id=main_id, tipo=tipo, objetivo_id=objetivo,
+            defaults={"motivo": motivo[:300], "creado_por": request.user,
+                      "etiqueta": (request.POST.get("etiqueta") or "")[:150]})
+        messages.success(request, "Marcado como falso positivo. La nota se recalcula en un momento.")
+
+    recalcular_auditor.delay()
+    return redirect(destino)
+
 
 @permission_required("koru_stats.auditor_access")
 def auditor_abrir_auditoria(request, main_id):

@@ -168,17 +168,28 @@
       <p class="small text-muted">Naves de Rekium, de la alianza o de blues con él en el killmail. Solo el <b>awox</b> pesa de verdad;
         un <b>blue</b> de fuera es un aviso y los <b>pods</b> no puntúan (pod express). No cuentan balizas, estructuras ni sus propios alts.</p>
       <div class="table-responsive"><table class="table table-sm align-middle mb-0">
-        <thead><tr><th></th><th>Fecha</th><th>Nave</th><th>Víctima (corp)</th><th>Tipo</th><th class="text-end">ISK</th><th></th></tr></thead>
+        <thead><tr><th></th><th>Fecha</th><th>Nave</th><th>Víctima (corp)</th><th>Tipo</th><th class="text-end">ISK</th><th></th><th></th></tr></thead>
         <tbody>
         {% for k in awox_kills %}
-          <tr>
+          <tr{% if k.marca %} class="opacity-50"{% endif %}>
             <td><img class="ship-ico" src="https://images.evetech.net/types/{{ k.ship_type_id }}/icon?size=32" onerror="this.style.display='none'"></td>
             <td class="small text-muted">{{ k.kill_date|date:"Y-m-d" }}</td>
             <td>{{ k.ship_name }}</td>
             <td>{% if k.victim_corp_id %}<a href="https://zkillboard.com/corporation/{{ k.victim_corp_id }}/" target="_blank" rel="noopener">{{ k.victim_corp_name|default:k.victim_corp_id }}</a>{% else %}—{% endif %}</td>
             <td>{% if k.tipo == "awox" %}<span class="badge bg-danger">awox</span>{% elif k.tipo == "blue" %}<span class="badge bg-warning text-dark">blue</span>{% else %}<span class="badge bg-secondary">pod</span>{% endif %}</td>
             <td class="text-end">{{ k.value_isk|rkisk }}</td>
-            <td><a class="btn btn-sm btn-outline-secondary py-0" href="https://zkillboard.com/kill/{{ k.killmail_id }}/" target="_blank" rel="noopener">zKill</a></td>
+            <td><a class="btn btn-sm btn-outline-info py-0" href="https://zkillboard.com/kill/{{ k.killmail_id }}/" target="_blank" rel="noopener">zKill</a></td>
+            <td class="text-nowrap">
+              {% if k.marca %}
+                <span class="badge bg-success" title="{{ k.marca.motivo }}">no es awox · {{ k.marca.creado_por|default:"?" }}</span>
+                <form method="post" action="{% url 'koru_stats:auditor_marcar' main_id %}" class="d-inline">{% csrf_token %}
+                  <input type="hidden" name="tipo" value="kill"><input type="hidden" name="objetivo" value="{{ k.killmail_id }}">
+                  <button class="btn btn-sm btn-link py-0" name="accion" value="quitar">deshacer</button></form>
+              {% elif k.tipo != "pod" %}
+                <button class="btn btn-sm btn-outline-warning py-0" type="button" data-marcar="kill" data-objetivo="{{ k.killmail_id }}"
+                        data-etiqueta="{{ k.ship_name }} ({{ k.victim_corp_name }})">No es awox</button>
+              {% endif %}
+            </td>
           </tr>
         {% endfor %}
         </tbody></table></div>
@@ -218,7 +229,7 @@
                     {% endif %}
                   </td>
                   <td class="text-end {% if k.is_loss %}text-danger{% else %}text-success{% endif %}">{{ k.value_isk|rkisk }}</td>
-                  <td><a class="btn btn-sm btn-outline-secondary py-0" href="https://zkillboard.com/kill/{{ k.killmail_id }}/" target="_blank" rel="noopener">zKill</a></td>
+                  <td><a class="btn btn-sm btn-outline-info py-0" href="https://zkillboard.com/kill/{{ k.killmail_id }}/" target="_blank" rel="noopener">zKill</a></td>
                 </tr>
               {% empty %}<tr><td class="text-muted">Sin killmails registrados.</td></tr>{% endfor %}
               </tbody>
@@ -244,11 +255,22 @@
           <table class="table table-sm mb-0">
             <tbody>
             {% for d in donaciones_out %}
-              <tr>
+              <tr{% if d.marca %} class="opacity-50"{% endif %}>
                 <td>{% if d.party_id %}<img src="https://images.evetech.net/characters/{{ d.party_id }}/portrait?size=32" class="portrait me-1" onerror="this.style.display='none'">{% endif %}
                     {% if d.party_name %}<a href="https://evewho.com/character/{{ d.party_id }}" target="_blank" rel="noopener">{{ d.party_name }}</a>{% else %}<span class="txt-ext">#{{ d.party_id }}</span>{% endif %}</td>
                 <td class="text-end text-danger">{{ d.total|rkisk }}</td>
                 <td class="text-end text-muted small">{{ d.n }}×</td>
+                <td class="text-end text-nowrap">
+                  {% if d.marca %}
+                    <span class="badge bg-success" title="{{ d.marca.motivo }}">alt suyo · {{ d.marca.creado_por|default:"?" }}</span>
+                    <form method="post" action="{% url 'koru_stats:auditor_marcar' main_id %}" class="d-inline">{% csrf_token %}
+                      <input type="hidden" name="tipo" value="alt"><input type="hidden" name="objetivo" value="{{ d.party_id }}">
+                      <button class="btn btn-sm btn-link py-0" name="accion" value="quitar">deshacer</button></form>
+                  {% else %}
+                    <button class="btn btn-sm btn-outline-warning py-0" type="button" data-marcar="alt" data-objetivo="{{ d.party_id }}"
+                            data-etiqueta="{{ d.party_name|default:d.party_id }}">Es alt suyo</button>
+                  {% endif %}
+                </td>
               </tr>
             {% empty %}<tr><td class="text-center text-muted py-3">Sin donaciones a otros.</td></tr>{% endfor %}
             </tbody>
@@ -313,6 +335,20 @@
 
   {# ---------------------------- HISTORIAL ---------------------------- #}
   <div class="tab-pane fade" id="p-historial">
+    {% if marcas %}
+    <div class="card sec-card mb-3"><div class="card-body">
+      <h6 class="card-title"><i class="fas fa-flag-checkered me-1"></i>Falsos positivos marcados ({{ marcas|length }})</h6>
+      {% for m in marcas %}
+        <div class="d-flex align-items-center gap-2 py-1 border-bottom small flex-wrap">
+          <span class="badge bg-success">{{ m.get_tipo_display }}</span>
+          <span class="fw-bold">{{ m.etiqueta|default:m.objetivo_id }}</span>
+          <span class="flex-grow-1">«{{ m.motivo }}»</span>
+          <span class="text-muted">{{ m.creado_por|default:"?" }} · {{ m.created_at|date:"Y-m-d" }}</span>
+        </div>
+      {% endfor %}
+    </div></div>
+    {% endif %}
+
     <div class="card sec-card mb-3"><div class="card-body">
       <h6 class="card-title"><i class="fas fa-bell me-1"></i>Todas las alertas ({{ alerts|length }})</h6>
       <div class="table-responsive">
@@ -424,6 +460,26 @@
   </div>
 
   </div>{# /tab-content #}
+
+  {# Modal único para marcar falsos positivos #}
+  <div class="modal fade" id="modalMarcar" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+    <form method="post" action="{% url 'koru_stats:auditor_marcar' main_id %}">{% csrf_token %}
+      <div class="modal-header"><h5 class="modal-title" id="marcarTitulo">Marcar falso positivo</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <input type="hidden" name="tipo" id="marcarTipo"><input type="hidden" name="objetivo" id="marcarObjetivo">
+        <input type="hidden" name="etiqueta" id="marcarEtiqueta">
+        <p class="small text-muted mb-2" id="marcarAyuda"></p>
+        <label class="form-label small">Motivo <span class="text-muted">— queda registrado a tu nombre</span></label>
+        <input type="text" name="motivo" class="form-control" minlength="5" maxlength="300" required
+               placeholder="Ej.: lo confirmó en Discord, es su alt de trading">
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button class="btn btn-warning" name="accion" value="marcar">Marcar</button>
+      </div>
+    </form>
+  </div></div></div>
 </div>
 {% endblock %}
 
@@ -476,6 +532,22 @@
     pintar('p-resumen');
     document.querySelectorAll('[data-ir-tab]').forEach(function(a){
         a.addEventListener('click', function(ev){ ev.preventDefault(); abrir(a.getAttribute('href').slice(1)); });
+    });
+
+    // Botones «Es alt suyo» / «No es awox» → modal con motivo
+    var modalM = document.getElementById('modalMarcar');
+    document.querySelectorAll('[data-marcar]').forEach(function(b){
+        b.addEventListener('click', function(){
+            var tipo = b.dataset.marcar;
+            document.getElementById('marcarTipo').value = tipo;
+            document.getElementById('marcarObjetivo').value = b.dataset.objetivo;
+            document.getElementById('marcarEtiqueta').value = b.dataset.etiqueta;
+            document.getElementById('marcarTitulo').textContent = (tipo === 'alt' ? 'Es alt suyo: ' : 'No es awox: ') + b.dataset.etiqueta;
+            document.getElementById('marcarAyuda').textContent = tipo === 'alt'
+                ? 'Lo que le done a este personaje dejará de contar como donación a gente de fuera.'
+                : 'Esta kill dejará de contar en la nota de PvP. Sigue apareciendo en la lista, marcada.';
+            if (window.bootstrap) bootstrap.Modal.getOrCreateInstance(modalM).show();
+        });
     });
 
     var ver = document.getElementById('verCartera');

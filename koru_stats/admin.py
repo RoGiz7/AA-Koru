@@ -1,3 +1,4 @@
+from .models import AuditorExclusion
 from django import forms
 from django.contrib import admin, messages
 from django.utils import timezone
@@ -804,3 +805,10 @@ class RecruitConfigAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+
+@admin.register(AuditorExclusion)
+class AuditorExclusionAdmin(admin.ModelAdmin):
+    list_display  = ("main_character_id", "tipo", "etiqueta", "motivo", "creado_por", "created_at")
+    list_filter   = ("tipo",)
+    search_fields = ("etiqueta", "motivo", "main_character_id", "objetivo_id")
