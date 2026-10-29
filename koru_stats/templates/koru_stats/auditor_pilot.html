@@ -1,12 +1,9 @@
 {% extends 'allianceauth/base-bs5.html' %}
 {% load i18n koru_stats_tags %}
-
 {% block title %}Koru — Ficha Auditor{% endblock %}
-
 {% block page_title %}
     {% include "framework/header/page-header.html" with title=main_name subtitle="Ficha de auditoría del piloto" %}
 {% endblock %}
-
 {% block header_nav_collapse_right %}
     {% url "koru_stats:auditor_dashboard" as url_aud %}
     {% include "framework/header/nav-collapse-button.html" with btn_modifier="outline-light" url=url_aud title="Auditor" fa_icon="fa-solid fa-user-shield" icon_on_mobile=True icon_on_desktop=True %}
@@ -14,207 +11,329 @@
 
 {% block extra_css %}
 {% comment %}
-⚠ CHART.JS IGNORA EL `height` DEL CANVAS. Por defecto es responsive y mantiene
-la proporción, así que la altura la decide el ANCHO del contenedor: en un
-monitor panorámico el donut se comía media página. Se arregla con dos cosas a
-la vez, y hacen falta las dos:
-  · una altura fija en el envoltorio (`.koru-grafica`)
-  · `maintainAspectRatio:false` en las opciones de cada gráfica
-Con solo una de las dos, sigue descuadrado.
+⚠ CHART.JS IGNORA EL `height` DEL CANVAS: hace falta altura fija en el envoltorio (.koru-grafica) Y maintainAspectRatio:false.
+⚠ Y en una pestaña oculta el canvas mide 0: cada gráfica se pinta la PRIMERA vez que se abre su pestaña, no al cargar.
 {% endcomment %}
 <style>
 .koru-grafica { position:relative; height:230px; }
-.koru-grafica.alta { height:280px; }
-.koru-grafica.baja { height:170px; }
-</style>
-
-<style>
-.portrait-lg { width:64px; height:64px; border-radius:50%; object-fit:cover; }
+.koru-grafica.baja { height:190px; }
+.portrait-lg { width:72px; height:72px; border-radius:50%; object-fit:cover; }
 .portrait    { width:28px; height:28px; border-radius:50%; object-fit:cover; }
-.kpi-card .kpi-val { font-size:1.6rem; font-weight:700; line-height:1; }
-.kpi-card .kpi-lbl { font-size:.72rem; opacity:.75; }
+.sec-card { border-radius:10px; }
 .lvl-verde{background:#10b981;color:#fff}.lvl-amarillo{background:#f59e0b;color:#111}
 .lvl-naranja{background:#f97316;color:#fff}.lvl-rojo{background:#ef4444;color:#fff}
 .sev-info{color:#60a5fa}.sev-warn{color:#f59e0b}.sev-critico{color:#ef4444}
-.sec-card{border-radius:10px}
 .txt-ext{color:#f59e0b}
+
+/* Tarjetas del «por qué» */
+.dim-card { border-radius:10px; border-left:5px solid #6b7280; height:100%; }
+.dim-card.n-verde{border-left-color:#10b981}.dim-card.n-amarillo{border-left-color:#f59e0b}
+.dim-card.n-naranja{border-left-color:#f97316}.dim-card.n-rojo{border-left-color:#ef4444}
+.dim-card .dim-nombre { font-size:.75rem; text-transform:uppercase; letter-spacing:.05em; opacity:.7; }
+.dim-card .dim-score { font-size:1.6rem; font-weight:700; line-height:1; }
+.dim-card .dim-texto { font-size:.82rem; opacity:.9; }
+
+/* Barras por dimension (sustituyen al radar: las etiquetas se pisaban) */
+.barra { height:10px; border-radius:5px; background:rgba(255,255,255,.08); overflow:hidden; }
+.barra > div { height:100%; border-radius:5px; }
+
+/* Pestañas */
+.nav-tabs .nav-link { font-weight:600; }
+.nav-tabs .aviso { color:#ef4444; margin-left:.25rem; }
+
+/* Personajes */
+.alt-card { text-align:center; width:120px; }
+.alt-card img { width:64px; height:64px; border-radius:50%; object-fit:cover; border:3px solid #6b7280; }
+.alt-card img.tok-ok  { border-color:#10b981; }
+.alt-card img.tok-mal { border-color:#ef4444; }
+.alt-card .alt-nombre { font-size:.8rem; font-weight:600; word-break:break-word; }
+.alt-card .alt-dato   { font-size:.72rem; opacity:.75; }
+
+.ship-ico { width:28px; height:28px; border-radius:4px; }
+.fila-oculta { display:none; }
+.kpi-card .kpi-val { font-size:1.5rem; font-weight:700; line-height:1; }
+.kpi-card .kpi-lbl { font-size:.72rem; opacity:.75; }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="container-fluid">
 
-  <!-- Cabecera -->
+  {# ======================= CABECERA (siempre visible) ======================= #}
   <div class="card sec-card mb-3">
     <div class="card-body d-flex flex-wrap align-items-center gap-3">
-      <img src="https://images.evetech.net/characters/{{ main_id }}/portrait?size=64" class="portrait-lg" onerror="this.style.display='none'">
+      <img src="https://images.evetech.net/characters/{{ main_id }}/portrait?size=128" class="portrait-lg" onerror="this.style.display='none'">
       <div class="flex-grow-1">
-        <h4 class="mb-0">{{ main_name }}
-          {% if latest %}<span class="badge lvl-{{ latest.nivel }} ms-2">Riesgo {{ latest.risk_total }}</span>{% endif %}
+        <h4 class="mb-1">{{ main_name }}
+          {% if latest %}<span class="badge lvl-{{ latest.nivel }} ms-2">Riesgo {{ latest.risk_total }}</span>
+          <small class="text-muted fs-6 ms-1">{{ latest.period }}</small>{% endif %}
         </h4>
-        <div class="text-muted small">
-          <a href="https://zkillboard.com/character/{{ main_id }}/" target="_blank" class="text-decoration-none">zKillboard</a>
-          · {{ alts|length }} personaje{{ alts|length|pluralize }}
-          · <img src="https://images.evetech.net/corporations/{{ corp_id }}/logo?size=32" width="18" height="18" class="rounded" onerror="this.style.display='none'"> {{ corp_name|default:corp_id }}
-          {% if alli_id %}· <img src="https://images.evetech.net/alliances/{{ alli_id }}/logo?size=32" width="18" height="18" class="rounded" onerror="this.style.display='none'"> {{ alli_name }}{% endif %}
+        <div class="text-muted small d-flex flex-wrap align-items-center gap-2">
+          <span><img src="https://images.evetech.net/corporations/{{ corp_id }}/logo?size=32" width="18" height="18" class="rounded" onerror="this.style.display='none'"> {{ corp_name|default:corp_id }}</span>
+          {% if alli_id %}<span>· <img src="https://images.evetech.net/alliances/{{ alli_id }}/logo?size=32" width="18" height="18" class="rounded" onerror="this.style.display='none'"> {{ alli_name }}</span>{% endif %}
+          <span>· {{ alts|length }} personaje{{ alts|length|pluralize }}</span>
         </div>
+      </div>
+      <div class="d-flex flex-wrap gap-2">
+        <a class="btn btn-sm btn-outline-danger" href="https://zkillboard.com/character/{{ main_id }}/" target="_blank" rel="noopener"><i class="fas fa-skull-crossbones me-1"></i>zKillboard</a>
+        <a class="btn btn-sm btn-outline-info" href="https://evewho.com/character/{{ main_id }}" target="_blank" rel="noopener"><i class="fas fa-user-clock me-1"></i>EveWho</a>
+        <a class="btn btn-sm btn-outline-light" href="/audit/r/{{ main_id }}/account/status" target="_blank"><i class="fas fa-magnifying-glass me-1"></i>Corptools</a>
+        {% if tickets_resumen %}<a class="btn btn-sm btn-outline-warning" href="#historial" data-ir-tab="tab-historial"><i class="fas fa-ticket me-1"></i>Tickets</a>{% endif %}
       </div>
     </div>
   </div>
 
-  <!-- Riesgo: radar + historial -->
-  <div class="row g-3 mb-3">
-    <div class="col-lg-5">
-      <div class="card sec-card h-100"><div class="card-body">
-        <h6 class="card-title">Perfil de riesgo (último periodo)</h6>
-        {% if radar_json != "null" %}<div class="koru-grafica"><canvas id="chartRadar"></canvas></div>
-        {% else %}<p class="text-muted">Sin scores todavía.</p>{% endif %}
+  {# ======================= EL «POR QUÉ» (siempre visible) ======================= #}
+  {% if porque %}
+  <div class="row g-2 mb-3">
+    {% for d in porque %}
+    <div class="col-6 col-md-4 col-xl-2">
+      <div class="card dim-card n-{{ d.nivel }}"><div class="card-body py-2 px-3">
+        <div class="d-flex justify-content-between align-items-start">
+          <span class="dim-nombre"><i class="fas {{ d.icono }} me-1"></i>{{ d.nombre }}</span>
+          <span class="dim-score">{{ d.score }}</span>
+        </div>
+        <div class="dim-texto mt-1">{{ d.texto }}</div>
       </div></div>
     </div>
-    <div class="col-lg-7">
-      <div class="card sec-card h-100"><div class="card-body">
-        <h6 class="card-title">Evolución del riesgo</h6>
-        <div class="koru-grafica"><canvas id="chartRisk"></canvas></div>
-      </div></div>
+    {% endfor %}
+  </div>
+  {% else %}
+    <div class="alert alert-secondary">Este piloto aún no tiene notas calculadas.</div>
+  {% endif %}
+
+  {# ======================= PESTAÑAS ======================= #}
+  <ul class="nav nav-tabs mb-3" role="tablist">
+    <li class="nav-item"><button class="nav-link active" id="tab-resumen" data-bs-toggle="tab" data-bs-target="#p-resumen" type="button" data-hash="resumen"><i class="fas fa-gauge me-1"></i>Resumen</button></li>
+    <li class="nav-item"><button class="nav-link" id="tab-pvp" data-bs-toggle="tab" data-bs-target="#p-pvp" type="button" data-hash="pvp"><i class="fas fa-crosshairs me-1"></i>PvP{% if aviso_pvp %}<span class="aviso">⚠</span>{% endif %}</button></li>
+    <li class="nav-item"><button class="nav-link" id="tab-dinero" data-bs-toggle="tab" data-bs-target="#p-dinero" type="button" data-hash="dinero"><i class="fas fa-coins me-1"></i>Dinero{% if aviso_dinero %}<span class="aviso">⚠</span>{% endif %}</button></li>
+    <li class="nav-item"><button class="nav-link" id="tab-personajes" data-bs-toggle="tab" data-bs-target="#p-personajes" type="button" data-hash="personajes"><i class="fas fa-users me-1"></i>Personajes{% if aviso_personajes %}<span class="aviso">⚠</span>{% endif %}</button></li>
+    <li class="nav-item"><button class="nav-link" id="tab-historial" data-bs-toggle="tab" data-bs-target="#p-historial" type="button" data-hash="historial"><i class="fas fa-clock-rotate-left me-1"></i>Historial{% if alertas_abiertas %} <span class="badge bg-danger">{{ alertas_abiertas|length }}</span>{% endif %}</button></li>
+  </ul>
+
+  <div class="tab-content">
+
+  {# ----------------------------- RESUMEN ----------------------------- #}
+  <div class="tab-pane fade show active" id="p-resumen">
+    <div class="row g-3 mb-3">
+      <div class="col-lg-7">
+        <div class="card sec-card h-100"><div class="card-body">
+          <h6 class="card-title">Evolución del riesgo</h6>
+          {% if risk_hist %}<div class="koru-grafica"><canvas id="chartRisk"></canvas></div>
+          {% else %}<p class="text-muted mb-0">Sin historial todavía.</p>{% endif %}
+        </div></div>
+      </div>
+      <div class="col-lg-5">
+        <div class="card sec-card h-100"><div class="card-body">
+          <h6 class="card-title">Nota por dimensión <small class="text-muted">({{ latest.period }})</small></h6>
+          {% for d in porque %}
+          <div class="mb-2">
+            <div class="d-flex justify-content-between small"><span>{{ d.nombre }}</span><span class="fw-bold">{{ d.score }}</span></div>
+            <div class="barra"><div class="lvl-{{ d.nivel }}" style="width:{{ d.score }}%"></div></div>
+          </div>
+          {% endfor %}
+        </div></div>
+      </div>
     </div>
+
+    <div class="card sec-card mb-3"><div class="card-body">
+      <h6 class="card-title"><i class="fas fa-bell me-1"></i>Alertas abiertas</h6>
+      {% for a in alertas_abiertas %}
+        <div class="d-flex align-items-center gap-2 py-1 border-bottom">
+          <span class="sev-{{ a.severidad }} fw-bold small" style="width:60px">{{ a.severidad }}</span>
+          <span class="badge bg-secondary">{{ a.familia }}</span>
+          <span class="flex-grow-1">{{ a.titulo }}</span>
+          <span class="text-muted small">{{ a.created_at|date:"Y-m-d" }}</span>
+        </div>
+      {% empty %}
+        <p class="text-muted mb-0">Ninguna alerta abierta. 👍</p>
+      {% endfor %}
+    </div></div>
   </div>
 
-  <!-- Alertas -->
-  <div class="card sec-card mb-3"><div class="card-body">
-    <h6 class="card-title"><i class="fas fa-bell me-1"></i>Alertas ({{ alerts|length }})</h6>
-    <div class="table-responsive">
-      <table class="table table-sm table-hover align-middle mb-0">
-        <thead><tr><th>Fecha</th><th>Sev.</th><th>Familia</th><th>Título</th><th>Estado</th></tr></thead>
-        <tbody>
-        {% for a in alerts %}
-          <tr>
-            <td class="text-muted small">{{ a.created_at|date:"Y-m-d" }}</td>
-            <td class="sev-{{ a.severidad }} fw-bold">{{ a.severidad }}</td>
-            <td>{{ a.familia }}</td>
-            <td>{{ a.titulo }}</td>
-            <td><span class="badge bg-secondary">{{ a.estado }}</span></td>
-          </tr>
-        {% empty %}
-          <tr><td colspan="5" class="text-center text-muted py-3">Sin alertas para este piloto.</td></tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div></div>
-
-  <!-- Financiero -->
-  <div class="row g-3 mb-3">
-    <div class="col-lg-6">
-      <div class="card sec-card h-100"><div class="card-body">
-        <h6 class="card-title"><i class="fas fa-coins me-1"></i>Wallet por categoría <small class="text-muted">(6 meses)</small></h6>
-        <div class="table-responsive" style="max-height:320px;overflow:auto">
-          <table class="table table-sm table-hover mb-0">
-            <thead><tr><th>Tipo</th><th class="text-end">Total</th><th class="text-end">N</th></tr></thead>
-            <tbody>
-            {% for w in wallet_cats %}
-              <tr><td>{{ w.ref_type }}</td>
-                  <td class="text-end {% if w.total < 0 %}text-danger{% else %}text-success{% endif %}">{{ w.total|rkisk }}</td>
-                  <td class="text-end text-muted">{{ w.n }}</td></tr>
-            {% empty %}<tr><td colspan="3" class="text-center text-muted py-3">Sin movimientos.</td></tr>{% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </div></div>
-    </div>
-    <div class="col-lg-6">
-      <div class="card sec-card h-100"><div class="card-body">
-        <h6 class="card-title"><i class="fas fa-hand-holding-usd me-1"></i>Donaciones salientes <small class="text-muted">(6 meses)</small></h6>
-        <div class="table-responsive" style="max-height:320px;overflow:auto">
-          <table class="table table-sm table-hover mb-0">
-            <thead><tr><th>Destinatario</th><th class="text-end">ISK</th><th class="text-end">N</th></tr></thead>
-            <tbody>
-            {% for d in donaciones_out %}
-              <tr>
-                <td>{% if d.party_name %}{{ d.party_name }}{% else %}<span class="txt-ext">externo #{{ d.party_id }}</span>{% endif %}</td>
-                <td class="text-end text-danger">{{ d.total|rkisk }}</td>
-                <td class="text-end text-muted">{{ d.n }}</td>
-              </tr>
-            {% empty %}<tr><td colspan="3" class="text-center text-muted py-3">Sin donaciones a otros.</td></tr>{% endfor %}
-            </tbody>
-          </table>
-        </div>
-        {% if donaciones_propias.n %}
-        <div class="small text-muted mt-2"><i class="fas fa-people-arrows me-1"></i>Entre sus propios personajes: {{ donaciones_propias.total|rkisk }} en {{ donaciones_propias.n }} movimientos. No cuenta como donación.</div>
-        {% endif %}
-      </div></div>
-    </div>
-  </div>
-
-  <!-- Patrimonio en el tiempo -->
-  <div class="card sec-card mb-3"><div class="card-body">
-    <h6 class="card-title"><i class="fas fa-chart-area me-1"></i>Patrimonio y balance en el tiempo</h6>
-    {% if patrimonio_hist %}<div class="koru-grafica baja"><canvas id="chartPatrimonio"></canvas></div>
-    {% else %}<p class="text-muted mb-0">Aún no hay snapshots. Se irá rellenando a diario.</p>{% endif %}
-  </div></div>
-
-  <!-- PvP -->
-  <div class="card sec-card mb-3"><div class="card-body">
-    <h6 class="card-title"><i class="fas fa-crosshairs me-1"></i>PvP{% if has_pvp_alert %} <span class="badge bg-danger">detalle (alerta activa)</span>{% endif %}</h6>
-    <div class="row g-2 mb-2">
-      <div class="col"><div class="card kpi-card text-center"><div class="card-body py-2"><div class="kpi-val text-success">{{ pvp_summary.kills }}</div><div class="kpi-lbl">Final blows</div></div></div></div>
+  {# ------------------------------- PVP ------------------------------- #}
+  <div class="tab-pane fade" id="p-pvp">
+    <div class="row g-2 mb-3">
+      <div class="col"><div class="card kpi-card text-center"><div class="card-body py-2"><div class="kpi-val text-success">{{ pvp_summary.kills }}</div><div class="kpi-lbl">Golpes finales</div></div></div></div>
       <div class="col"><div class="card kpi-card text-center"><div class="card-body py-2"><div class="kpi-val">{{ pvp_summary.participations }}</div><div class="kpi-lbl">Participó</div></div></div></div>
-      <div class="col"><div class="card kpi-card text-center"><div class="card-body py-2"><div class="kpi-val text-danger">{{ pvp_summary.losses }}</div><div class="kpi-lbl">Losses</div></div></div></div>
-      <div class="col"><div class="card kpi-card text-center"><div class="card-body py-2"><div class="kpi-val">{{ pvp_summary.eff }}%</div><div class="kpi-lbl">Eficiencia</div></div></div></div>
-      <div class="col"><div class="card kpi-card text-center"><div class="card-body py-2"><div class="kpi-val text-warning">{{ pvp_summary.isk_destroyed|rkisk }}</div><div class="kpi-lbl">ISK dest.</div></div></div></div>
-      <div class="col"><div class="card kpi-card text-center"><div class="card-body py-2"><div class="kpi-val {% if awox_kills %}text-danger{% endif %}">{{ awox_kills|length }}</div><div class="kpi-lbl">⚠️ Awox</div></div></div></div>
+      <div class="col"><div class="card kpi-card text-center"><div class="card-body py-2"><div class="kpi-val text-danger">{{ pvp_summary.losses }}</div><div class="kpi-lbl">Pérdidas</div></div></div></div>
+      <div class="col"><div class="card kpi-card text-center"><div class="card-body py-2"><div class="kpi-val">{{ pvp_summary.eff }}%</div><div class="kpi-lbl">Eficiencia ISK</div></div></div></div>
+      <div class="col"><div class="card kpi-card text-center"><div class="card-body py-2"><div class="kpi-val text-warning">{{ pvp_summary.isk_destroyed|rkisk }}</div><div class="kpi-lbl">ISK destruido</div></div></div></div>
+      <div class="col"><div class="card kpi-card text-center"><div class="card-body py-2"><div class="kpi-val {% if n_awox %}text-danger{% endif %}">{{ n_awox }}</div><div class="kpi-lbl">⚠️ Awox</div></div></div></div>
     </div>
 
     {% if awox_kills %}
-    <div class="alert alert-danger py-2"><strong>Posible awox</strong> — naves de corp propia/blue destruidas con él en el killmail. No cuentan balizas, estructuras ni pods de sus propios alts.</div>
-    <div class="table-responsive mb-2"><table class="table table-sm mb-0">
-      <thead><tr><th>Fecha</th><th>Víctima (corp)</th><th>Nave</th><th class="text-end">ISK</th><th></th></tr></thead>
-      <tbody>
-      {% for k in awox_kills %}
-        <tr><td class="small text-muted">{{ k.kill_date }}</td>
-            <td>{{ k.victim_corp_name|default:k.victim_corp_id }}</td>
-            <td>{{ k.ship_name }}{% if k.tipo == "capsula" %} <span class="badge bg-secondary">pod</span>{% endif %}</td><td class="text-end">{{ k.value_isk|rkisk }}</td>
-            <td><a href="https://zkillboard.com/kill/{{ k.killmail_id }}/" target="_blank">↗</a></td></tr>
-      {% endfor %}
-      </tbody></table></div>
+    <div class="card sec-card mb-3 border-danger"><div class="card-body">
+      <h6 class="card-title text-danger"><i class="fas fa-user-ninja me-1"></i>Kills contra los nuestros</h6>
+      <p class="small text-muted">Naves de Rekium, de la alianza o de blues con él en el killmail. Solo el <b>awox</b> pesa de verdad;
+        un <b>blue</b> de fuera es un aviso y los <b>pods</b> no puntúan (pod express). No cuentan balizas, estructuras ni sus propios alts.</p>
+      <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+        <thead><tr><th></th><th>Fecha</th><th>Nave</th><th>Víctima (corp)</th><th>Tipo</th><th class="text-end">ISK</th><th></th></tr></thead>
+        <tbody>
+        {% for k in awox_kills %}
+          <tr>
+            <td><img class="ship-ico" src="https://images.evetech.net/types/{{ k.ship_type_id }}/icon?size=32" onerror="this.style.display='none'"></td>
+            <td class="small text-muted">{{ k.kill_date|date:"Y-m-d" }}</td>
+            <td>{{ k.ship_name }}</td>
+            <td>{% if k.victim_corp_id %}<a href="https://zkillboard.com/corporation/{{ k.victim_corp_id }}/" target="_blank" rel="noopener">{{ k.victim_corp_name|default:k.victim_corp_id }}</a>{% else %}—{% endif %}</td>
+            <td>{% if k.tipo == "awox" %}<span class="badge bg-danger">awox</span>{% elif k.tipo == "blue" %}<span class="badge bg-warning text-dark">blue</span>{% else %}<span class="badge bg-secondary">pod</span>{% endif %}</td>
+            <td class="text-end">{{ k.value_isk|rkisk }}</td>
+            <td><a class="btn btn-sm btn-outline-secondary py-0" href="https://zkillboard.com/kill/{{ k.killmail_id }}/" target="_blank" rel="noopener">zKill</a></td>
+          </tr>
+        {% endfor %}
+        </tbody></table></div>
+    </div></div>
     {% endif %}
 
-    {% if has_pvp_alert %}
-      <div class="row g-3">
-        <div class="col-lg-4">
-          <h6 class="small text-muted mt-2">Top corps enemigas (losses)</h6>
-          <table class="table table-sm mb-0">
-            <tbody>
-            {% for e in top_enemies %}
-              <tr><td>{{ e.enemy_corp_name|default:e.enemy_corp_id }}</td><td class="text-end text-danger">{{ e.n }}</td></tr>
-            {% empty %}<tr><td class="text-muted">—</td></tr>{% endfor %}
-            </tbody>
-          </table>
-        </div>
-        <div class="col-lg-8">
-          <h6 class="small text-muted mt-2">Kill feed reciente</h6>
-          <div class="table-responsive" style="max-height:320px;overflow:auto">
-            <table class="table table-sm mb-0">
-              <thead><tr><th>Fecha</th><th>Tipo</th><th>Nave</th><th>Contraparte</th><th class="text-end">ISK</th><th></th></tr></thead>
+    <div class="row g-3">
+      <div class="col-lg-4">
+        <div class="card sec-card h-100"><div class="card-body">
+          <h6 class="card-title"><i class="fas fa-skull me-1"></i>Contra quién pierde más</h6>
+          {% for e in top_enemies %}
+            <div class="d-flex align-items-center gap-2 py-1 border-bottom">
+              <img src="https://images.evetech.net/corporations/{{ e.enemy_corp_id }}/logo?size=32" width="22" height="22" class="rounded" onerror="this.style.display='none'">
+              <a class="flex-grow-1" href="https://zkillboard.com/corporation/{{ e.enemy_corp_id }}/" target="_blank" rel="noopener">{{ e.enemy_corp_name|default:e.enemy_corp_id }}</a>
+              <span class="badge bg-danger">{{ e.n }}</span>
+            </div>
+          {% empty %}<p class="text-muted mb-0">Sin pérdidas registradas.</p>{% endfor %}
+        </div></div>
+      </div>
+      <div class="col-lg-8">
+        <div class="card sec-card h-100"><div class="card-body">
+          <h6 class="card-title"><i class="fas fa-list me-1"></i>Kills y pérdidas recientes</h6>
+          <div class="table-responsive" style="max-height:480px;overflow:auto">
+            <table class="table table-sm align-middle mb-0">
               <tbody>
               {% for k in kill_feed %}
                 <tr>
-                  <td class="small text-muted">{{ k.kill_date }}</td>
-                  <td>{% if k.is_loss %}<span class="text-danger">Loss</span>{% else %}<span class="text-success">Kill</span>{% endif %}</td>
-                  <td>{{ k.ship_name }}</td>
-                  <td class="small">{% if k.is_loss %}{{ k.enemy_char_name|default:"—" }}{% if k.enemy_corp_name %} ({{ k.enemy_corp_name }}){% endif %}{% else %}{{ k.victim_corp_name|default:"—" }}{% endif %}</td>
-                  <td class="text-end">{{ k.value_isk|rkisk }}</td>
-                  <td><a href="https://zkillboard.com/kill/{{ k.killmail_id }}/" target="_blank">↗</a></td>
+                  <td><img class="ship-ico" src="https://images.evetech.net/types/{{ k.ship_type_id }}/icon?size=32" onerror="this.style.display='none'"></td>
+                  <td>{% if k.is_loss %}<span class="badge bg-danger">Pérdida</span>{% else %}<span class="badge bg-success">Kill</span>{% endif %}</td>
+                  <td>{{ k.ship_name }}<div class="small text-muted">{{ k.kill_date|date:"Y-m-d" }}</div></td>
+                  <td class="small">
+                    {% if k.is_loss %}
+                      {% if k.enemy_char_id %}<a href="https://zkillboard.com/character/{{ k.enemy_char_id }}/" target="_blank" rel="noopener">{{ k.enemy_char_name|default:k.enemy_char_id }}</a>{% else %}—{% endif %}
+                      {% if k.enemy_corp_id %}<div><a class="text-muted" href="https://zkillboard.com/corporation/{{ k.enemy_corp_id }}/" target="_blank" rel="noopener">{{ k.enemy_corp_name|default:k.enemy_corp_id }}</a></div>{% endif %}
+                    {% else %}
+                      {% if k.victim_corp_id %}<a href="https://zkillboard.com/corporation/{{ k.victim_corp_id }}/" target="_blank" rel="noopener">{{ k.victim_corp_name|default:k.victim_corp_id }}</a>{% else %}—{% endif %}
+                    {% endif %}
+                  </td>
+                  <td class="text-end {% if k.is_loss %}text-danger{% else %}text-success{% endif %}">{{ k.value_isk|rkisk }}</td>
+                  <td><a class="btn btn-sm btn-outline-secondary py-0" href="https://zkillboard.com/kill/{{ k.killmail_id }}/" target="_blank" rel="noopener">zKill</a></td>
                 </tr>
-              {% endfor %}
+              {% empty %}<tr><td class="text-muted">Sin killmails registrados.</td></tr>{% endfor %}
               </tbody>
             </table>
           </div>
-        </div>
+        </div></div>
       </div>
-    {% else %}
-      <p class="text-muted small mb-0">PvP resumido (sin alerta de PvP/espías activa). Si surge una alerta, aquí se desplegará el kill feed y los enemigos.</p>
-    {% endif %}
-  </div></div>
+    </div>
+  </div>
+
+  {# ------------------------------ DINERO ------------------------------ #}
+  <div class="tab-pane fade" id="p-dinero">
+    <div class="card sec-card mb-3"><div class="card-body">
+      <h6 class="card-title"><i class="fas fa-chart-area me-1"></i>Patrimonio y saldo en el tiempo</h6>
+      {% if patrimonio_hist %}<div class="koru-grafica baja"><canvas id="chartPatrimonio"></canvas></div>
+      {% else %}<p class="text-muted mb-0">Aún no hay fotos diarias. Se irá rellenando.</p>{% endif %}
+    </div></div>
+
+    <div class="row g-3">
+      <div class="col-lg-6">
+        <div class="card sec-card h-100"><div class="card-body">
+          <h6 class="card-title"><i class="fas fa-hand-holding-usd me-1"></i>Donaciones a otros <small class="text-muted">(6 meses)</small></h6>
+          <table class="table table-sm mb-0">
+            <tbody>
+            {% for d in donaciones_out %}
+              <tr>
+                <td>{% if d.party_id %}<img src="https://images.evetech.net/characters/{{ d.party_id }}/portrait?size=32" class="portrait me-1" onerror="this.style.display='none'">{% endif %}
+                    {% if d.party_name %}<a href="https://evewho.com/character/{{ d.party_id }}" target="_blank" rel="noopener">{{ d.party_name }}</a>{% else %}<span class="txt-ext">#{{ d.party_id }}</span>{% endif %}</td>
+                <td class="text-end text-danger">{{ d.total|rkisk }}</td>
+                <td class="text-end text-muted small">{{ d.n }}×</td>
+              </tr>
+            {% empty %}<tr><td class="text-center text-muted py-3">Sin donaciones a otros.</td></tr>{% endfor %}
+            </tbody>
+          </table>
+          {% if donaciones_propias.n %}
+          <div class="small text-muted mt-2"><i class="fas fa-people-arrows me-1"></i>Entre sus propios personajes: {{ donaciones_propias.total|rkisk }} en {{ donaciones_propias.n }} movimientos. No cuenta como donación.</div>
+          {% endif %}
+        </div></div>
+      </div>
+      <div class="col-lg-6">
+        <div class="card sec-card h-100"><div class="card-body">
+          <h6 class="card-title"><i class="fas fa-wallet me-1"></i>Cartera por tipo <small class="text-muted">(6 meses)</small></h6>
+          <table class="table table-sm mb-0" id="tablaCartera">
+            <tbody>
+            {% for w in wallet_cats %}
+              <tr class="{% if forloop.counter > 8 %}fila-oculta{% endif %}"><td class="small">{{ w.ref_type }}</td>
+                  <td class="text-end {% if w.total < 0 %}text-danger{% else %}text-success{% endif %}">{{ w.total|rkisk }}</td>
+                  <td class="text-end text-muted small">{{ w.n }}×</td></tr>
+            {% empty %}<tr><td class="text-center text-muted py-3">Sin movimientos.</td></tr>{% endfor %}
+            </tbody>
+          </table>
+          {% if wallet_cats|length > 8 %}
+            <button class="btn btn-sm btn-link px-0" type="button" id="verCartera">Ver los {{ wallet_cats|length }} tipos</button>
+          {% endif %}
+        </div></div>
+      </div>
+    </div>
+  </div>
+
+  {# ---------------------------- PERSONAJES ---------------------------- #}
+  <div class="tab-pane fade" id="p-personajes">
+    <div class="card sec-card mb-3"><div class="card-body">
+      <h6 class="card-title"><i class="fas fa-id-badge me-1"></i>Sus personajes <small class="text-muted">— borde verde: token al día · rojo: sin token o caducado</small></h6>
+      <div class="d-flex flex-wrap gap-3">
+      {% for c in cobertura %}
+        <div class="alt-card">
+          <a href="https://zkillboard.com/character/{{ c.character_id }}/" target="_blank" rel="noopener">
+            <img src="https://images.evetech.net/characters/{{ c.character_id }}/portrait?size=64"
+                 class="{% if c.active %}tok-ok{% else %}tok-mal{% endif %}" title="{{ c.character_name }}" onerror="this.style.visibility='hidden'"></a>
+          <div class="alt-nombre">{{ c.character_name }}{% if c.character_id == main_id %} <span class="badge bg-primary">main</span>{% endif %}</div>
+          <div class="alt-dato {% if c.dias_login and c.dias_login > 14 %}text-warning{% endif %}">
+            {% if c.last_known_login %}hace {{ c.dias_login }} d{% else %}sin login{% endif %}</div>
+          <div class="alt-dato">{{ c.balance|rkisk }} ISK</div>
+          {% if c.active == None %}<div class="alt-dato text-danger">sin token</div>{% elif not c.active %}<div class="alt-dato text-danger">token caducado</div>{% endif %}
+        </div>
+      {% endfor %}
+      </div>
+    </div></div>
+
+    <div class="card sec-card mb-3"><div class="card-body">
+      <h6 class="card-title"><i class="fas fa-stream me-1"></i>Entradas, salidas y cambios</h6>
+      {% for e in ciclo %}
+        <div class="d-flex align-items-center gap-2 py-1 border-bottom small">
+          <span class="text-muted" style="width:90px">{{ e.fecha|date:"Y-m-d" }}</span>
+          <span class="badge bg-secondary">{{ e.evento }}</span>
+          <span class="fw-bold">{{ e.character_name }}</span>
+          <span class="text-muted">{{ e.estado_anterior }} → {{ e.estado_nuevo }}</span>
+        </div>
+      {% empty %}<p class="text-muted mb-0">Sin eventos registrados.</p>{% endfor %}
+    </div></div>
+  </div>
+
+  {# ---------------------------- HISTORIAL ---------------------------- #}
+  <div class="tab-pane fade" id="p-historial">
+    <div class="card sec-card mb-3"><div class="card-body">
+      <h6 class="card-title"><i class="fas fa-bell me-1"></i>Todas las alertas ({{ alerts|length }})</h6>
+      <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle mb-0">
+          <thead><tr><th>Fecha</th><th>Sev.</th><th>Familia</th><th>Título</th><th>Estado</th></tr></thead>
+          <tbody>
+          {% for a in alerts %}
+            <tr>
+              <td class="text-muted small">{{ a.created_at|date:"Y-m-d" }}</td>
+              <td class="sev-{{ a.severidad }} fw-bold">{{ a.severidad }}</td>
+              <td>{{ a.familia }}</td>
+              <td>{{ a.titulo }}</td>
+              <td><span class="badge {% if a.estado == 'abierta' %}bg-danger{% else %}bg-secondary{% endif %}">{{ a.estado }}</span></td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="5" class="text-center text-muted py-3">Sin alertas para este piloto.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div></div>
 
   {% comment %}
   Tickets del piloto (T2). Va ANTES del ciclo de vida y la cobertura a
@@ -302,49 +421,9 @@ Con solo una de las dos, sigue descuadrado.
     {% endif %}
   </div></div>
   {% endif %}
-
-  <!-- Ciclo de vida + Cobertura -->
-  <div class="row g-3 mb-4">
-    <div class="col-lg-6">
-      <div class="card sec-card h-100"><div class="card-body">
-        <h6 class="card-title"><i class="fas fa-stream me-1"></i>Ciclo de vida</h6>
-        <div class="table-responsive" style="max-height:300px;overflow:auto">
-          <table class="table table-sm mb-0">
-            <thead><tr><th>Fecha</th><th>Personaje</th><th>Evento</th><th>Cambio</th></tr></thead>
-            <tbody>
-            {% for e in ciclo %}
-              <tr><td class="small text-muted">{{ e.fecha|date:"Y-m-d" }}</td>
-                  <td>{{ e.character_name }}</td>
-                  <td><span class="badge bg-secondary">{{ e.evento }}</span></td>
-                  <td class="small text-muted">{{ e.estado_anterior }} → {{ e.estado_nuevo }}</td></tr>
-            {% empty %}<tr><td colspan="4" class="text-center text-muted py-3">Sin eventos registrados aún.</td></tr>{% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </div></div>
-    </div>
-    <div class="col-lg-6">
-      <div class="card sec-card h-100"><div class="card-body">
-        <h6 class="card-title"><i class="fas fa-id-badge me-1"></i>Cobertura (estado de token por personaje)</h6>
-        <div class="table-responsive" style="max-height:300px;overflow:auto">
-          <table class="table table-sm mb-0">
-            <thead><tr><th>Personaje</th><th>Últ. conexión</th><th>Token</th><th class="text-end">Balance</th></tr></thead>
-            <tbody>
-            {% for c in cobertura %}
-              <tr>
-                <td><img src="https://images.evetech.net/characters/{{ c.character_id }}/portrait?size=32" class="portrait me-1" onerror="this.style.display='none'">{{ c.character_name }}</td>
-                <td class="small {% if c.dias_login and c.dias_login > 14 %}text-warning{% endif %}">{{ c.last_known_login|date:"Y-m-d"|default:"—" }}</td>
-                <td class="small">{% if c.active == None %}<span class="text-danger">sin token</span>{% elif c.active %}<span class="text-success">✓ activo</span>{% else %}<span class="text-danger">✗ inactivo</span>{% endif %}</td>
-                <td class="text-end">{{ c.balance|rkisk }}</td>
-              </tr>
-            {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </div></div>
-    </div>
   </div>
 
+  </div>{# /tab-content #}
 </div>
 {% endblock %}
 
@@ -352,47 +431,58 @@ Con solo una de las dos, sigue descuadrado.
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script>
 (function(){
-    if (typeof Chart === 'undefined') return;
     var fmtISK = function(v){ v=+v||0; var a=Math.abs(v); return a>=1e12?(v/1e12).toFixed(2)+' T':a>=1e9?(v/1e9).toFixed(2)+' B':a>=1e6?(v/1e6).toFixed(1)+' M':a>=1e3?(v/1e3).toFixed(0)+' K':v.toFixed(0); };
-
-    var radar = {{ radar_json|safe }};
-    if (radar) {
-        new Chart(document.getElementById('chartRadar'), {
-            type:'radar',
-            data:{ labels:['PvP','Ciclo','Espías','Fuga','Huecos','Financ.'],
-                datasets:[{ data:radar, backgroundColor:'rgba(239,68,68,.2)', borderColor:'#ef4444', pointBackgroundColor:'#ef4444' }]},
-            options:{ responsive:true, maintainAspectRatio:false,
-                scales:{ r:{ min:0, max:100, ticks:{ stepSize:25 } } }, plugins:{ legend:{ display:false } } }
-        });
-    }
-
-    var rh = {{ risk_hist_json|safe }};
     var colorByNivel = { verde:'#10b981', amarillo:'#f59e0b', naranja:'#f97316', rojo:'#ef4444' };
-    new Chart(document.getElementById('chartRisk'), {
-        type:'line',
-        data:{ labels:rh.map(function(x){return x.period;}),
-            datasets:[{ label:'Riesgo', data:rh.map(function(x){return x.risk;}),
-                borderColor:'#8b5cf6', backgroundColor:'rgba(139,92,246,.15)', fill:true, tension:.25,
-                pointBackgroundColor:rh.map(function(x){return colorByNivel[x.nivel]||'#888';}), pointRadius:4 }]},
-        options:{ responsive:true, maintainAspectRatio:false,
-            scales:{ y:{ min:0, max:100 } }, plugins:{ legend:{ display:false } } }
+    var hechas = {};
+
+    // Cada gráfica se pinta la primera vez que su pestaña es visible
+    var graficas = {
+        'p-resumen': function(){
+            var el = document.getElementById('chartRisk'); var rh = {{ risk_hist_json|safe }};
+            if (!el || !rh.length) return;
+            new Chart(el, { type:'line',
+                data:{ labels:rh.map(function(x){return x.period;}),
+                    datasets:[{ data:rh.map(function(x){return x.risk;}), borderColor:'#8b5cf6', backgroundColor:'rgba(139,92,246,.15)',
+                        fill:true, tension:.25, pointRadius:5,
+                        pointBackgroundColor:rh.map(function(x){return colorByNivel[x.nivel]||'#888';}) }]},
+                options:{ responsive:true, maintainAspectRatio:false, scales:{ y:{ min:0, max:100 } }, plugins:{ legend:{ display:false } } } });
+        },
+        'p-dinero': function(){
+            var el = document.getElementById('chartPatrimonio'); var ph = {{ patrimonio_json|safe }};
+            if (!el || !ph.length) return;
+            new Chart(el, { type:'line',
+                data:{ labels:ph.map(function(x){return x.date;}),
+                    datasets:[
+                        { label:'Assets', data:ph.map(function(x){return x.assets;}), borderColor:'#f59e0b', backgroundColor:'rgba(245,158,11,.12)', fill:true, tension:.2 },
+                        { label:'Saldo', data:ph.map(function(x){return x.balance;}), borderColor:'#10b981', backgroundColor:'rgba(16,185,129,.12)', fill:true, tension:.2 } ]},
+                options:{ responsive:true, maintainAspectRatio:false, scales:{ y:{ ticks:{ callback:fmtISK } } },
+                    plugins:{ legend:{ position:'bottom' }, tooltip:{ callbacks:{ label:function(c){ return ' '+c.dataset.label+': '+fmtISK(c.raw)+' ISK'; } } } } } });
+        }
+    };
+    function pintar(id){ if (hechas[id] || typeof Chart === 'undefined' || !graficas[id]) return; hechas[id] = true; graficas[id](); }
+
+    document.querySelectorAll('button[data-bs-toggle="tab"]').forEach(function(b){
+        b.addEventListener('shown.bs.tab', function(){
+            pintar(b.getAttribute('data-bs-target').slice(1));
+            try { history.replaceState(null, '', '#' + b.dataset.hash); } catch(e) {}
+        });
+    });
+    // Abrir la pestaña del #hash (para enlazar directamente a PvP, Dinero…)
+    function abrir(hash){
+        var b = document.querySelector('button[data-hash="' + hash + '"]');
+        if (b && window.bootstrap) bootstrap.Tab.getOrCreateInstance(b).show();
+    }
+    if (location.hash) abrir(location.hash.slice(1));
+    pintar('p-resumen');
+    document.querySelectorAll('[data-ir-tab]').forEach(function(a){
+        a.addEventListener('click', function(ev){ ev.preventDefault(); abrir(a.getAttribute('href').slice(1)); });
     });
 
-    var ph = {{ patrimonio_json|safe }};
-    var elP = document.getElementById('chartPatrimonio');
-    if (elP && ph.length) {
-        new Chart(elP, {
-            type:'line',
-            data:{ labels:ph.map(function(x){return x.date;}),
-                datasets:[
-                    { label:'Assets', data:ph.map(function(x){return x.assets;}), borderColor:'#f59e0b', backgroundColor:'rgba(245,158,11,.12)', fill:true, tension:.2 },
-                    { label:'Balance', data:ph.map(function(x){return x.balance;}), borderColor:'#10b981', backgroundColor:'rgba(16,185,129,.12)', fill:true, tension:.2 }
-                ]},
-            options:{ responsive:true, maintainAspectRatio:false,
-                scales:{ y:{ ticks:{ callback:fmtISK } } },
-                plugins:{ legend:{ position:'bottom' }, tooltip:{ callbacks:{ label:function(c){ return ' '+c.dataset.label+': '+fmtISK(c.raw)+' ISK'; } } } } }
-        });
-    }
+    var ver = document.getElementById('verCartera');
+    if (ver) ver.addEventListener('click', function(){
+        document.querySelectorAll('#tablaCartera .fila-oculta').forEach(function(tr){ tr.classList.remove('fila-oculta'); });
+        ver.remove();
+    });
 })();
 </script>
 {% endblock %}

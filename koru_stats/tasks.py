@@ -1484,12 +1484,16 @@ def _tipos_nave(type_ids):
         return {int(i): int(g) == GRUPO_CAPSULA for i, g in c.fetchall()}
 
 
-def awox_reales(filas):
+def awox_reales(filas, own_corps=(), own_allis=()):
     """
-    Filtra kills contra propios/blues y deja solo lo que es awox de verdad.
+    Filtra kills contra propios/blues y dice de que clase es cada una.
 
-    `filas`: dicts con main_character_id, ship_type_id y victim_char_id.
-    Devuelve [(fila, "nave"|"capsula")].
+    `filas`: dicts con main_character_id, ship_type_id, victim_char_id,
+    victim_corp_id y victim_alliance_id.
+    Devuelve [(fila, "awox"|"blue"|"pod")]:
+      · awox — nave de la corp o de la alianza: lo que hay que mirar
+      · blue — nave de un blue de fuera: un aviso, no una traicion
+      · pod  — capsula de quien sea: en Rekium se hace pod express, no puntua
 
     Se descarta:
       · lo que no es una nave (ver `_tipos_nave`)
@@ -1512,13 +1516,19 @@ def awox_reales(filas):
         v = f.get("victim_char_id")
         if v and main_de.get(int(v)) == int(f["main_character_id"]):
             continue
-        out.append((f, "capsula" if naves[tid] else "nave"))
+        if naves[tid]:
+            tipo = "pod"
+        elif (f.get("victim_corp_id") in own_corps) or (f.get("victim_alliance_id") and f.get("victim_alliance_id") in own_allis):
+            tipo = "awox"
+        else:
+            tipo = "blue"
+        out.append((f, tipo))
     return out
 
 
-def awox_score(n_naves, n_capsulas):
-    """Una nave = 50, dos = 100; un pod suma 20. Antes UNO de lo que fuera = 100."""
-    return _auditor_clamp(50 * n_naves + 20 * n_capsulas)
+def awox_score(n_awox, n_blue):
+    """Awox 50 por nave (dos = 100); blue de fuera 15; pods nada."""
+    return _auditor_clamp(50 * n_awox + 15 * n_blue)
 
 
 @shared_task
@@ -1606,7 +1616,7 @@ def compute_auditor_scores(periods=None, full=False):
                 corp_names[ecorp] = ecorp_name
 
         # Awox: kills contra corp propia / blue, solo naves y sin contar alts propios
-        awox_by_main = defaultdict(lambda: [0, 0])     # [naves, capsulas]
+        awox_by_main = defaultdict(lambda: [0, 0, 0])  # [awox, blue, pods]
         if awox_corps or awox_allis:
             from django.db.models import Q as _Q
             q = _Q()
@@ -1616,9 +1626,11 @@ def compute_auditor_scores(periods=None, full=False):
                 q |= _Q(victim_alliance_id__in=awox_allis)
             sospechosas = CharacterKillRecord.objects.filter(
                 q, period=period, is_loss=False, main_character_id__in=main_ids
-            ).values("main_character_id", "ship_type_id", "victim_char_id")
-            for f, tipo in awox_reales(sospechosas):
-                awox_by_main[f["main_character_id"]][0 if tipo == "nave" else 1] += 1
+            ).values("main_character_id", "ship_type_id", "victim_char_id",
+                     "victim_corp_id", "victim_alliance_id")
+            idx = {"awox": 0, "blue": 1, "pod": 2}
+            for f, tipo in awox_reales(sospechosas, own_corp, own_alli):
+                awox_by_main[f["main_character_id"]][idx[tipo]] += 1
 
         # Ciclo de vida: eventos del periodo
         ciclo_by_main = defaultdict(list)
@@ -1708,7 +1720,7 @@ def compute_auditor_scores(periods=None, full=False):
                 score_espias = 0
                 det["losses"] = total_losses
             # PvP (feeding sostenido + AWOX)
-            awox_n, awox_p = awox_by_main.get(mid, (0, 0))
+            awox_n, awox_b, awox_p = awox_by_main.get(mid, (0, 0, 0))
             p = pvp.get(mid)
             score_feed = 0
             if p:
@@ -1718,10 +1730,11 @@ def compute_auditor_scores(periods=None, full=False):
                     score_feed = _auditor_clamp((50 - eff) * 2)
                 det["isk_efficiency"] = round(eff, 1)
                 det["ships_lost"] = p.ships_lost
-            if awox_n or awox_p:
+            if awox_n or awox_b or awox_p:
                 det["awox_kills"] = awox_n
+                det["blue_kills"] = awox_b
                 det["awox_pods"] = awox_p
-                score_pvp = max(score_feed, awox_score(awox_n, awox_p))
+                score_pvp = max(score_feed, awox_score(awox_n, awox_b))
             else:
                 score_pvp = score_feed
             # CICLO DE VIDA

@@ -3189,6 +3189,77 @@ def auditor_dashboard(request):
 
 @permission_required("koru_stats.auditor_access")
 def auditor_pilot(request, main_id):
+    return _auditor_pilot(request, main_id)
+
+
+def _nivel_dim(score):
+    return "rojo" if score >= 70 else "naranja" if score >= 40 else "amarillo" if score >= 15 else "verde"
+
+
+def _auditor_porque(latest):
+    """Una tarjeta por dimension: nota, color y la frase que la explica."""
+    if not latest:
+        return []
+    d = latest.detalle or {}
+    actual = d.get("_periodo_actual") is not False
+    millones = lambda v: f"{(v or 0) / 1e6:,.0f} M".replace(",", ".")
+    out = []
+
+    def add(clave, nombre, icono, score, texto):
+        out.append({"clave": clave, "nombre": nombre, "icono": icono, "score": int(score or 0),
+                    "nivel": _nivel_dim(int(score or 0)), "texto": texto})
+
+    # PvP
+    a, b, p = d.get("awox_kills", 0), d.get("blue_kills", 0), d.get("awox_pods", 0)
+    if a or b:
+        partes = []
+        if a: partes.append(f"{a} nave(s) de los nuestros")
+        if b: partes.append(f"{b} de blues")
+        txt = "Awox: " + " y ".join(partes) + "."
+        if p: txt += f" Y {p} pod(s), que no puntúan."
+    elif d.get("isk_efficiency") is not None:
+        txt = f"Eficiencia {d['isk_efficiency']}% con {d.get('ships_lost', '?')} naves perdidas."
+        if p: txt += f" {p} pod(s) de los nuestros, no puntúan."
+    else:
+        txt = "Sin actividad PvP relevante."
+    add("pvp", "PvP", "fa-crosshairs", latest.score_pvp, txt)
+
+    # Espías
+    if (d.get("losses") or 0) >= 3 and d.get("top_enemy_losses"):
+        txt = (f"{d['losses']} pérdidas, {d['top_enemy_losses']} ante "
+               f"{d.get('top_enemy_corp_name') or 'la misma corp'}.")
+    else:
+        txt = f"{d.get('losses') or 0} pérdidas; hacen falta 3 para valorar."
+    add("espias", "Espías", "fa-user-secret", latest.score_espias, txt)
+
+    # Financiero
+    partes = []
+    if d.get("donacion_externa"):
+        partes.append(f"Donó {millones(d['donacion_externa'])} a gente de fuera.")
+    if d.get("caida_patrimonio_pct"):
+        partes.append(f"Su patrimonio cayó un {d['caida_patrimonio_pct']}%.")
+    add("financiero", "Dinero", "fa-coins", latest.score_financiero,
+        " ".join(partes) or "Sin movimientos raros.")
+
+    # Ciclo
+    evs = d.get("eventos_ciclo") or []
+    add("ciclo", "Ciclo", "fa-arrows-rotate", latest.score_ciclo,
+        ("Eventos: " + ", ".join(evs) + ".") if evs else "Sin entradas ni salidas.")
+
+    # Fuga y Huecos: solo el mes en curso
+    if not actual:
+        add("fuga", "Fuga", "fa-door-open", latest.score_fuga, "Solo se mide en el mes en curso.")
+        add("huecos", "Huecos", "fa-eye-slash", latest.score_huecos, "Solo se mide en el mes en curso.")
+    else:
+        dl = d.get("dias_sin_login")
+        add("fuga", "Fuga", "fa-door-open", latest.score_fuga,
+            "Sin dato de conexión." if dl is None else f"Última conexión hace {dl} días.")
+        add("huecos", "Huecos", "fa-eye-slash", latest.score_huecos,
+            f"{d.get('chars_ciegos') or 0} de {d.get('n_chars') or 0} personajes sin datos al día.")
+    return out
+
+
+def _auditor_pilot(request, main_id):
     from datetime import date, timedelta
     from django.db.models import Sum, Count, Q
     from .models import (AuditorConfig, AuditorRiskScore, AuditorAlert,
@@ -3238,6 +3309,10 @@ def auditor_pilot(request, main_id):
     # --- Riesgo: historial + radar (último periodo) ---
     scores = list(AuditorRiskScore.objects.filter(main_character_id=main_id).order_by("period"))
     risk_hist = [{"period": s.period, "risk": s.risk_total, "nivel": s.nivel} for s in scores]
+    # Dos años de ceros no cuentan nada: se empieza en el primer mes con señal,
+    # enseñando como minimo los ultimos seis.
+    primero = next((i for i, h in enumerate(risk_hist) if h["risk"] > 0), len(risk_hist))
+    risk_hist = risk_hist[max(0, min(primero, len(risk_hist) - 6)):]
     latest = scores[-1] if scores else None
     radar = None
     if latest:
@@ -3319,27 +3394,29 @@ def auditor_pilot(request, main_id):
             q |= Q(victim_corp_id__in=awox_corps)
         if awox_allis:
             q |= Q(victim_alliance_id__in=awox_allis)
-        from .tasks import awox_reales
+        from .tasks import awox_reales, _get_active_corp_ids
         crudas = (CharacterKillRecord.objects.filter(q, main_character_id=main_id, is_loss=False)
                   .order_by("-kill_date").values(
                       "killmail_id", "victim_corp_id", "victim_corp_name", "main_character_id",
-                      "ship_type_id", "victim_char_id",
+                      "ship_type_id", "victim_char_id", "victim_alliance_id",
                       "ship_name", "value_isk", "kill_date")[:200])
         # Mismo criterio que el score: si la ficha enseñara balizas como awox,
         # contradiria al numero que tiene encima.
-        awox_kills = [dict(f, tipo=tipo) for f, tipo in awox_reales(crudas)][:50]
+        own_corps = set(cfg.own_corp_ids or []) | set(_get_active_corp_ids() or [])
+        own_allis = set(cfg.own_alliance_ids or [])
+        orden = {"awox": 0, "blue": 1, "pod": 2}
+        awox_kills = sorted([dict(f, tipo=tipo) for f, tipo in awox_reales(crudas, own_corps, own_allis)],
+                            key=lambda k: orden[k["tipo"]])[:50]
 
-    # --- PvP detalle (solo si hay alerta de pvp/espías) ---
-    kill_feed = []
-    top_enemies = []
-    if has_pvp_alert:
-        kill_feed = list(CharacterKillRecord.objects.filter(main_character_id=main_id)
-                         .order_by("-kill_date", "-killmail_id").values(
-                             "killmail_id", "is_loss", "ship_name", "value_isk", "kill_date",
-                             "enemy_char_name", "enemy_corp_name", "victim_corp_name")[:40])
-        top_enemies = list(CharacterKillRecord.objects.filter(
-            main_character_id=main_id, is_loss=True, enemy_corp_id__isnull=False)
-            .values("enemy_corp_id", "enemy_corp_name").annotate(n=Count("id")).order_by("-n")[:10])
+    # --- PvP detalle: siempre, ahora vive en su propia pestaña ---
+    kill_feed = list(CharacterKillRecord.objects.filter(main_character_id=main_id)
+                     .order_by("-kill_date", "-killmail_id").values(
+                         "killmail_id", "is_loss", "ship_name", "ship_type_id", "value_isk", "kill_date",
+                         "enemy_char_id", "enemy_char_name", "enemy_corp_id", "enemy_corp_name",
+                         "victim_corp_id", "victim_corp_name")[:50])
+    top_enemies = list(CharacterKillRecord.objects.filter(
+        main_character_id=main_id, is_loss=True, enemy_corp_id__isnull=False)
+        .values("enemy_corp_id", "enemy_corp_name").annotate(n=Count("id")).order_by("-n")[:10])
 
     # --- Ciclo de vida ---
     ciclo = list(CharacterLifecycleEvent.objects.filter(main_character_id=main_id)
@@ -3382,7 +3459,18 @@ def auditor_pilot(request, main_id):
             (t for t in tickets_piloto
              if t.tipo == "asuntos" and not t.fecha_cierre), None)
 
+    # --- El «por qué»: la explicación de cada nota, en la ficha y no solo en
+    # la ventanita del panel. Es lo primero que se lee.
+    porque = _auditor_porque(latest)
+    alertas_abiertas = [a for a in alerts if a.estado == "abierta"]
+    n_awox = sum(1 for k in awox_kills if k["tipo"] == "awox")
+    sc = {d["clave"]: d["score"] for d in porque}
+
     context = {
+        "porque": porque, "alertas_abiertas": alertas_abiertas, "n_awox": n_awox,
+        "aviso_pvp": bool(n_awox) or sc.get("pvp", 0) >= 40 or sc.get("espias", 0) >= 40,
+        "aviso_dinero": sc.get("financiero", 0) >= 40,
+        "aviso_personajes": sc.get("huecos", 0) >= 40 or sc.get("ciclo", 0) >= 40,
         "main_id": main_id, "main_name": main_name, "corp_id": corp_id,
         "corp_name": corp_name, "alli_id": alli_id, "alli_name": alli_name,
         "donaciones_propias": donaciones_propias,

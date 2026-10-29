@@ -3,6 +3,28 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.52.0] — 2026-10-29
+
+### Cambiado
+
+- **La ficha del Auditor, por pestañas.** Era una página larguísima con todo
+  mezclado. Ahora:
+  - **Siempre arriba**: cabecera con corp y alianza, botones a zKillboard,
+    EveWho y corptools, y **una tarjeta por dimensión con su nota y la frase que
+    la explica**. Antes ese «por qué» solo existía en la ventanita del panel.
+  - **Resumen** (evolución desde el primer mes con señal y barras por
+    dimensión, que sustituyen al radar), **PvP**, **Dinero**, **Personajes**
+    (retratos con borde verde o rojo según el token) e **Historial** (alertas
+    y tickets).
+  - La pestaña con algo que mirar lleva un ⚠; el `#pvp`, `#dinero`… de la
+    URL abre esa pestaña directamente.
+  - Iconos de nave, contrapartes enlazadas a zKillboard, cartera plegada en 8
+    filas, y el registro de kills se ve siempre, no solo con alerta abierta.
+- **El awox distingue tres casos**:
+  - **awox** (nave de la corp o la alianza): 50 por nave.
+  - **blue** (nave de un blue de fuera): 15, es un aviso.
+  - **pod**: no puntúa. En Rekium se hace pod express.
+
 ## [0.51.0] — 2026-10-29
 
 ### Corregido
