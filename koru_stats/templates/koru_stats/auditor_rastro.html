@@ -1,0 +1,62 @@
+{% extends 'allianceauth/base-bs5.html' %}
+{% load i18n %}
+
+{% block title %}Rastro de personajes — Koru{% endblock %}
+
+{% block page_title %}
+    {% include "framework/header/page-header.html" with title="Rastro de personajes" subtitle="Auditor" %}
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+  <div class="mb-2"><a href="{% url 'koru_stats:auditor_dashboard' %}" class="small">← Auditor</a></div>
+
+  <div class="card mb-3"><div class="card-body">
+    <p class="text-muted small mb-2">De quién es o fue cada personaje, aunque lo hayan quitado del Auth o hayan borrado la cuenta.
+      {{ total }} vínculos guardados.</p>
+    <form method="get" class="d-flex gap-2" style="max-width:520px">
+      <input type="search" name="q" value="{{ q }}" class="form-control" placeholder="Nombre del personaje (mín. 3 letras) o su id" autofocus>
+      <button class="btn btn-primary">Buscar</button>
+    </form>
+    {% if q %}
+      <div class="table-responsive mt-3"><table class="table table-sm align-middle mb-0">
+        <thead><tr><th>Personaje</th><th>Main</th><th>Estado</th><th>Corp (última vista)</th><th>Visto por primera vez</th></tr></thead>
+        <tbody>
+        {% for v in resultados %}
+          <tr>
+            <td><img src="https://images.evetech.net/characters/{{ v.character_id }}/portrait?size=32" width="24" height="24" class="rounded-circle me-1" onerror="this.style.visibility='hidden'">
+              <a href="https://zkillboard.com/character/{{ v.character_id }}/" target="_blank" rel="noopener">{{ v.character_name }}</a></td>
+            <td><a href="{% url 'koru_stats:auditor_pilot' v.main_character_id %}">{{ v.main_character_name }}</a></td>
+            <td>{% if v.activo %}<span class="badge bg-success">Suyo ahora</span>{% else %}<span class="badge {% if v.motivo == 'cambio de main' %}bg-secondary{% else %}bg-danger{% endif %}">{{ v.motivo }}</span> <span class="small text-muted">{{ v.quitado_en|date:"Y-m-d" }}</span>{% endif %}</td>
+            <td class="small">{{ v.corp_name }}</td>
+            <td class="small text-muted">{{ v.primero_visto|date:"Y-m-d" }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5" class="text-muted">Nada con «{{ q }}».</td></tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+    {% endif %}
+  </div></div>
+
+  <div class="card"><div class="card-body">
+    <h6 class="card-title"><i class="fas fa-user-minus me-1"></i>Bajas de los últimos 30 días
+      <small class="text-muted">— personajes quitados, cuentas borradas y cambios de dueño</small></h6>
+    <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+      <thead><tr><th>Cuándo</th><th>Personaje</th><th>Era de</th><th>Motivo</th></tr></thead>
+      <tbody>
+      {% for e in bajas %}
+        <tr>
+          <td class="small text-muted">{{ e.en|date:"Y-m-d H:i" }}</td>
+          <td><a href="https://zkillboard.com/character/{{ e.character_id }}/" target="_blank" rel="noopener">{{ e.character_name }}</a></td>
+          <td><a href="{% url 'koru_stats:auditor_pilot' e.main_character_id %}">{{ e.main_character_name }}</a></td>
+          <td><span class="badge bg-danger">{{ e.motivo }}</span></td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="4" class="text-muted">Ninguna.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+  </div></div>
+</div>
+{% endblock %}

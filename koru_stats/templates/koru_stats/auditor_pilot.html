@@ -321,6 +321,30 @@
       </div>
     </div></div>
 
+    <div class="card sec-card mb-3 {% if rastro_reciente %}border-danger{% endif %}"><div class="card-body">
+      <h6 class="card-title"><i class="fas fa-shoe-prints me-1"></i>Personajes que ya no están en su cuenta
+        <small class="text-muted">— el rastro los guarda aunque los quite o borre la cuenta</small>
+        <a class="small ms-2" href="{% url 'koru_stats:auditor_rastro' %}">Buscar en el rastro</a></h6>
+      {% if rastro_reciente %}<div class="alert alert-danger py-1 small mb-2">⚠ Ha quitado {{ rastro_reciente|length }} personaje(s) en los últimos 30 días.</div>{% endif %}
+      {% for v in rastro_perdidos %}
+        <div class="d-flex align-items-center gap-2 py-1 border-bottom small">
+          <img src="https://images.evetech.net/characters/{{ v.character_id }}/portrait?size=32" width="24" height="24" class="rounded-circle" onerror="this.style.visibility='hidden'">
+          <a class="fw-bold" href="https://zkillboard.com/character/{{ v.character_id }}/" target="_blank" rel="noopener">{{ v.character_name }}</a>
+          <span class="badge {% if v.motivo == 'cambio de main' %}bg-secondary{% else %}bg-danger{% endif %}">{{ v.motivo }}</span>
+          <span class="text-muted">{{ v.quitado_en|date:"Y-m-d H:i" }} · era de {{ v.main_character_name }} · {{ v.corp_name }}</span>
+        </div>
+      {% empty %}<p class="text-muted mb-0 small">Ninguno: no ha quitado personajes desde que existe el rastro.</p>{% endfor %}
+      {% if rastro_eventos %}
+        <details class="mt-2 small"><summary class="text-muted">Altas y bajas ({{ rastro_eventos|length }})</summary>
+          {% for e in rastro_eventos %}
+            <div class="py-1 border-bottom"><span class="text-muted">{{ e.en|date:"Y-m-d H:i" }}</span>
+              <span class="badge {% if e.evento == 'alta' %}bg-success{% else %}bg-warning text-dark{% endif %}">{{ e.get_evento_display }}</span>
+              {{ e.character_name }} <span class="text-muted">({{ e.motivo }})</span></div>
+          {% endfor %}
+        </details>
+      {% endif %}
+    </div></div>
+
     <div class="card sec-card mb-3"><div class="card-body">
       <h6 class="card-title"><i class="fas fa-stream me-1"></i>Entradas, salidas y cambios</h6>
       {% for e in ciclo %}

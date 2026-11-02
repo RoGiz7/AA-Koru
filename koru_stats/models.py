@@ -2588,3 +2588,64 @@ class TicketCheck(models.Model):
 
     def __str__(self):
         return f"{self.ticket_id} · {self.clave} · {self.estado}"
+
+
+
+# ---------------------------------------------------------------------------
+# Rastro de personajes (0.61)
+# ---------------------------------------------------------------------------
+
+class KoruVinculo(models.Model):
+    """
+    «Este personaje es (o fue) de este main». Una fila por pareja.
+
+    ★ POR QUÉ EXISTE. Alliance Auth borra la relación personaje→usuario cuando
+    alguien quita un alt o se borra la cuenta, y con ella el único dato que
+    une a un alt con la persona. Si mañana ese alt aparece en una corp
+    hostil, nadie podría decir de quién era. Esta tabla no se borra nunca.
+
+    ⚠ `user_id` es un entero y NO una ForeignKey a propósito: con FK, al
+    borrar la cuenta se quedaría vacío justo cuando más falta hace.
+    """
+    character_id        = models.BigIntegerField(db_index=True)
+    character_name      = models.CharField(max_length=100, db_index=True)
+    main_character_id   = models.BigIntegerField(db_index=True)
+    main_character_name = models.CharField(max_length=100)
+    user_id             = models.IntegerField(null=True, blank=True, db_index=True)
+    corp_name           = models.CharField(max_length=100, blank=True, default="")
+    activo        = models.BooleanField(default=True, db_index=True)
+    primero_visto = models.DateTimeField(auto_now_add=True)
+    ultimo_visto  = models.DateTimeField(null=True, blank=True)
+    quitado_en    = models.DateTimeField(null=True, blank=True)
+    motivo        = models.CharField(max_length=20, blank=True, default="")
+
+    class Meta:
+        verbose_name        = "Rastro — vínculo personaje/main"
+        verbose_name_plural = "Rastro — vínculos personaje/main"
+        constraints = [
+            models.UniqueConstraint(fields=["character_id", "main_character_id"], name="uniq_koru_vinculo"),
+        ]
+
+    def __str__(self):
+        return f"{self.character_name} → {self.main_character_name}{'' if self.activo else ' (ya no)'}"
+
+
+class KoruVinculoEvento(models.Model):
+    """Cada alta y cada baja de un vínculo, con el motivo. Tampoco se borra."""
+    ALTA, BAJA = "alta", "baja"
+    character_id        = models.BigIntegerField(db_index=True)
+    character_name      = models.CharField(max_length=100)
+    main_character_id   = models.BigIntegerField(db_index=True)
+    main_character_name = models.CharField(max_length=100)
+    user_id             = models.IntegerField(null=True, blank=True, db_index=True)
+    evento = models.CharField(max_length=5, choices=((ALTA, "Alta"), (BAJA, "Baja")))
+    motivo = models.CharField(max_length=20, blank=True, default="")
+    en     = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        verbose_name        = "Rastro — evento"
+        verbose_name_plural = "Rastro — eventos"
+        ordering = ["-en"]
+
+    def __str__(self):
+        return f"{self.en:%Y-%m-%d} {self.evento} {self.character_name} ({self.main_character_name})"

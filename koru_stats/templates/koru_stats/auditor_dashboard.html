@@ -82,6 +82,7 @@ Con solo una de las dos, sigue descuadrado.
             </select>
             <noscript><button type="submit" class="btn btn-sm btn-outline-info"><i class="fas fa-search"></i></button></noscript>
         </form>
+        <a class="btn btn-sm btn-outline-info" href="{% url 'koru_stats:auditor_rastro' %}"><i class="fas fa-shoe-prints me-1"></i>Rastro de personajes</a>
         <div class="text-muted small">
             <i class="fas fa-bell me-1"></i>{{ alerts_abiertas }} alerta{{ alerts_abiertas|pluralize }} abierta{{ alerts_abiertas|pluralize }}
         </div>

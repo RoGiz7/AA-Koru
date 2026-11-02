@@ -9,3 +9,6 @@ class KoruStatsConfig(AppConfig):
 
     def ready(self):
         import koru_stats.hooks  # noqa: F401
+        # Rastro de personajes (0.61): apuntar alts quitados y cuentas borradas.
+        from . import vinculos
+        vinculos.conectar()

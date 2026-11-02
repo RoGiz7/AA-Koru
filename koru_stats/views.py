@@ -3515,13 +3515,24 @@ def _auditor_pilot(request, main_id):
     n_awox = sum(1 for k in awox_kills if k["tipo"] == "awox" and not k["marca"])
     sc = {d["clave"]: d["score"] for d in porque}
 
+    # Rastro de personajes (0.61)
+    from datetime import timedelta as _td
+    from django.utils import timezone as _tz
+    from . import vinculos as _vinculos
+    rastro_perdidos, rastro_eventos = _vinculos.de_main(main_id)
+    _hace30 = _tz.now() - _td(days=30)
+    rastro_reciente = [v for v in rastro_perdidos
+                       if v.motivo in _vinculos.SOSPECHOSOS and v.quitado_en and v.quitado_en >= _hace30]
+
     context = {
+        "rastro_perdidos": rastro_perdidos, "rastro_eventos": rastro_eventos,
+        "rastro_reciente": rastro_reciente,
         "porque": porque, "alertas_abiertas": alertas_abiertas, "n_awox": n_awox,
         "latest_delta": latest_delta, "previo": previo,
         "marcas": list(marcas.values()),
         "aviso_pvp": bool(n_awox) or sc.get("pvp", 0) >= 40 or sc.get("espias", 0) >= 40,
         "aviso_dinero": sc.get("financiero", 0) >= 40,
-        "aviso_personajes": sc.get("huecos", 0) >= 40 or sc.get("ciclo", 0) >= 40,
+        "aviso_personajes": sc.get("huecos", 0) >= 40 or sc.get("ciclo", 0) >= 40 or bool(rastro_reciente),
         "main_id": main_id, "main_name": main_name, "corp_id": corp_id,
         "corp_name": corp_name, "alli_id": alli_id, "alli_name": alli_name,
         "donaciones_propias": donaciones_propias,
@@ -3544,6 +3555,35 @@ def _auditor_pilot(request, main_id):
 # ---------------------------------------------------------------------------
 # Auditor — Abrir auditoria de Asuntos Internos (K2)
 # ---------------------------------------------------------------------------
+
+@permission_required("koru_stats.auditor_access")
+def auditor_rastro(request):
+    """
+    «¿De quién era este personaje?». Busca en el rastro aunque la cuenta ya no
+    exista, y enseña las bajas de los últimos 30 días.
+    """
+    from datetime import timedelta
+    from django.utils import timezone
+
+    from .models import KoruVinculo, KoruVinculoEvento
+    from . import vinculos
+
+    q = (request.GET.get("q") or "").strip()
+    resultados = []
+    if len(q) >= 3:
+        filtro = KoruVinculo.objects.filter(character_name__icontains=q)
+        if q.isdigit():
+            filtro = filtro | KoruVinculo.objects.filter(character_id=int(q))
+        resultados = list(filtro.order_by("character_name", "-activo")[:100])
+    bajas = list(KoruVinculoEvento.objects
+                 .filter(evento=KoruVinculoEvento.BAJA, motivo__in=vinculos.SOSPECHOSOS,
+                         en__gte=timezone.now() - timedelta(days=30))
+                 .order_by("-en")[:200])
+    return render(request, "koru_stats/auditor_rastro.html", {
+        "q": q, "resultados": resultados, "bajas": bajas,
+        "total": KoruVinculo.objects.count(),
+    })
+
 
 @permission_required("koru_stats.auditor_access")
 def auditor_marcar(request, main_id):

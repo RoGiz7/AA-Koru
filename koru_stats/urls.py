@@ -32,6 +32,7 @@ urlpatterns = [
     path("pvp/", views.pvp_dashboard, name="pvp_dashboard"),
     path("auditor/", views.auditor_dashboard, name="auditor_dashboard"),
     path("auditor/piloto/<int:main_id>/", views.auditor_pilot, name="auditor_pilot"),
+    path("auditor/rastro/", views.auditor_rastro, name="auditor_rastro"),
     path("auditor/piloto/<int:main_id>/marcar/", views.auditor_marcar, name="auditor_marcar"),
     path("auditor/piloto/<int:main_id>/auditar/", views.auditor_abrir_auditoria,
          name="auditor_abrir_auditoria"),

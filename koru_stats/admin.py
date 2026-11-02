@@ -886,3 +886,30 @@ class TicketAltInline(admin.TabularInline):
 KoruTicketAdmin.inlines = [KoruTicketNoteInline, TicketCheckInline, KoruTicketInvitadoInline,
                            KoruTicketAdjuntoInline, TicketAltInline]
 KoruTicketAdmin.readonly_fields = KoruTicketAdmin.readonly_fields + ("sala_transcripcion",)
+
+
+
+# Rastro de personajes (0.61): solo lectura. Es un registro, no se toca.
+from .models import KoruVinculo, KoruVinculoEvento  # noqa: E402
+
+
+@admin.register(KoruVinculo)
+class KoruVinculoAdmin(admin.ModelAdmin):
+    list_display = ("character_name", "main_character_name", "activo", "motivo", "quitado_en", "ultimo_visto")
+    list_filter = ("activo", "motivo")
+    search_fields = ("character_name", "main_character_name")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(KoruVinculoEvento)
+class KoruVinculoEventoAdmin(KoruVinculoAdmin):
+    list_display = ("en", "evento", "motivo", "character_name", "main_character_name")
+    list_filter = ("evento", "motivo")

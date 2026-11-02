@@ -3908,6 +3908,12 @@ def recruit_archivar_vencidas():
         tickets_archivar_vencidos()
     except Exception as exc:
         logger.exception("koru tickets_archivar: %s", exc)
+    # La foto del rastro de personajes (0.61).
+    try:
+        from . import vinculos
+        vinculos.registrar()
+    except Exception as exc:
+        logger.exception("koru rastro: %s", exc)
     # Los alts pedidos que ya han entrado en la corp (0.59).
     try:
         from . import tickets as motor

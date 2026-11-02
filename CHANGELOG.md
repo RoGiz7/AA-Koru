@@ -3,6 +3,23 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.61.0] — 2026-11-02
+
+### Añadido
+
+- **Rastro de personajes.** Koru guarda qué personaje es o fue de qué main,
+  y no lo borra nunca. Si alguien quita un alt del Auth o se borra la
+  cuenta, el vínculo sigue ahí con la fecha y el motivo (quitado, cuenta
+  borrada, otro dueño, cambio de main).
+  - Se apunta en el momento, con señales de Alliance Auth, y además con una
+    foto cada hora que recoge lo que no pase por las señales.
+  - **Auditor → Rastro de personajes**: buscar «¿de quién era este
+    personaje?» aunque la cuenta ya no exista, y las bajas de los últimos
+    30 días.
+  - En la ficha del piloto, pestaña Personajes: los que ya no están en su
+    cuenta, y un aviso ⚠ si ha quitado alguno en el último mes.
+  - Migración 0058. La primera foto llena la tabla sin generar eventos.
+
 ## [0.60.1] — 2026-11-02
 
 ### Corregido
