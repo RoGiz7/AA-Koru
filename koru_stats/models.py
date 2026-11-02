@@ -1837,6 +1837,11 @@ class RecruitApplication(models.Model):
     instantanea    = models.JSONField(default=dict, blank=True)
     instantanea_en = models.DateTimeField(null=True, blank=True)
 
+    # Salida del Discord detectada por el AA (0.62). Si está puesto, la
+    # solicitud la cerró el AA y se reabre sola si vuelve antes de archivarse.
+    salio_discord_en      = models.DateTimeField(null=True, blank=True)
+    estado_antes_de_salir = models.CharField(max_length=20, blank=True, default="")
+
     # --- La cadena de aprobaciones -----------------------------------------
     # ⚠ Cada paso guarda QUIEN y CUANDO en su propia columna. La tentacion es
     # un solo campo «fase» que se va pisando, y es justo lo que dejo 282 de 353

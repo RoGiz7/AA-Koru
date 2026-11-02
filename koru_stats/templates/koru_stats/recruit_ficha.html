@@ -436,6 +436,10 @@ ya está diciendo algo.
              target="_blank" rel="noopener">Abrir su canal ↗</a>
           {% endif %}
         </h6>
+        {% if sol.salio_discord_en %}
+          <div class="alert alert-warning py-1 small">⚠ Salió del Discord el {{ sol.salio_discord_en|date:"d/m/Y H:i" }} UTC.
+            {% if sol.discord_channel_id %}Si vuelve antes de que se archive el canal, la solicitud se reabre sola.{% endif %}</div>
+        {% endif %}
 
         <div class="small text-muted mb-2">
           {{ retrato.total_personajes|default:0 }} personajes ·

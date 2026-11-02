@@ -3882,6 +3882,14 @@ def recruit_archivar_vencidas():
     from .models import RecruitApplication
     from . import recruit
 
+    # ★ ANTES de archivar: quien ha vuelto se reabre aquí y ya no entra en
+    # la lista de vencidas. Al revés, se borraría el canal de alguien que
+    # acaba de volver.
+    try:
+        recruit.vigilar_salidas()
+    except Exception as exc:
+        logger.exception("koru recruit: vigilar salidas: %s", exc)
+
     limite = timezone.now() - timedelta(hours=HORAS_DE_GRACIA)
     vencidas = (RecruitApplication.objects
                 .filter(estado__in=RecruitApplication.CERRADOS,

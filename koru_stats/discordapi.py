@@ -370,6 +370,33 @@ def leer_canal(canal_id, tope=2000):
     return fuera
 
 
+def miembro_esta(uid):
+    """
+    ¿Sigue esta persona en el servidor? True / False / None (no se sabe).
+
+    ⚠ Solo es «no» cuando Discord lo dice con su código: 10007 (no es miembro)
+    o 10013 (la cuenta ya no existe). Un 500, un 429 o un corte de red son «no
+    se sabe», y con eso no se cierra la solicitud de nadie.
+    """
+    try:
+        r = requests.get(f"{API}/guilds/{_guild()}/members/{uid}",
+                         headers=_cabeceras(), timeout=ESPERA)
+    except Exception as exc:
+        logger.warning("koru discord: comprobar miembro %s: %s", uid, exc)
+        return None
+    if r.status_code == 200:
+        return True
+    if r.status_code == 404:
+        try:
+            codigo = r.json().get("code")
+        except Exception:
+            codigo = None
+        if codigo in (10007, 10013):
+            return False
+    logger.warning("koru discord: comprobar miembro %s devolvio %s", uid, r.status_code)
+    return None
+
+
 def dar_acceso(canal_id, uid):
     """Mete a una persona en un canal privado que ya existe (permiso de miembro)."""
     r = requests.put(f"{API}/channels/{canal_id}/permissions/{uid}",

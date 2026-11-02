@@ -829,6 +829,94 @@ def cerrar(sol, user, estado, motivo_texto):
     return True, f"Cerrada como «{sol.get_estado_display()}» por {_nombre(user)}."
 
 
+# ---------------------------------------------------------------------------
+# Candidatos que se van del Discord (0.62)
+# ---------------------------------------------------------------------------
+#
+# ★ SE CIERRA SOLO, PERO SE PUEDE DESHACER SOLO. Un candidato que se va del
+# servidor deja al reclutador esperando a nadie. Se cierra como «Se marchó» y
+# empiezan las 24 h de siempre antes de archivar. Pero a veces se salen sin
+# querer, o cambian de cuenta y vuelven: si vuelve antes de que se archive el
+# canal, la solicitud se reabre donde estaba y se avisa. Pasadas las 24 h, el
+# canal ya no existe y tendrá que pedirlo otra vez.
+#
+# ⚠ Solo se reabre lo que cerró el AA (`salio_discord_en`). Un «Se marchó»
+# puesto por una persona es una decisión, y no se toca.
+
+def _uid_candidato(sol):
+    uid = uid_piloto(sol)
+    if not uid and sol.user_id:
+        from .tickets import uid_discord
+        uid = uid_discord(sol.user)
+    return uid
+
+
+def _nota_sistema(sol, texto):
+    from .models import RecruitNote
+    RecruitNote.objects.create(solicitud=sol, autor=None, autor_nombre="Koru (automático)", texto=texto)
+
+
+def vigilar_salidas():
+    """La pasada de cada hora. Devuelve (cerradas, reabiertas)."""
+    from django.utils import timezone
+
+    from . import discordapi
+    from .models import RecruitApplication
+
+    cerradas = reabiertas = 0
+    ahora = timezone.now()
+
+    for sol in (RecruitApplication.objects.exclude(estado__in=RecruitApplication.CERRADOS)
+                .exclude(discord_channel_id="")):
+        uid = _uid_candidato(sol)
+        if not uid or discordapi.miembro_esta(uid) is not False:
+            continue
+        sol.estado_antes_de_salir = sol.estado
+        sol.estado = RecruitApplication.SE_MARCHO
+        sol.motivo_cierre = "Salió del Discord (lo detectó el AA)."
+        sol.cerrada_por, sol.fecha_cierre, sol.salio_discord_en = None, ahora, ahora
+        sol.save()
+        _nota_sistema(sol, "Ha salido del Discord. Solicitud cerrada como «Se marchó»; "
+                           "si vuelve antes de que se archive el canal, se reabre sola.")
+        try:
+            discordapi.publicar(sol.discord_channel_id,
+                                f"⚠ **{sol.main_character_name}** ha salido del Discord. Solicitud cerrada como "
+                                "«Se marchó»: este canal se borrará en 24 horas. Si vuelve antes, se reabre sola.")
+        except Exception as exc:
+            logger.warning("koru recruit: aviso de salida en %s: %s", sol.discord_channel_id, exc)
+        cerradas += 1
+
+    for sol in (RecruitApplication.objects.filter(estado=RecruitApplication.SE_MARCHO,
+                                                  salio_discord_en__isnull=False)
+                .exclude(discord_channel_id="")):
+        uid = _uid_candidato(sol)
+        if not uid or discordapi.miembro_esta(uid) is not True:
+            continue
+        previo = sol.estado_antes_de_salir or RecruitApplication.EN_CURSO
+        sol.estado = previo
+        sol.motivo_cierre, sol.cerrada_por, sol.fecha_cierre = "", None, None
+        sol.salio_discord_en, sol.estado_antes_de_salir = None, ""
+        sol.save()
+        _nota_sistema(sol, "Ha vuelto al Discord. Solicitud reabierta donde estaba.")
+        # Por si Discord le quitó el permiso del canal al irse.
+        try:
+            discordapi.dar_acceso(sol.discord_channel_id, uid)
+        except Exception as exc:
+            logger.warning("koru recruit: devolver acceso a %s: %s", uid, exc)
+        try:
+            from .models import RecruitConfig
+            cfg = RecruitConfig.objects.filter(tag="default").first()
+            rol = f"<@&{cfg.rol_avisar}> " if cfg and cfg.rol_avisar else ""
+            discordapi.publicar(sol.discord_channel_id,
+                                f"{rol}👋 <@{uid}> ha vuelto al Discord: la solicitud de "
+                                f"**{sol.main_character_name}** se ha reabierto y sigue donde estaba.")
+        except Exception as exc:
+            logger.warning("koru recruit: aviso de vuelta en %s: %s", sol.discord_channel_id, exc)
+        reabiertas += 1
+
+    return cerradas, reabiertas
+
+
 def usuario_de_discord(uid):
     """
     El usuario de AA que hay detrás de un id de Discord. None si no lo hay.

@@ -3,6 +3,21 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.62.0] — 2026-11-02
+
+### Añadido
+
+- **Candidatos que se van del Discord.** Cada hora el AA comprueba si el
+  candidato de cada solicitud abierta sigue en el servidor. Si se ha ido, la
+  cierra como «Se marchó», avisa en su canal y empiezan las 24 h de siempre
+  antes de archivar.
+  - **Si vuelve antes de que se archive**, la solicitud se reabre sola en el
+    paso donde estaba, se le devuelve el acceso al canal y se avisa a los
+    reclutadores.
+  - Solo cuenta como «se ha ido» cuando Discord lo dice claramente; un fallo
+    de red no cierra nada.
+  - Un «Se marchó» puesto a mano no se reabre solo. Migración 0059.
+
 ## [0.61.1] — 2026-11-02
 
 ### Corregido
