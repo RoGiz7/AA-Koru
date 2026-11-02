@@ -682,9 +682,39 @@
 
     </div>{# /tab-content #}
 
-    <!-- Mis Tickets -->
+    <!-- Mis Tickets: los del Auth -->
     <div class="card mt-4">
-      <div class="card-header"><h5 class="mb-0"><i class="fas fa-ticket-alt me-2"></i>Mis Tickets</h5></div>
+      <div class="card-header d-flex align-items-center gap-2">
+        <h5 class="mb-0"><i class="fas fa-ticket-alt me-2"></i>Mis Tickets</h5>
+        <a class="btn btn-sm btn-primary ms-auto" href="{% url 'koru_stats:koruticket_nuevo' %}"><i class="fas fa-plus me-1"></i>Abrir ticket</a>
+        <a class="btn btn-sm btn-outline-light" href="{% url 'koru_stats:koruticket_mios' %}">Ver todos</a>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0 align-middle">
+            <thead><tr><th>Nº</th><th>A</th><th>Asunto</th><th>Abierto <span class="text-muted small">(UTC)</span></th><th>Estado</th><th></th></tr></thead>
+            <tbody>
+            {% for k in mis_tickets_aa %}
+              <tr>
+                <td class="fw-bold">{{ k.numero }}</td>
+                <td>{{ k.get_tipo_display }}</td>
+                <td>{{ k.asunto|truncatechars:80 }}{% if k.categoria %} <span class="badge bg-secondary">{{ k.categoria }}</span>{% endif %}</td>
+                <td class="small text-muted">{{ k.created_at|date:"d/m/Y H:i" }}</td>
+                <td><span class="badge {% if k.abierto %}bg-info text-dark{% else %}bg-secondary{% endif %}">{{ k.get_estado_display }}</span></td>
+                <td>{% if k.discord_channel_id and guild_id %}<a class="btn btn-sm btn-outline-info py-0" href="https://discord.com/channels/{{ guild_id }}/{{ k.discord_channel_id }}" target="_blank" rel="noopener">Ir al canal</a>{% endif %}</td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="6" class="text-center text-muted py-3">No has abierto tickets desde el Auth.</td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mis Tickets: histórico de Baserow -->
+    <div class="card mt-3">
+      <div class="card-header"><h6 class="mb-0 text-muted"><i class="fas fa-archive me-2"></i>Histórico (tickets de antes del Auth)</h6></div>
       <div class="card-body p-0">
         <div class="table-responsive">
           <table class="table table-sm table-hover mb-0 align-middle">

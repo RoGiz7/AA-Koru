@@ -162,6 +162,32 @@ def register_menu_reclutamiento():
     )
 
 
+class MisTicketsMenuHook(MenuItemHook):
+    """
+    ★ PARA TODO EL QUE TENGA CUENTA, no solo miembros: IT y Soporte los puede
+    abrir cualquiera, y un invitado que abre un ticket tiene que poder volver a
+    verlo sin buscar el botón en Discord. Por eso va fuera de los paneles de
+    Koru, que exigen ser miembro.
+    """
+
+    def render(self, request):
+        if not request.user.is_authenticated:
+            return ""
+        return super().render(request)
+
+
+@hooks.register("menu_item_hook")
+def register_menu_mis_tickets():
+    return MisTicketsMenuHook(
+        "Mis tickets",
+        "fas fa-ticket-alt fa-fw",
+        "koru_stats:koruticket_mios",
+        navactive=["koru_stats:koruticket_mios", "koru_stats:koruticket_nuevo",
+                   "koru_stats:koruticket_nuevo_tipo"],
+        order=16,
+    )
+
+
 # ⚠ EL COG ESTA DESACTIVADO A PROPOSITO (24/10/2026). Ver el comentario de
 # `koru_stats/cogs/reclutamiento.py`. Resumen: el comando se quedaba colgado
 # sin error ni respuesta, el log del bot no escribe nada despues de arrancar, y

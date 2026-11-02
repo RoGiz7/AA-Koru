@@ -24,7 +24,16 @@
           <tr>
             <td class="fw-bold">{{ t.numero }}</td>
             <td>{{ t.get_tipo_display }}</td>
-            <td>{{ t.asunto }}{% if t.categoria %} <span class="badge bg-secondary">{{ t.categoria }}</span>{% endif %}</td>
+            <td>{{ t.asunto }}{% if t.categoria %} <span class="badge bg-secondary">{{ t.categoria }}</span>{% endif %}
+              {% if t.tipo == "alts" %}
+                <div class="small mt-1">
+                  {% for a in t.alts.all %}
+                    <span class="badge {% if a.estado == 'dentro' %}bg-success{% elif a.estado == 'aprobado' %}bg-info text-dark{% elif a.estado == 'rechazado' %}bg-danger{% else %}bg-warning text-dark{% endif %}"
+                          {% if a.motivo %}title="{{ a.motivo }}"{% endif %}>{{ a.nombre }}: {{ a.get_estado_display }}</span>
+                  {% endfor %}
+                </div>
+              {% endif %}
+            </td>
             <td class="small text-muted">{{ t.created_at|date:"d/m/Y H:i" }}</td>
             <td>
               {% if t.abierto %}<span class="badge bg-info text-dark">{{ t.get_estado_display }}</span>

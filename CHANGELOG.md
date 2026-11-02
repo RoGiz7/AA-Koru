@@ -3,6 +3,23 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.60.0] — 2026-11-02
+
+### Añadido
+
+- **«Mis tickets» en el menú del Auth** para todo el que tenga cuenta, no
+  solo para miembros: IT y Soporte los puede abrir cualquiera. Hasta ahora
+  el único camino era el botón del panel de Discord.
+- **Mi actividad → Mis Tickets** enseña los tickets abiertos en el Auth, con
+  «Abrir ticket» y «Ir al canal». El histórico de Baserow queda debajo,
+  separado.
+- En «Mis tickets», un ticket de alts enseña **cómo va cada alt** (pendiente,
+  aprobado, rechazado con su motivo al pasar el ratón, o dentro).
+
+### Corregido
+
+- El botón «Mis tickets» de la pantalla de alts parecía desactivado.
+
 ## [0.59.0] — 2026-11-02
 
 ### Añadido

@@ -944,6 +944,16 @@ def mi_dashboard(request):
         .values("tipo", "numero", "estado", "tipo_detalle", "asunto", "fecha", "discord_ticket")[:100]
     )
 
+    # Los tickets que ya nacen en el Auth (0.60). Los de arriba son el
+    # histórico de Baserow; estos son los de ahora.
+    from django.conf import settings as _settings
+    from .models import KoruTicket as _KoruTicket
+    context["mis_tickets_aa"] = list(
+        _KoruTicket.objects.filter(user=request.user).exclude(tipo="asuntos")
+        .only("id", "tipo", "categoria", "asunto", "estado", "created_at", "discord_channel_id")
+        .order_by("-created_at")[:20])
+    context["guild_id"] = str(getattr(_settings, "DISCORD_GUILD_ID", "") or "")
+
     context["mt"] = _moon_tax_mi_ctx(request)
 
     return render(request, "koru_stats/mi_dashboard.html", context)
@@ -6933,6 +6943,7 @@ def koruticket_mios(request):
 
     tickets = (KoruTicket.objects.filter(user=request.user).exclude(tipo="asuntos")
                .only("id", "tipo", "categoria", "asunto", "estado", "created_at", "discord_channel_id")
+               .prefetch_related("alts")
                .order_by("-created_at")[:100])
     return render(request, "koru_stats/koruticket_mios.html", {
         "tickets": tickets, "guild_id": str(getattr(settings, "DISCORD_GUILD_ID", "") or ""),
