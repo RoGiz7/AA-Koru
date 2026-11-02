@@ -90,6 +90,51 @@
       </div></div>
       {% endif %}
 
+      {% if alts is not None %}
+      <div class="card mb-3 border-info"><div class="card-body">
+        <h6 class="card-title d-flex align-items-center gap-2">
+          <i class="fas fa-user-plus"></i> Alts que pide meter en la corp
+          {% if t.abierto %}
+            <form method="post" action="{% url 'koru_stats:koruticket_accion' t.id %}" class="ms-auto">{% csrf_token %}
+              <button class="btn btn-sm btn-outline-info py-0" name="accion" value="alts_comprobar">Comprobar ahora</button>
+            </form>
+          {% endif %}
+        </h6>
+        {% for a in alts %}
+          <div class="d-flex flex-wrap align-items-start gap-2 border-bottom py-2">
+            <img src="https://images.evetech.net/characters/{{ a.character_id }}/portrait?size=64" width="40" height="40" class="rounded-circle" onerror="this.style.display='none'">
+            <div class="flex-grow-1">
+              <strong>{{ a.nombre }}</strong>
+              <a class="small ms-1" href="https://zkillboard.com/character/{{ a.character_id }}/" target="_blank" rel="noopener">zKill</a>
+              <div class="small text-muted">Ahora en <strong>{{ a.corp_ahora }}</strong>
+                · {% if a.registrado %}✅ registrado en Character Audit{% else %}<span class="text-warning">❌ {{ a.motivo_registro }}</span>{% endif %}</div>
+              {% if a.aviso and a.estado != "dentro" %}<div class="small text-warning">⚠ {{ a.aviso }}</div>{% endif %}
+              {% if a.por_nombre %}<div class="small text-muted">{{ a.get_estado_display }} · {{ a.por_nombre }}{% if a.en %} · {{ a.en|date:"d/m H:i" }} UTC{% endif %}{% if a.motivo %} — «{{ a.motivo }}»{% endif %}</div>{% endif %}
+            </div>
+            <span class="badge {% if a.estado == 'dentro' %}bg-success{% elif a.estado == 'aprobado' %}bg-info text-dark{% elif a.estado == 'rechazado' %}bg-danger{% else %}bg-warning text-dark{% endif %}">{{ a.get_estado_display }}</span>
+            {% if t.abierto %}
+              <div class="w-100 d-flex flex-wrap gap-2 ps-5">
+                {% if a.estado == "pendiente" or a.estado == "rechazado" %}
+                  <form method="post" action="{% url 'koru_stats:koruticket_accion' t.id %}">{% csrf_token %}
+                    <input type="hidden" name="alt" value="{{ a.id }}"><input type="hidden" name="decision" value="aprobar">
+                    <button class="btn btn-sm btn-success py-0" name="accion" value="alt">Aprobar</button>
+                  </form>
+                {% endif %}
+                {% if a.estado == "pendiente" or a.estado == "aprobado" %}
+                  <form method="post" action="{% url 'koru_stats:koruticket_accion' t.id %}" class="d-flex gap-1">{% csrf_token %}
+                    <input type="hidden" name="alt" value="{{ a.id }}"><input type="hidden" name="decision" value="rechazar">
+                    <input type="text" name="motivo" class="form-control form-control-sm py-0" placeholder="Por qué (lo lee el piloto)" required>
+                    <button class="btn btn-sm btn-outline-danger py-0" name="accion" value="alt">Rechazar</button>
+                  </form>
+                {% endif %}
+              </div>
+            {% endif %}
+          </div>
+        {% endfor %}
+        <div class="small text-muted mt-2">Al aprobar, invítale en el juego. Cuando entre, el Auth lo ve solo (cada hora, al abrir esta ficha o con «Comprobar ahora») y el ticket se cierra cuando estén todos.</div>
+      </div></div>
+      {% endif %}
+
       <div class="card mb-3"><div class="card-body">
         <h6 class="card-title d-flex align-items-center gap-2">
           <i class="fab fa-discord"></i> Conversación

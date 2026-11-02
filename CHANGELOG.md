@@ -3,6 +3,30 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.59.0] — 2026-11-02
+
+### Añadido
+
+- **Añadir alts a la corp dentro del AA** (sustituye A1/A2 de n8n). Nuevo
+  tipo de ticket «Alts a la corp», atendido por Dirección.
+  - El piloto ve **todos** sus personajes con lo que le falta a cada uno: si
+    ya está en la corp, si falta darle acceso en Character Audit o si está
+    en una corp de jugadores de la que tiene que salir. Con enlaces para
+    arreglarlo. Antes, un alt sin registrar ni salía en el desplegable.
+  - «Registrado» se mira **por personaje** en corptools, no con el informe
+    de authstats del main (todos o ninguno).
+  - Dirección aprueba o rechaza **cada alt** por separado desde la ficha; el
+    rechazo pide un motivo, que lee el piloto en su canal.
+  - El AA comprueba en ESI cuándo entra cada alt (cada hora, al abrir la
+    ficha o con «Comprobar ahora») y **cierra el ticket solo** cuando han
+    entrado todos los aprobados.
+  - Migración 0057: el tipo nace apagado y con el Discord de Directores
+    copiado.
+
+### Corregido
+
+- La conversación archivada enseñaba los `*` de la cursiva.
+
 ## [0.58.0] — 2026-11-02
 
 ### Añadido

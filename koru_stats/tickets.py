@@ -31,14 +31,14 @@ logger = logging.getLogger(__name__)
 PERMISO_TIPOS = {
     # ★ Dirección ve también las auditorías: es quien decide con ellas, igual
     # que en el reclutamiento («solo Asuntos Internos y Dirección»).
-    "koru_stats.tickets_directores": {"directores", "asuntos"},
+    "koru_stats.tickets_directores": {"directores", "asuntos", "alts"},
     "koru_stats.tickets_asuntos_internos": {"asuntos"},
     "koru_stats.tickets_it": {"it", "soporte"},
     # ★ Los ayudantes atienden Soporte y nada más: IT tiene las llaves de todo.
     "koru_stats.tickets_soporte": {"soporte"},
 }
 
-PREFIJO_NUMERO = {"directores": "D", "it": "IT", "soporte": "S", "asuntos": "AI"}
+PREFIJO_NUMERO = {"directores": "D", "it": "IT", "soporte": "S", "asuntos": "AI", "alts": "AL"}
 
 # Tipos donde el staff puede abrir una sala con los pilotos implicados (0.57).
 TIPOS_CON_SALA = {"directores", "asuntos"}
@@ -54,7 +54,7 @@ def tipos_que_gestiona(user):
     if not user.is_authenticated:
         return set()
     if user.is_superuser or user.has_perm("koru_stats.tickets_admin"):
-        return {"directores", "it", "soporte", "asuntos"}
+        return {"directores", "it", "soporte", "asuntos", "alts"}
     fuera = set()
     for perm, tipos in PERMISO_TIPOS.items():
         if user.has_perm(perm):
@@ -138,6 +138,12 @@ def ficha_discord(ticket):
 
     base = str(getattr(settings, "SITE_URL", "") or "").rstrip("/")
     enlace = base + reverse("koru_stats:koruticket_ficha", args=[ticket.id])
+    if ticket.tipo == "alts":
+        return "\n".join(
+            [f"➕ **{numero(ticket)} · Alts a la corp — {ticket.main_character_name}**", "Pide meter:"]
+            + [f"• **{a.nombre}** ({a.corp_al_pedir or '?'})" for a in ticket.alts.all()]
+            + ["", "Aprobad o rechazad cada alt en el Auth. Cuando entren en la corp el ticket se cierra solo.",
+               f"Gestión en el Auth: <{enlace}>"])
     if ticket.tipo == "asuntos":
         ficha_aud = base + reverse("koru_stats:auditor_pilot", args=[ticket.main_character_id])
         return "\n".join([
@@ -584,3 +590,334 @@ def marcar_check(ticket, user, clave, estado, nota=""):
         defaults={"etiqueta": punto.etiqueta, "estado": estado, "nota": (nota or "").strip()[:5000],
                   "valor": valor, "por": user, "por_nombre": _nombre(user), "en": timezone.now()})
     return True, f"«{punto.etiqueta}» marcado como {dict(RecruitCheck.ESTADOS)[estado].lower()}."
+
+
+
+# ---------------------------------------------------------------------------
+# Alts a la corp (0.59) — sustituye A1/A2 de n8n
+# ---------------------------------------------------------------------------
+#
+# ★ LO QUE FALLABA EN n8n Y AQUÍ NO PUEDE PASAR:
+#   · el desplegable solo enseñaba los personajes que ya estaban en el Auth:
+#     un alt sin registrar ni salía, y el piloto no sabía por qué. Aquí sale
+#     lo que le falta a cada uno y el enlace para arreglarlo;
+#   · «registrado» salía de un informe de authstats sobre el MAIN: o todos o
+#     ninguno. Aquí se mira cada personaje en corptools;
+#   · nadie comprobaba que el alt hubiera entrado: el ticket se cerraba a mano
+#     o se quedaba abierto. Aquí lo pregunta a ESI y se cierra solo.
+
+ESI = "https://esi.evetech.net/latest"
+ESI_CABECERAS = {"User-Agent": "Koru AA (RoGiz7) koru_stats"}
+
+
+def corp_alts():
+    """La corp a la que van los alts. `KORU_ALTS_CORP_ID` en local.py; si no, Rekium."""
+    from django.conf import settings
+    return int(getattr(settings, "KORU_ALTS_CORP_ID", 0) or 98176563)
+
+
+def es_corp_npc(corp_id):
+    """Las corps NPC van de 1.000.000 a 1.999.999: de ahí se sale sin pedir permiso a nadie."""
+    try:
+        return 1000000 <= int(corp_id) < 2000000
+    except (TypeError, ValueError):
+        return False
+
+
+def afiliaciones(ids):
+    """
+    {character_id: (corp_id, nombre_corp)} AHORA MISMO, según ESI.
+
+    ⚠ El Auth actualiza la corp de cada personaje cada varias horas: con eso
+    un alt recién entrado seguiría saliendo fuera. ESI lo sabe al momento y
+    esta ruta es pública (sin token) y barata: una llamada para todos.
+    Si ESI falla, se usa lo que sabe el Auth y se dice en el log.
+    """
+    import requests
+    from django.core.cache import cache
+
+    ids = sorted({int(i) for i in ids if i})
+    fuera, faltan = {}, []
+    for i in ids:
+        c = cache.get(f"koru_afil_{i}")
+        if c:
+            fuera[i] = tuple(c)
+        else:
+            faltan.append(i)
+    if faltan:
+        try:
+            r = requests.post(f"{ESI}/characters/affiliation/", json=faltan,
+                              headers=ESI_CABECERAS, timeout=15)
+            r.raise_for_status()
+            corp_de = {int(x["character_id"]): int(x["corporation_id"]) for x in r.json()}
+            nombres = {}
+            corps = sorted(set(corp_de.values()))
+            if corps:
+                r2 = requests.post(f"{ESI}/universe/names/", json=corps, headers=ESI_CABECERAS, timeout=15)
+                if r2.status_code < 400:
+                    nombres = {int(x["id"]): x.get("name") or "" for x in r2.json()}
+            for i, cid in corp_de.items():
+                fuera[i] = (cid, nombres.get(cid, ""))
+                cache.set(f"koru_afil_{i}", list(fuera[i]), 300)
+        except Exception as exc:
+            logger.warning("koru alts: ESI affiliation falló, uso lo del Auth: %s", exc)
+
+    resto = [i for i in ids if i not in fuera]
+    if resto:
+        ph = ",".join(["%s"] * len(resto))
+        with connection.cursor() as cur:
+            cur.execute("SELECT character_id, corporation_id, corporation_name FROM eveonline_evecharacter "
+                        f"WHERE character_id IN ({ph})", resto)
+            for cid, corp, nombre in cur.fetchall():
+                fuera[int(cid)] = (int(corp) if corp else None, nombre or "")
+    return fuera
+
+
+def _registro(ids):
+    """{character_id: (tiene_audit, tiene_datos)} en corptools."""
+    ids = [int(i) for i in ids if i]
+    if not ids:
+        return {}
+    ph = ",".join(["%s"] * len(ids))
+    # ⚠ characteraudit.character_id es la PK de evecharacter; skilltotals
+    # apunta al AUDIT. Ver la cabecera de auditoria.py.
+    with connection.cursor() as cur:
+        cur.execute(
+            "SELECT ec.character_id, cau.id, st.total_sp FROM eveonline_evecharacter ec "
+            "LEFT JOIN corptools_characteraudit cau ON cau.character_id = ec.id "
+            "LEFT JOIN corptools_skilltotals st ON st.character_id = cau.id "
+            f"WHERE ec.character_id IN ({ph})", ids)
+        return {int(c): (bool(a), sp is not None) for c, a, sp in cur.fetchall()}
+
+
+def _motivo_registro(reg):
+    audit, datos = reg
+    if not audit:
+        return "Falta darle acceso en Character Audit."
+    if not datos:
+        return "Character Audit todavía no tiene sus datos (suele tardar unos minutos)."
+    return ""
+
+
+def personajes_para_alts(user):
+    """
+    Todos los personajes del piloto, cada uno con si se puede pedir y por qué no.
+
+    Estados: main, dentro, pedido, sin_registro, sin_datos, listo.
+    ★ «sin_datos» SÍ se puede pedir: tiene el acceso dado y solo falta que
+    corptools pase. Bloquearlo haría volver al piloto una hora después por
+    nada; Dirección ve el estado al momento de aprobar.
+    """
+    from .models import KoruTicket, TicketAlt
+
+    with connection.cursor() as cur:
+        cur.execute(
+            "SELECT ec.character_id, ec.character_name, ec.corporation_name FROM authentication_characterownership co "
+            "JOIN eveonline_evecharacter ec ON ec.id = co.character_id WHERE co.user_id = %s "
+            "ORDER BY ec.character_name", [user.id])
+        chars = cur.fetchall()
+    ids = [int(c[0]) for c in chars]
+    afil = afiliaciones(ids)
+    reg = _registro(ids)
+    mid, _ = main_de(user)
+    objetivo = corp_alts()
+    pedidos = set(TicketAlt.objects
+                  .filter(ticket__user=user, ticket__tipo="alts",
+                          estado__in=[TicketAlt.PENDIENTE, TicketAlt.APROBADO])
+                  .exclude(ticket__estado__in=KoruTicket.CERRADOS)
+                  .values_list("character_id", flat=True))
+
+    fuera = []
+    for cid, nombre, corp_db in chars:
+        cid = int(cid)
+        corp_id, corp = afil.get(cid, (None, corp_db or ""))
+        r_ = reg.get(cid, (False, False))
+        if cid == mid:
+            estado, texto = "main", "Tu personaje principal"
+        elif corp_id == objetivo:
+            estado, texto = "dentro", "Ya está en la corp"
+        elif cid in pedidos:
+            estado, texto = "pedido", "Ya lo has pedido: está pendiente"
+        elif not r_[0]:
+            estado, texto = "sin_registro", _motivo_registro(r_)
+        elif not r_[1]:
+            estado, texto = "sin_datos", _motivo_registro(r_)
+        else:
+            estado, texto = "listo", "Listo para pedir"
+        aviso = ""
+        if estado in ("listo", "sin_datos", "sin_registro") and corp_id and not es_corp_npc(corp_id):
+            aviso = f"Está en {corp or 'otra corp'}: tendrá que salir de ella para aceptar la invitación."
+        fuera.append({"eve_id": cid, "nombre": nombre, "corp": corp or corp_db or "", "estado": estado,
+                      "texto": texto, "aviso": aviso, "seleccionable": estado in ("listo", "sin_datos")})
+    return fuera
+
+
+def abrir_alts(user, ids, comentario=""):
+    """(ticket, "") o (None, motivo)."""
+    from django.db import transaction
+
+    from .models import KoruTicket, TicketAlt
+    from .tasks import tickets_preparar
+
+    ok, motivo = puede_abrir(user, "alts")
+    if not ok:
+        return None, motivo
+    lista = {p["eve_id"]: p for p in personajes_para_alts(user)}
+    elegidos = [lista[i] for i in dict.fromkeys(ids) if i in lista and lista[i]["seleccionable"]]
+    if not elegidos:
+        return None, "Marca al menos un alt que se pueda pedir."
+
+    mid, mname = main_de(user)
+    desc = "\n".join(f"• {p['nombre']} — {p['corp'] or '?'}" for p in elegidos)
+    if comentario:
+        desc += "\n\n" + comentario
+    with transaction.atomic():
+        t = KoruTicket.objects.create(
+            tipo="alts", user=user, main_character_id=mid, main_character_name=mname,
+            discord_uid=uid_discord(user),
+            asunto=("Alts a la corp: " + ", ".join(p["nombre"] for p in elegidos))[:200],
+            descripcion=desc[:5000])
+        for p in elegidos:
+            TicketAlt.objects.create(ticket=t, character_id=p["eve_id"], nombre=p["nombre"][:100],
+                                     corp_al_pedir=(p["corp"] or "")[:100])
+        transaction.on_commit(lambda: tickets_preparar.delay(t.id))
+    return t, ""
+
+
+def alts_de(ticket):
+    """Los alts del ticket con dónde están AHORA y si están bien registrados."""
+    alts = list(ticket.alts.all())
+    ids = [a.character_id for a in alts]
+    afil = afiliaciones(ids)
+    reg = _registro(ids)
+    objetivo = corp_alts()
+    for a in alts:
+        corp_id, corp = afil.get(a.character_id, (None, ""))
+        a.corp_ahora = corp or "?"
+        a.en_objetivo = corp_id == objetivo
+        r_ = reg.get(a.character_id, (False, False))
+        a.registrado = all(r_)
+        a.motivo_registro = _motivo_registro(r_)
+        a.aviso = ("" if (not corp_id or a.en_objetivo or es_corp_npc(corp_id))
+                   else f"Sigue en {corp}: tiene que salir para poder aceptar.")
+    return alts
+
+
+def decidir_alt(ticket, user, alt_id, decision, motivo=""):
+    """Aprobar o rechazar UN alt. (ok, mensaje)."""
+    from django.utils import timezone
+
+    from .models import TicketAlt
+
+    if "alts" not in tipos_que_gestiona(user):
+        return False, "Decidir los alts es cosa de Dirección."
+    if not ticket.abierto:
+        return False, "El ticket está cerrado."
+    a = ticket.alts.filter(id=int(alt_id)).first() if str(alt_id).isdigit() else None
+    if not a:
+        return False, "Ese alt no está en este ticket."
+    motivo = (motivo or "").strip()
+    quien = _nombre(user)
+    piloto = f"<@{ticket.discord_uid}> " if ticket.discord_uid else ""
+
+    if decision == "aprobar":
+        if a.estado not in (TicketAlt.PENDIENTE, TicketAlt.RECHAZADO):
+            return False, f"{a.nombre} ya estaba {a.get_estado_display().lower()}."
+        a.estado = TicketAlt.APROBADO
+        texto = (f"{piloto}✅ **{a.nombre}** aprobado por **{quien}**. Te llegará la invitación en el juego: "
+                 "acéptala desde la ventana de la corporación.")
+    elif decision == "rechazar":
+        if a.estado == TicketAlt.DENTRO:
+            return False, f"{a.nombre} ya está dentro de la corp."
+        if len(motivo) < 3:
+            return False, "Di en una línea por qué se rechaza: el piloto lo va a leer."
+        a.estado = TicketAlt.RECHAZADO
+        texto = f"{piloto}❌ **{a.nombre}** rechazado por **{quien}**: {motivo}"
+    else:
+        return False, "Esa decisión no existe."
+
+    a.motivo, a.por, a.por_nombre, a.en = motivo[:2000], user, quien, timezone.now()
+    a.save(update_fields=["estado", "motivo", "por", "por_nombre", "en"])
+    if not ticket.claim_por_id:
+        ticket.claim_por, ticket.claim_en = user, timezone.now()
+        if ticket.estado == "abierto":
+            ticket.estado = "en_curso"
+        ticket.save(update_fields=["claim_por", "claim_en", "estado", "updated_at"])
+    avisar(ticket, texto)
+    _cerrar_alts_si_toca(ticket)
+    return True, f"{a.nombre}: {a.get_estado_display().lower()}."
+
+
+def comprobar_alts(ticket):
+    """
+    Mira en ESI si los alts han entrado. Devuelve cuántos entraron ahora.
+
+    ★ Cuenta también los PENDIENTES que ya están dentro: si un director
+    invita sin pulsar «Aprobar», el alt está dentro igual y el ticket no se
+    puede quedar esperando una decisión que ya se tomó en el juego.
+    """
+    from django.utils import timezone
+
+    from .models import TicketAlt
+
+    if not ticket.abierto:
+        return 0
+    vivos = list(ticket.alts.filter(estado__in=[TicketAlt.PENDIENTE, TicketAlt.APROBADO]))
+    if not vivos:
+        return 0
+    afil = afiliaciones([a.character_id for a in vivos])
+    objetivo = corp_alts()
+    nuevos = []
+    for a in vivos:
+        if afil.get(a.character_id, (None, ""))[0] == objetivo:
+            a.estado, a.dentro_en = TicketAlt.DENTRO, timezone.now()
+            if not a.por_nombre:
+                a.por_nombre, a.en = "visto en la corp", timezone.now()
+            a.save(update_fields=["estado", "dentro_en", "por_nombre", "en"])
+            nuevos.append(a.nombre)
+    if nuevos:
+        avisar(ticket, "🎉 Ya en la corp: " + ", ".join(f"**{n}**" for n in nuevos) + ".")
+        _cerrar_alts_si_toca(ticket)
+    return len(nuevos)
+
+
+def _cerrar_alts_si_toca(ticket):
+    """
+    Se cierra solo cuando no queda nada por hacer y al menos uno entró.
+    Si todos se rechazan, lo cierra una persona: igual hay que explicar algo.
+    """
+    from django.utils import timezone
+
+    from .models import TicketAlt
+
+    alts = list(ticket.alts.all())
+    if not ticket.abierto or not alts:
+        return False
+    if any(a.estado in (TicketAlt.PENDIENTE, TicketAlt.APROBADO) for a in alts):
+        return False
+    dentro = [a.nombre for a in alts if a.estado == TicketAlt.DENTRO]
+    if not dentro:
+        return False
+    fuera = [a.nombre for a in alts if a.estado == TicketAlt.RECHAZADO]
+    ticket.estado = "resuelto"
+    ticket.resolucion = ("Dentro de la corp: " + ", ".join(dentro)
+                         + (f". Rechazados: {', '.join(fuera)}" if fuera else "") + ". Cerrado solo.")[:2000]
+    ticket.cerrado_por, ticket.fecha_cierre = None, timezone.now()
+    ticket.save(update_fields=["estado", "resolucion", "cerrado_por", "fecha_cierre", "updated_at"])
+    piloto = f"<@{ticket.discord_uid}> " if ticket.discord_uid else ""
+    avisar(ticket, f"{piloto}✅ Todo hecho: tus alts ya están en la corp. Ticket cerrado; "
+                   "este canal se borrará en 24 horas.")
+    return True
+
+
+def comprobar_alts_abiertos():
+    """La pasada de cada hora: los tickets de alts abiertos, contra ESI."""
+    from .models import KoruTicket
+
+    hechos = 0
+    for t in KoruTicket.objects.filter(tipo="alts").exclude(estado__in=KoruTicket.CERRADOS):
+        try:
+            hechos += comprobar_alts(t)
+        except Exception as exc:
+            logger.error("koru alts: comprobar %s: %s", t.id, exc)
+    return hechos

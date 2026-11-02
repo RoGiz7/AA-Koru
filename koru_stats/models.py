@@ -2288,6 +2288,7 @@ TICKET_TIPOS = (
     ("it",         "A IT"),
     ("soporte",    "A Soporte"),
     ("asuntos",    "Asuntos Internos"),
+    ("alts",       "Alts a la corp"),
 )
 
 
@@ -2431,6 +2432,45 @@ class KoruTicketNote(models.Model):
 
     def __str__(self):
         return f"{self.autor_nombre}: {self.texto[:40]}"
+
+
+class TicketAlt(models.Model):
+    """
+    Un alt que el piloto pide meter en la corp, dentro de un ticket «alts».
+
+    ★ Cada alt se decide por separado: es normal aprobar dos y dejar uno.
+    ★ DENTRO no lo marca nadie: lo ve el AA preguntando a ESI dónde está el
+    personaje. Por eso el ticket se puede cerrar solo.
+    """
+    PENDIENTE, APROBADO, RECHAZADO, DENTRO = "pendiente", "aprobado", "rechazado", "dentro"
+    ESTADOS = (
+        (PENDIENTE, "Pendiente"),
+        (APROBADO,  "Aprobado — falta que entre"),
+        (RECHAZADO, "Rechazado"),
+        (DENTRO,    "Ya en la corp"),
+    )
+
+    ticket = models.ForeignKey(KoruTicket, on_delete=models.CASCADE, related_name="alts")
+    character_id  = models.BigIntegerField()
+    nombre        = models.CharField(max_length=100)
+    corp_al_pedir = models.CharField(max_length=100, blank=True, default="")
+    estado = models.CharField(max_length=12, choices=ESTADOS, default=PENDIENTE, db_index=True)
+    motivo = models.TextField(blank=True, default="")
+    por        = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    por_nombre = models.CharField(max_length=100, blank=True, default="")
+    en         = models.DateTimeField(null=True, blank=True)
+    dentro_en  = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name        = "Tickets — alt pedido"
+        verbose_name_plural = "Tickets — alts pedidos"
+        ordering = ["nombre"]
+        constraints = [
+            models.UniqueConstraint(fields=["ticket", "character_id"], name="uniq_ticket_alt"),
+        ]
+
+    def __str__(self):
+        return f"{self.ticket_id} · {self.nombre} · {self.estado}"
 
 
 class KoruTicketInvitado(models.Model):

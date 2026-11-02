@@ -6895,6 +6895,8 @@ def koruticket_nuevo(request, tipo=None):
     if not cfg:
         raise Http404("Ese tipo de ticket no existe")
     ok, motivo = motor.puede_abrir(request.user, tipo)
+    if tipo == "alts":
+        return _kt_nuevo_alts(request, cfg, ok, motivo)
     datos = {"categoria": "", "asunto": "", "descripcion": ""}
 
     if request.method == "POST" and ok:
@@ -6934,6 +6936,48 @@ def koruticket_mios(request):
                .order_by("-created_at")[:100])
     return render(request, "koru_stats/koruticket_mios.html", {
         "tickets": tickets, "guild_id": str(getattr(settings, "DISCORD_GUILD_ID", "") or ""),
+    })
+
+
+def _kt_enlace(*nombres, defecto="/"):
+    """La primera url que exista de esas. Los nombres cambian entre versiones de AA y corptools."""
+    from django.urls import reverse
+    for n in nombres:
+        try:
+            return reverse(n)
+        except Exception:
+            continue
+    return defecto
+
+
+def _kt_nuevo_alts(request, cfg, ok, motivo):
+    """La pantalla del piloto: sus personajes, qué le falta a cada uno y cuáles pedir."""
+    from django.contrib import messages
+    from django.shortcuts import redirect
+    from django.urls import reverse
+
+    from .models import KoruTicket
+    from . import tickets as motor
+
+    comentario = ""
+    if request.method == "POST" and ok:
+        ids = [int(x) for x in request.POST.getlist("alt") if str(x).isdigit()]
+        comentario = (request.POST.get("comentario") or "").strip()[:1000]
+        nuevo, error = motor.abrir_alts(request.user, ids, comentario)
+        if nuevo:
+            messages.success(request, f"Petición {nuevo.numero} enviada a Dirección. "
+                                      "En unos segundos tendrás su canal en Discord.")
+            return redirect(reverse("koru_stats:koruticket_mios"))
+        messages.error(request, error)
+
+    abierto = (KoruTicket.objects.filter(user=request.user, tipo="alts")
+               .exclude(estado__in=KoruTicket.CERRADOS).first())
+    return render(request, "koru_stats/koruticket_alts.html", {
+        "cfg": cfg, "puede": ok, "motivo": motivo, "abierto": abierto, "comentario": comentario,
+        "personajes": motor.personajes_para_alts(request.user),
+        "tiene_discord": bool(motor.uid_discord(request.user)),
+        "enlace_anadir": _kt_enlace("authentication:add_character", defecto="/account/characters/add/"),
+        "enlace_audit": _kt_enlace("corptools:add_char", "corptools:view", "corptools:index", defecto="/audit/"),
     })
 
 
@@ -6993,7 +7037,10 @@ def _kt_preparar(conv, t, origen):
         h = escape(texto)
         h = _re.sub(r"&lt;(https?://[^\s&]+)&gt;", r"\1", h)
         h = _re.sub(r"(https?://[^\s<&]+)", r'<a href="\1" target="_blank" rel="noopener">\1</a>', h)
+        h = _re.sub(r"\*\*\*(.+?)\*\*\*", r"<strong><em>\1</em></strong>", h)
         h = _re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", h)
+        h = _re.sub(r"(?<![\w*])\*(?!\s)(.+?)(?<!\s)\*(?![\w*])", r"<em>\1</em>", h)
+        h = _re.sub(r"(?<![\w/])_(?!\s)(.+?)(?<!\s)_(?![\w/])", r"<em>\1</em>", h)
         m["html"] = mark_safe(h)
         lista = []
         for nombre in nombres:
@@ -7049,6 +7096,14 @@ def koruticket_ficha(request, tid):
     if t.tipo not in motor.tipos_que_gestiona(request.user):
         return HttpResponseForbidden("No gestionas este tipo de ticket.")
     invitados = list(t.invitados.all())
+    alts = None
+    if t.tipo == "alts":
+        if t.abierto:
+            try:
+                motor.comprobar_alts(t)
+            except Exception as exc:
+                logger.warning("koru alts: comprobar al abrir la ficha %s: %s", t.id, exc)
+        alts = motor.alts_de(t)
 
     return render(request, "koru_stats/koruticket_ficha.html", {
         "t": t,
@@ -7073,6 +7128,7 @@ def koruticket_ficha(request, tid):
         "invitados": invitados,
         "auditado_dentro": any(i.activo and i.main_character_id == t.main_character_id for i in invitados),
         "conversacion_sala": _kt_conversacion_sala(t, invitados),
+        "alts": alts,
     })
 
 
@@ -7171,6 +7227,16 @@ def koruticket_accion(request, tid):
                 else:
                     messages.info(request, f"Ya había una auditoría abierta: {aud.numero}.")
                 return redirect(reverse("koru_stats:koruticket_ficha", args=[aud.id]))
+
+    elif accion == "alt" and t.tipo == "alts":
+        ok, msg = motor.decidir_alt(t, request.user, request.POST.get("alt") or "",
+                                    request.POST.get("decision") or "", request.POST.get("motivo") or "")
+        (messages.success if ok else messages.error)(request, msg)
+
+    elif accion == "alts_comprobar" and t.tipo == "alts":
+        n = motor.comprobar_alts(t)
+        messages.info(request, f"{n} alt(s) acaban de aparecer en la corp." if n
+                      else "Ninguno nuevo dentro de la corp todavía.")
 
     elif accion == "invitar" and t.tipo in motor.TIPOS_CON_SALA:
         ok, msg = motor.invitar(t, request.user, request.POST.get("piloto") or "")

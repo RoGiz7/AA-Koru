@@ -3908,6 +3908,12 @@ def recruit_archivar_vencidas():
         tickets_archivar_vencidos()
     except Exception as exc:
         logger.exception("koru tickets_archivar: %s", exc)
+    # Los alts pedidos que ya han entrado en la corp (0.59).
+    try:
+        from . import tickets as motor
+        motor.comprobar_alts_abiertos()
+    except Exception as exc:
+        logger.exception("koru alts: %s", exc)
     return f"archivadas {hechas}, fallos {fallos}"
 
 

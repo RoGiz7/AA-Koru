@@ -1,0 +1,72 @@
+{% extends 'allianceauth/base-bs5.html' %}
+{% load i18n %}
+
+{% block title %}Añadir alts a la corp — Rekium{% endblock %}
+
+{% block page_title %}
+    {% include "framework/header/page-header.html" with title="Añadir alts a la corp" subtitle="Rekium" %}
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+  <div class="row justify-content-center"><div class="col-lg-9">
+  <div class="card"><div class="card-body">
+    <h4 class="mb-1">{{ cfg.titulo }}</h4>
+    {% if cfg.descripcion %}<p class="text-muted">{{ cfg.descripcion }}</p>{% endif %}
+
+    {% if not puede %}
+      <div class="alert alert-warning">{{ motivo }}</div>
+      {% if abierto %}<a class="btn btn-outline-info" href="{% url 'koru_stats:koruticket_mios' %}">Ver cómo va {{ abierto.numero }}</a>{% endif %}
+    {% else %}
+      {% if not tiene_discord %}
+        <div class="alert alert-warning small">No tienes Discord vinculado en el Auth: la petición llega igual, pero no podremos meterte en su canal. Vincúlalo en <a href="/services/">Servicios</a>.</div>
+      {% endif %}
+
+      <div class="alert alert-secondary small">
+        <strong>¿Falta algún alt o sale en rojo?</strong>
+        <ol class="mb-0 mt-1">
+          <li>Añádelo a tu cuenta: <a href="{{ enlace_anadir }}">Añadir personaje</a>.</li>
+          <li>Dale acceso en <a href="{{ enlace_audit }}">Character Audit</a>.</li>
+          <li>Vuelve aquí y recarga la página.</li>
+        </ol>
+      </div>
+
+      <form method="post">{% csrf_token %}
+        <div class="table-responsive"><table class="table table-sm align-middle">
+          <tbody>
+          {% for p in personajes %}
+            <tr class="{% if not p.seleccionable %}opacity-75{% endif %}">
+              <td style="width:2rem">
+                <input class="form-check-input" type="checkbox" name="alt" value="{{ p.eve_id }}" id="alt{{ p.eve_id }}"
+                       {% if not p.seleccionable %}disabled{% endif %}>
+              </td>
+              <td style="width:40px"><img src="https://images.evetech.net/characters/{{ p.eve_id }}/portrait?size=64" width="32" height="32" class="rounded-circle" onerror="this.style.display='none'"></td>
+              <td>
+                <label for="alt{{ p.eve_id }}" class="fw-bold">{{ p.nombre }}</label>
+                <div class="small text-muted">{{ p.corp }}</div>
+              </td>
+              <td class="small">
+                {% if p.estado == "dentro" %}✅{% elif p.estado == "main" %}⭐{% elif p.estado == "pedido" %}⏳{% elif p.estado == "listo" %}🟢{% elif p.estado == "sin_datos" %}🟡{% else %}❌{% endif %}
+                {{ p.texto }}
+                {% if p.aviso %}<div class="text-warning">⚠ {{ p.aviso }}</div>{% endif %}
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td class="text-muted">No tienes personajes en el Auth.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table></div>
+        <div class="mb-3">
+          <label class="form-label small">Algo que deba saber Dirección <span class="text-muted">(opcional)</span></label>
+          <textarea name="comentario" class="form-control" rows="2" maxlength="1000">{{ comentario }}</textarea>
+        </div>
+        <div class="d-flex gap-2">
+          <button class="btn btn-primary">Pedir a Dirección</button>
+          <a class="btn btn-outline-secondary" href="{% url 'koru_stats:koruticket_mios' %}">Mis tickets</a>
+        </div>
+      </form>
+    {% endif %}
+  </div></div>
+  </div></div>
+</div>
+{% endblock %}
