@@ -56,6 +56,20 @@ def tipos_que_gestiona(user):
     return fuera
 
 
+def puede_archivar_ya(user):
+    """
+    Borrar el canal sin esperar las 24 h. Solo CEO, Directores y Rekium TI.
+
+    ⚠ Los ayudantes de Soporte (`tickets_soporte`) NO: las 24 h son la red de
+    seguridad para que el piloto lea el cierre, y saltársela es una decisión
+    de quien manda, no de quien atiende.
+    """
+    if not user.is_authenticated:
+        return False
+    return user.is_superuser or any(user.has_perm(p) for p in (
+        "koru_stats.tickets_admin", "koru_stats.tickets_directores", "koru_stats.tickets_it"))
+
+
 def main_de(user):
     """(character_id, nombre) del main, o (None, "") si no tiene."""
     with connection.cursor() as cur:
@@ -122,7 +136,7 @@ def ficha_discord(ticket):
         "",
         ticket.descripcion or "",
         "",
-        f"Gestión en el Auth: {enlace}",
+        f"Gestión en el Auth: <{enlace}>",
     ]
     return "\n".join(lineas)
 

@@ -6898,6 +6898,25 @@ def koruticket_mios(request):
     })
 
 
+def _kt_archivar_ya(request, t):
+    """Guarda la conversación y borra el canal AHORA. Si falla, el canal se queda."""
+    from django.contrib import messages
+    from . import tickets as motor
+
+    if not t.discord_channel_id:
+        messages.info(request, "Cerrado. No tenía canal que archivar.")
+        return
+    try:
+        motor.archivar_canal(t)
+        messages.success(request, "Cerrado y archivado: conversación guardada y canal borrado.")
+    except Exception as exc:
+        # ⚠ archivar_canal guarda ANTES de borrar: si algo falla, el canal sigue
+        # ahí y lo archivará la pasada de cada hora.
+        logger.error("koru tickets: archivar ya %s: %s", t.id, exc)
+        messages.warning(request, f"Cerrado, pero no se pudo archivar ahora ({exc}). "
+                                  "Se reintentará solo en la próxima pasada.")
+
+
 def _kt_nombre(user):
     return _quien_main(user) if user else "—"
 
@@ -6925,6 +6944,7 @@ def koruticket_ficha(request, tid):
         "finales": [(c, n) for c, n in KoruTicket.ESTADOS if c in KoruTicket.CERRADOS],
         "claim_nombre": _kt_nombre(t.claim_por),
         "cerrado_nombre": _kt_nombre(t.cerrado_por),
+        "puede_archivar_ya": motor.puede_archivar_ya(request.user),
     })
 
 
@@ -6990,9 +7010,20 @@ def koruticket_accion(request, tid):
             t.estado, t.resolucion = final, resolucion
             t.cerrado_por, t.fecha_cierre = request.user, timezone.now()
             t.save(update_fields=["estado", "resolucion", "cerrado_por", "fecha_cierre", "updated_at"])
-            motor.avisar(t, f"{piloto}✅ Ticket cerrado por **{quien}**. Este canal se borrará en 24 horas; "
-                            "la conversación queda guardada.")
-            messages.success(request, "Cerrado. El canal se archiva en 24 h.")
+            ya = bool(request.POST.get("archivar_ya")) and motor.puede_archivar_ya(request.user)
+            if ya:
+                motor.avisar(t, f"{piloto}✅ Ticket cerrado por **{quien}**.")
+                _kt_archivar_ya(request, t)
+            else:
+                motor.avisar(t, f"{piloto}✅ Ticket cerrado por **{quien}**. Este canal se borrará en 24 horas; "
+                                "la conversación queda guardada.")
+                messages.success(request, "Cerrado. El canal se archiva en 24 h.")
+
+    elif accion == "archivar_ya" and not t.abierto:
+        if not motor.puede_archivar_ya(request.user):
+            messages.error(request, "Archivar sin esperar es cosa de CEO, Directores o Rekium TI.")
+        else:
+            _kt_archivar_ya(request, t)
 
     elif accion == "reabrir" and not t.abierto:
         if not t.discord_channel_id:

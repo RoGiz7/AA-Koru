@@ -30,7 +30,7 @@
       <h4 class="mb-1">{{ t.asunto }}</h4>
       <div class="small text-muted">
         {{ t.numero }} · {{ t.get_tipo_display }}{% if t.categoria %} · <span class="badge bg-secondary">{{ t.categoria }}</span>{% endif %}
-        · de <strong>{{ t.main_character_name }}</strong> · {{ t.created_at|date:"d/m/Y H:i" }}
+        · de <strong>{{ t.main_character_name }}</strong> · {{ t.created_at|date:"d/m/Y H:i" }} UTC
       </div>
     </div>
     <div class="text-end">
@@ -105,14 +105,24 @@
               </select>
               <button class="btn btn-sm btn-danger" name="accion" value="cerrar">Cerrar</button>
             </div>
-            <div class="small text-muted mt-1">El canal se archiva y se borra 24 h después.</div>
+            {% if puede_archivar_ya and t.discord_channel_id %}
+            <div class="form-check mt-2">
+              <input class="form-check-input" type="checkbox" name="archivar_ya" value="1" id="archivarYa">
+              <label class="form-check-label small" for="archivarYa">Borrar el canal ya, sin esperar 24 h
+                <span class="text-muted">(la conversación se guarda igual)</span></label>
+            </div>
+            {% endif %}
+            <div class="small text-muted mt-1">Si no, el canal se archiva y se borra 24 h después.</div>
           </form>
         {% else %}
-          <p class="small mb-2">Cerrado por <strong>{{ cerrado_nombre }}</strong> el {{ t.fecha_cierre|date:"d/m/Y H:i" }}.</p>
+          <p class="small mb-2">Cerrado por <strong>{{ cerrado_nombre }}</strong> el {{ t.fecha_cierre|date:"d/m/Y H:i" }} UTC.</p>
           {% if t.resolucion %}<p class="small fst-italic">«{{ t.resolucion }}»</p>{% endif %}
           {% if t.discord_channel_id %}
-            <form method="post" action="{% url 'koru_stats:koruticket_accion' t.id %}">{% csrf_token %}
+            <form method="post" action="{% url 'koru_stats:koruticket_accion' t.id %}" class="d-flex gap-2">{% csrf_token %}
               <button class="btn btn-sm btn-outline-warning" name="accion" value="reabrir">Reabrir</button>
+              {% if puede_archivar_ya %}
+                <button class="btn btn-sm btn-outline-danger" name="accion" value="archivar_ya">Archivar ya</button>
+              {% endif %}
             </form>
           {% endif %}
         {% endif %}

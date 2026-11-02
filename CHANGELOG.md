@@ -3,6 +3,23 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.55.2] — 2026-11-02
+
+### Añadido
+
+- **Archivar el canal sin esperar 24 h**, solo para CEO, Directores y Rekium
+  TI (los ayudantes de Soporte no): una casilla al cerrar y un botón «Archivar
+  ya» en un ticket cerrado. La conversación se guarda antes de borrar, igual
+  que en la pasada de cada hora; si algo falla, el canal se queda y se
+  reintenta solo.
+
+### Corregido
+
+- El enlace al Auth en el canal ya no despliega la tarjeta grande de vista
+  previa.
+- Las horas de los tickets dicen que son UTC (la hora de EVE): el Auth
+  marcaba 08:45 cuando Discord decía 9:45.
+
 ## [0.55.1] — 2026-11-02
 
 ### Corregido
