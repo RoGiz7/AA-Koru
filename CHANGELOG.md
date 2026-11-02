@@ -3,6 +3,16 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.61.1] — 2026-11-02
+
+### Corregido
+
+- Los botones azules de contorno («La llevo yo», «Entrevista hecha»,
+  «Reclamar»…) parecían desactivados sobre el fondo oscuro.
+- El canal de una solicitud de reclutamiento anunciaba los comandos
+  `/recluta`, que están desactivados. Ahora lleva el enlace a la ficha de la
+  solicitud en el AA.
+
 ## [0.61.0] — 2026-11-02
 
 ### Añadido

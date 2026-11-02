@@ -265,6 +265,15 @@ def _miles(n):
         return "—"
 
 
+def enlace_ficha(solicitud):
+    """La URL completa de la solicitud en el AA."""
+    from django.conf import settings
+    from django.urls import reverse
+
+    base = str(getattr(settings, "SITE_URL", "") or "").rstrip("/")
+    return base + reverse("koru_stats:recruit_ficha", args=[solicitud.pk])
+
+
 def ficha_discord(solicitud, retrato):
     """
     El texto que se publica en el canal: lo que el reclutador necesita para la
@@ -297,10 +306,11 @@ def ficha_discord(solicitud, retrato):
             lineas.append(f"- {s}")
 
     lineas.append("")
-    # ★ Los comandos, en el propio mensaje. Un comando que nadie sabe que
-    # existe es un comando que no existe.
-    lineas.append("*Desde aquí: `/recluta estado` · `/recluta entrevista` · "
-                  "`/recluta ok` · `/recluta invitacion`*")
+    # ★ El enlace a la ficha del AA, que es donde se da cada paso. Antes aquí
+    # salían los comandos /recluta, pero el cog está desactivado desde el
+    # 24/10 y anunciarlos era mandar al reclutador a una puerta cerrada.
+    # ⚠ Entre < >: sin eso Discord pinta una tarjeta de vista previa enorme.
+    lineas.append(f"**Gestión (reclutadores):** <{enlace_ficha(solicitud)}>")
     lineas.append("")
     lineas.append("**📝 Lo que nos ha contado**")
     for item in para_leer(solicitud.respuestas):

@@ -22,6 +22,23 @@ se ve — que para un boton es lo mismo que no estar.
   border-color: #adb5bd;
   color: #212529;
 }
+/* El mismo fallo en azul: «La llevo yo», «Entrevista hecha», «Reclamar»…
+   parecían desactivados sin estarlo. */
+.btn-outline-primary {
+  border-color: #4d94ff;
+  color: #8fbcff;
+}
+.btn-outline-primary:hover,
+.btn-outline-primary:focus {
+  background-color: #3d7fe0;
+  border-color: #3d7fe0;
+  color: #fff;
+}
+.btn-outline-primary:disabled,
+.btn-outline-primary.disabled {
+  border-color: rgba(77,148,255,.3);
+  color: rgba(143,188,255,.45);
+}
 /* Un botón deshabilitado SÍ debe verse apagado: es información. */
 .btn-outline-secondary:disabled,
 .btn-outline-secondary.disabled {
