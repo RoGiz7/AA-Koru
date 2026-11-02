@@ -3,6 +3,25 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.56.0] — 2026-11-02
+
+### Añadido
+
+- **Asuntos Internos dentro del AA** (sustituye K1/K2 y W4b de n8n).
+  - Tipo de ticket nuevo que **solo abre el staff**: desde la ficha del
+    Auditor («Abrir auditoría») o desde un ticket de Directores (lo que hacía
+    D2). El piloto **no entra en el canal** y **no lo ve** en «Mis tickets».
+  - La misma **checklist** que la auditoría del reclutamiento (`AuditCheck`),
+    con los datos automáticos de corptools y el valor congelado al marcar.
+    Quien marca es quien está logueado: el bug de identidad de W4b no puede
+    pasar.
+  - Una auditoría abierta por piloto: si ya hay una, se lleva a ella.
+  - El ticket de Directores y la auditoría quedan **enlazados** en las dos
+    fichas.
+  - Dirección ve las auditorías (como en el reclutamiento); Asuntos Internos,
+    solo las auditorías.
+  - Nace **apagado**: mientras lo esté, «Abrir auditoría» sigue yendo por n8n.
+
 ## [0.55.2] — 2026-11-02
 
 ### Añadido

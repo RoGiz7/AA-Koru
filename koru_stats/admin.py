@@ -817,7 +817,7 @@ class AuditorExclusionAdmin(admin.ModelAdmin):
 # ---------------------------------------------------------------------------
 # Tickets del AA (0.55)
 # ---------------------------------------------------------------------------
-from .models import TicketTipoConfig, KoruTicket, KoruTicketNote  # noqa: E402
+from .models import TicketTipoConfig, KoruTicket, KoruTicketNote, TicketCheck  # noqa: E402
 
 
 @admin.register(TicketTipoConfig)
@@ -839,4 +839,14 @@ class KoruTicketAdmin(admin.ModelAdmin):
     list_filter   = ("tipo", "estado")
     search_fields = ("main_character_name", "asunto")
     readonly_fields = ("transcripcion", "transcrita_en", "created_at", "updated_at")
-    inlines = [KoruTicketNoteInline]
+    inlines = [KoruTicketNoteInline, ]
+
+
+class TicketCheckInline(admin.TabularInline):
+    model = TicketCheck
+    extra = 0
+    readonly_fields = ("clave", "etiqueta", "estado", "nota", "valor", "por_nombre", "en")
+    can_delete = False
+
+
+KoruTicketAdmin.inlines = [KoruTicketNoteInline, TicketCheckInline]

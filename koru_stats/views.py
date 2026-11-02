@@ -3464,12 +3464,26 @@ def _auditor_pilot(request, main_id):
     #
     # ⚠ Hace falta permiso de Asuntos Internos, no solo del Auditor: ver el
     # riesgo de alguien y abrirle un expediente no son la misma autoridad.
+    from django.urls import reverse as _reverse
     auditoria_abierta = None
+    auditoria_url = ""
     puede_auditar = "asuntos" in permitidos and _webhook_puesto()
     if puede_auditar:
         auditoria_abierta = next(
             (t for t in tickets_piloto
              if t.tipo == "asuntos" and not t.fecha_cierre), None)
+        if auditoria_abierta:
+            auditoria_url = _reverse("koru_stats:ticket_detail", args=[auditoria_abierta.pk])
+    # ★ 0.56: con Asuntos Internos en el AA, manda la auditoría de aquí.
+    from . import tickets as _motor
+    from .models import KoruTicket as _KT
+    _cfg_ai = _motor.config("asuntos")
+    if _cfg_ai and _cfg_ai.activo:
+        puede_auditar = _motor.puede_auditar(request.user)
+        auditoria_abierta = (_KT.objects.filter(tipo="asuntos", main_character_id=main_id)
+                             .exclude(estado__in=_KT.CERRADOS).first())
+        auditoria_url = (_reverse("koru_stats:koruticket_ficha", args=[auditoria_abierta.id])
+                         if auditoria_abierta else "")
 
     # --- El «por qué»: la explicación de cada nota, en la ficha y no solo en
     # la ventanita del panel. Es lo primero que se lee.
@@ -3504,6 +3518,7 @@ def _auditor_pilot(request, main_id):
         "alts": alts, "cobertura": cobertura,
         "tickets_piloto": tickets_piloto, "tickets_resumen": tickets_resumen,
         "puede_auditar": puede_auditar, "auditoria_abierta": auditoria_abierta,
+        "auditoria_url": auditoria_url,
         "latest": latest, "radar_json": _to_json(radar) if radar else "null",
         "risk_hist": risk_hist, "risk_hist_json": _to_json(risk_hist),
         "alerts": alerts,
@@ -3590,6 +3605,30 @@ def auditor_abrir_auditoria(request, main_id):
 
     main_id = int(main_id)
     destino = reverse("koru_stats:auditor_pilot", args=[main_id])
+
+    # ★ 0.56: con Asuntos Internos encendido en el AA, la auditoría nace aquí
+    # y no en n8n (K1/K2). Apagado, sigue el camino de siempre.
+    from . import tickets as motor
+    cfg_ai = motor.config("asuntos")
+    if cfg_ai and cfg_ai.activo:
+        if not motor.puede_auditar(request.user):
+            return HttpResponseForbidden("Abrir una auditoría es cosa de Asuntos Internos o Dirección.")
+        if request.method != "POST":
+            return redirect(destino)
+        motivo = (request.POST.get("motivo") or "").strip()
+        if len(motivo) < 10:
+            messages.error(request, "Cuenta en una línea por qué hay que auditarle.")
+            return redirect(destino)
+        aud, creada = motor.abrir_auditoria(main_id, motivo, request.user,
+                                            riesgo=request.POST.get("riesgo") or None)
+        if not aud:
+            messages.error(request, "No encuentro a ese piloto en el Auth.")
+            return redirect(destino)
+        if creada:
+            messages.success(request, f"Auditoría {aud.numero} abierta. Su canal no incluye al piloto.")
+        else:
+            messages.info(request, f"Ya había una auditoría abierta: {aud.numero}.")
+        return redirect(reverse("koru_stats:koruticket_ficha", args=[aud.id]))
 
     if "asuntos" not in _tickets_allowed(request.user):
         return HttpResponseForbidden(
@@ -6890,7 +6929,7 @@ def koruticket_mios(request):
 
     from .models import KoruTicket
 
-    tickets = (KoruTicket.objects.filter(user=request.user)
+    tickets = (KoruTicket.objects.filter(user=request.user).exclude(tipo="asuntos")
                .only("id", "tipo", "categoria", "asunto", "estado", "created_at", "discord_channel_id")
                .order_by("-created_at")[:100])
     return render(request, "koru_stats/koruticket_mios.html", {
@@ -6926,10 +6965,10 @@ def koruticket_ficha(request, tid):
     from django.conf import settings
     from django.http import Http404, HttpResponseForbidden
 
-    from .models import KoruTicket
+    from .models import KoruTicket, RecruitCheck
     from . import tickets as motor
 
-    t = KoruTicket.objects.filter(id=tid).select_related("claim_por", "cerrado_por").first()
+    t = KoruTicket.objects.filter(id=tid).select_related("claim_por", "cerrado_por", "relacionado").first()
     if not t:
         raise Http404("Ticket no encontrado")
     if t.tipo not in motor.tipos_que_gestiona(request.user):
@@ -6945,6 +6984,13 @@ def koruticket_ficha(request, tid):
         "claim_nombre": _kt_nombre(t.claim_por),
         "cerrado_nombre": _kt_nombre(t.cerrado_por),
         "puede_archivar_ya": motor.puede_archivar_ya(request.user),
+        # Auditoría (0.56)
+        "checks": motor.checks_de(t) if t.tipo == "asuntos" else None,
+        "checks_faltan": len(motor.checks_pendientes(t)) if t.tipo == "asuntos" else 0,
+        "estados_check": RecruitCheck.ESTADOS,
+        "puede_auditar": t.tipo == "directores" and t.abierto and motor.puede_auditar(request.user),
+        "derivados": list(t.derivados.all()),
+        "abierto_por_nombre": _kt_nombre(t.abierto_por),
     })
 
 
@@ -7018,6 +7064,30 @@ def koruticket_accion(request, tid):
                 motor.avisar(t, f"{piloto}✅ Ticket cerrado por **{quien}**. Este canal se borrará en 24 horas; "
                                 "la conversación queda guardada.")
                 messages.success(request, "Cerrado. El canal se archiva en 24 h.")
+
+    elif accion == "check" and t.tipo == "asuntos":
+        ok, msg = motor.marcar_check(t, request.user, request.POST.get("clave") or "",
+                                     request.POST.get("estado") or "", request.POST.get("nota") or "")
+        (messages.success if ok else messages.error)(request, msg)
+
+    elif accion == "auditar" and t.tipo == "directores":
+        motivo = (request.POST.get("motivo") or "").strip()
+        if not motor.puede_auditar(request.user):
+            messages.error(request, "Abrir una auditoría es cosa de Asuntos Internos o Dirección.")
+        elif len(motivo) < 10:
+            messages.error(request, "Cuenta en una línea por qué hay que auditarle.")
+        else:
+            aud, creada = motor.abrir_auditoria(t.main_character_id, motivo, request.user, relacionado=t)
+            if not aud:
+                messages.error(request, "No encuentro a ese piloto en el Auth.")
+            else:
+                if creada:
+                    KoruTicketNote.objects.create(ticket=t, autor=request.user, autor_nombre=quien,
+                                                  texto=f"Abre la auditoría {aud.numero}: {motivo}")
+                    messages.success(request, f"Auditoría {aud.numero} abierta. Su canal no incluye al piloto.")
+                else:
+                    messages.info(request, f"Ya había una auditoría abierta: {aud.numero}.")
+                return redirect(reverse("koru_stats:koruticket_ficha", args=[aud.id]))
 
     elif accion == "archivar_ya" and not t.abierto:
         if not motor.puede_archivar_ya(request.user):

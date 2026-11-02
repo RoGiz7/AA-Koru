@@ -29,13 +29,16 @@ logger = logging.getLogger(__name__)
 # tickets del espejo de Baserow: la gente que veía los tickets viejos de un
 # tipo ve los nuevos, sin tocar grupos.
 PERMISO_TIPOS = {
-    "koru_stats.tickets_directores": {"directores"},
+    # ★ Dirección ve también las auditorías: es quien decide con ellas, igual
+    # que en el reclutamiento («solo Asuntos Internos y Dirección»).
+    "koru_stats.tickets_directores": {"directores", "asuntos"},
+    "koru_stats.tickets_asuntos_internos": {"asuntos"},
     "koru_stats.tickets_it": {"it", "soporte"},
     # ★ Los ayudantes atienden Soporte y nada más: IT tiene las llaves de todo.
     "koru_stats.tickets_soporte": {"soporte"},
 }
 
-PREFIJO_NUMERO = {"directores": "D", "it": "IT", "soporte": "S"}
+PREFIJO_NUMERO = {"directores": "D", "it": "IT", "soporte": "S", "asuntos": "AI"}
 
 
 def config(tipo):
@@ -48,7 +51,7 @@ def tipos_que_gestiona(user):
     if not user.is_authenticated:
         return set()
     if user.is_superuser or user.has_perm("koru_stats.tickets_admin"):
-        return {"directores", "it", "soporte"}
+        return {"directores", "it", "soporte", "asuntos"}
     fuera = set()
     for perm, tipos in PERMISO_TIPOS.items():
         if user.has_perm(perm):
@@ -94,6 +97,10 @@ def puede_abrir(user, tipo):
     (sí/no, motivo). El motivo se enseña tal cual: «no puedes» sin decir por
     qué hace que la gente vuelva a Discord a preguntar.
     """
+    if tipo == "asuntos":
+        # ⚠ Una auditoría no la pide el auditado: la abre el staff desde la
+        # ficha del piloto o desde un ticket de Directores.
+        return False, "Las auditorías las abre el staff, no se piden desde aquí."
     cfg = config(tipo)
     if not cfg or not cfg.activo:
         return False, "Este tipo de ticket todavía no se abre desde aquí."
@@ -128,6 +135,17 @@ def ficha_discord(ticket):
 
     base = str(getattr(settings, "SITE_URL", "") or "").rstrip("/")
     enlace = base + reverse("koru_stats:koruticket_ficha", args=[ticket.id])
+    if ticket.tipo == "asuntos":
+        ficha_aud = base + reverse("koru_stats:auditor_pilot", args=[ticket.main_character_id])
+        return "\n".join([
+            f"🔎 **{numero(ticket)} · Auditoría de {ticket.main_character_name}**",
+            f"**Abierta por:** {_nombre(ticket.abierto_por)}",
+            "",
+            ticket.descripcion or "",
+            "",
+            f"Checklist y cierre: <{enlace}>",
+            f"Ficha del Auditor: <{ficha_aud}>",
+        ])
     lineas = [
         f"🎫 **{numero(ticket)} · {ticket.get_tipo_display()}**"
         + (f" — {ticket.categoria}" if ticket.categoria else ""),
@@ -218,3 +236,141 @@ def archivar_canal(ticket):
     ticket.discord_channel_id = ""
     ticket.save(update_fields=["discord_channel_id", "updated_at"])
     return f"{len(texto)} caracteres guardados"
+
+
+# ---------------------------------------------------------------------------
+# Auditorías de Asuntos Internos (0.56)
+# ---------------------------------------------------------------------------
+
+def _nombre(user):
+    if not user:
+        return "—"
+    with connection.cursor() as cur:
+        cur.execute(
+            "SELECT mc.character_name FROM authentication_userprofile up "
+            "JOIN eveonline_evecharacter mc ON mc.id = up.main_character_id "
+            "WHERE up.user_id = %s", [user.id])
+        fila = cur.fetchone()
+    return (fila[0] if fila else "") or str(user)
+
+
+def puede_auditar(user):
+    """Abrir una auditoría: Asuntos Internos, Dirección y CEO. Con el tipo encendido."""
+    cfg = config("asuntos")
+    if not cfg or not cfg.activo or not user.is_authenticated:
+        return False
+    return user.is_superuser or any(user.has_perm(p) for p in (
+        "koru_stats.tickets_admin", "koru_stats.tickets_asuntos_internos",
+        "koru_stats.tickets_directores"))
+
+
+def _usuario_de(main_id):
+    """(User, nombre) del dueño de ese personaje, o (None, nombre) si no está en el Auth."""
+    from django.contrib.auth.models import User
+    with connection.cursor() as cur:
+        cur.execute(
+            "SELECT co.user_id, ec.character_name FROM eveonline_evecharacter ec "
+            "LEFT JOIN authentication_characterownership co ON co.character_id = ec.id "
+            "WHERE ec.character_id = %s", [main_id])
+        fila = cur.fetchone()
+    if not fila:
+        return None, ""
+    return (User.objects.filter(id=fila[0]).first() if fila[0] else None), (fila[1] or "")
+
+
+def abrir_auditoria(main_id, motivo, user, relacionado=None, riesgo=None):
+    """
+    Abre (o devuelve la que ya hay abierta) la auditoría de un piloto.
+
+    ★ Una abierta por piloto: dos auditorías a la vez sobre la misma persona
+    son dos auditores haciendo lo mismo sin saberlo.
+    Devuelve (ticket, creada). (None, False) si el piloto no existe.
+    """
+    from django.db import transaction
+
+    from .models import KoruTicket
+    from .tasks import tickets_preparar
+
+    ya = (KoruTicket.objects.filter(tipo="asuntos", main_character_id=main_id)
+          .exclude(estado__in=KoruTicket.CERRADOS).first())
+    if ya:
+        return ya, False
+
+    piloto, nombre = _usuario_de(main_id)
+    if not nombre:
+        return None, False
+
+    texto = (motivo or "").strip()
+    if riesgo:
+        texto += f"\n\nRiesgo en el Auditor al abrirla: {riesgo}"
+    if relacionado is not None:
+        texto += f"\n\nViene del ticket {numero(relacionado)}: {relacionado.asunto}"
+
+    t = KoruTicket.objects.create(
+        tipo="asuntos", user=piloto, main_character_id=main_id, main_character_name=nombre,
+        discord_uid="", asunto=f"Auditoría de {nombre}", descripcion=texto[:5000],
+        abierto_por=user, relacionado=relacionado)
+    transaction.on_commit(lambda: tickets_preparar.delay(t.id))
+    return t, True
+
+
+def checks_de(ticket):
+    """La checklist de la auditoría: puntos activos con lo ya marcado (congelado) o lo calculado."""
+    from .models import AuditCheck, RecruitCheck, TicketCheck
+    from . import auditoria
+
+    puntos = list(AuditCheck.objects.filter(activo=True))
+    hechos = {c.clave: c for c in TicketCheck.objects.filter(ticket=ticket)}
+    hace_falta = any(p.fuente and (p.clave not in hechos or hechos[p.clave].estado == RecruitCheck.PENDIENTE)
+                     for p in puntos)
+    auto = auditoria.calcular(ticket.user) if (hace_falta and ticket.user) else {}
+
+    fuera = []
+    for p in puntos:
+        h = hechos.get(p.clave)
+        calc = auto.get(p.fuente) if p.fuente else None
+        fuera.append({
+            "clave": p.clave, "etiqueta": p.etiqueta, "ayuda": p.ayuda,
+            "obligatorio": p.obligatorio, "automatico": bool(p.fuente),
+            "enlace": auditoria.enlace_de(p.enlace, ticket.main_character_name, ticket.main_character_id),
+            "estado": h.estado if h else RecruitCheck.PENDIENTE,
+            "estado_txt": dict(RecruitCheck.ESTADOS)[h.estado if h else RecruitCheck.PENDIENTE],
+            "nota": h.nota if h else "", "por": h.por_nombre if h else "", "en": h.en if h else None,
+            "valor": (h.valor if (h and h.valor) else (calc or {}).get("valor", "")),
+            "detalle": [] if (h and h.valor) else (calc or {}).get("detalle", []),
+            "congelado": bool(h and h.valor),
+        })
+    return fuera
+
+
+def checks_pendientes(ticket):
+    from .models import AuditCheck, RecruitCheck, TicketCheck
+    hechos = {c.clave: c.estado for c in TicketCheck.objects.filter(ticket=ticket)}
+    return [p.etiqueta for p in AuditCheck.objects.filter(activo=True, obligatorio=True)
+            if hechos.get(p.clave, RecruitCheck.PENDIENTE) in RecruitCheck.SIN_RESOLVER]
+
+
+def marcar_check(ticket, user, clave, estado, nota=""):
+    """Marca un punto. Quien marca es quien está logueado: el bug de W4b aquí no puede pasar."""
+    from django.utils import timezone
+
+    from .models import AuditCheck, RecruitCheck, TicketCheck
+    from . import auditoria
+
+    if "asuntos" not in tipos_que_gestiona(user):
+        return False, "Marcar la auditoría es cosa de Asuntos Internos o Dirección."
+    punto = AuditCheck.objects.filter(clave=clave, activo=True).first()
+    if not punto:
+        return False, "Ese punto de auditoría no existe o está desactivado."
+    if estado not in dict(RecruitCheck.ESTADOS):
+        return False, "Ese no es un estado válido."
+    if estado in (RecruitCheck.DUDA, RecruitCheck.PROBLEMA) and not (nota or "").strip():
+        return False, "Una duda o un problema necesitan una línea explicando qué viste."
+    valor = ""
+    if punto.fuente and ticket.user:
+        valor = (auditoria.calcular(ticket.user).get(punto.fuente) or {}).get("valor", "")
+    TicketCheck.objects.update_or_create(
+        ticket=ticket, clave=clave,
+        defaults={"etiqueta": punto.etiqueta, "estado": estado, "nota": (nota or "").strip()[:5000],
+                  "valor": valor, "por": user, "por_nombre": _nombre(user), "en": timezone.now()})
+    return True, f"«{punto.etiqueta}» marcado como {dict(RecruitCheck.ESTADOS)[estado].lower()}."

@@ -45,9 +45,48 @@
     {# ---------------- Izquierda: qué pidió + conversación ---------------- #}
     <div class="col-lg-8">
       <div class="card mb-3"><div class="card-body">
-        <h6 class="card-title">Lo que escribió</h6>
+        <h6 class="card-title">{% if t.tipo == "asuntos" %}Motivo de la auditoría <span class="small text-muted">— abierta por {{ abierto_por_nombre }}</span>{% else %}Lo que escribió{% endif %}</h6>
         <div style="white-space:pre-wrap">{{ t.descripcion }}</div>
+        {% if t.relacionado %}
+          <div class="small mt-2">Viene de <a href="{% url 'koru_stats:koruticket_ficha' t.relacionado.id %}">{{ t.relacionado.numero }} · {{ t.relacionado.asunto }}</a></div>
+        {% endif %}
+        {% for d in derivados %}
+          <div class="small mt-1">→ <a href="{% url 'koru_stats:koruticket_ficha' d.id %}">{{ d.numero }} · {{ d.asunto }}</a> <span class="badge bg-secondary">{{ d.get_estado_display }}</span></div>
+        {% endfor %}
       </div></div>
+
+      {% if checks %}
+      <div class="card mb-3 border-warning"><div class="card-body">
+        <h6 class="card-title"><i class="fas fa-list-check me-1"></i>Checklist de la auditoría
+          {% if checks_faltan %}<span class="badge bg-warning text-dark ms-1">{{ checks_faltan }} obligatorio{{ checks_faltan|pluralize }} sin mirar</span>
+          {% else %}<span class="badge bg-success ms-1">completa</span>{% endif %}</h6>
+        {% for c in checks %}
+          <div class="border-bottom py-2">
+            <div class="d-flex flex-wrap align-items-center gap-2">
+              <strong>{{ c.etiqueta }}</strong>
+              {% if c.obligatorio %}<span class="badge bg-secondary">obligatorio</span>{% endif %}
+              {% if c.automatico %}<span class="badge bg-info text-dark">automático</span>{% endif %}
+              {% if c.enlace %}<a href="{{ c.enlace }}" target="_blank" rel="noopener" class="small">abrir ↗</a>{% endif %}
+              <span class="ms-auto badge {% if c.estado == 'ok' %}bg-success{% elif c.estado == 'duda' %}bg-warning text-dark{% elif c.estado == 'problema' %}bg-danger{% elif c.estado == 'na' %}bg-secondary{% else %}bg-dark{% endif %}">{{ c.estado_txt }}</span>
+            </div>
+            {% if c.ayuda %}<div class="small text-muted">{{ c.ayuda }}</div>{% endif %}
+            {% if c.valor %}<div class="small mt-1"><span class="text-muted">{% if c.congelado %}Visto al marcar:{% else %}Ahora:{% endif %}</span> {{ c.valor }}</div>{% endif %}
+            {% for d in c.detalle %}<div class="small text-muted ms-2">· {{ d }}</div>{% endfor %}
+            {% if c.por %}<div class="small text-muted">{{ c.por }} · {{ c.en|date:"d/m H:i" }} UTC{% if c.nota %} — «{{ c.nota }}»{% endif %}</div>{% endif %}
+            {% if t.abierto %}
+            <form method="post" action="{% url 'koru_stats:koruticket_accion' t.id %}" class="d-flex flex-wrap gap-1 mt-1">{% csrf_token %}
+              <input type="hidden" name="accion" value="check"><input type="hidden" name="clave" value="{{ c.clave }}">
+              <select name="estado" class="form-select form-select-sm" style="max-width:150px">
+                {% for v, n in estados_check %}<option value="{{ v }}" {% if v == c.estado %}selected{% endif %}>{{ n }}</option>{% endfor %}
+              </select>
+              <input type="text" name="nota" class="form-control form-control-sm" style="max-width:340px" placeholder="Nota (obligatoria en duda o problema)" value="">
+              <button class="btn btn-sm btn-outline-light">Marcar</button>
+            </form>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div></div>
+      {% endif %}
 
       <div class="card mb-3"><div class="card-body">
         <h6 class="card-title d-flex align-items-center gap-2">
@@ -143,6 +182,18 @@
           <button class="btn btn-sm btn-outline-light" name="accion" value="nota">Añadir nota</button>
         </form>
       </div></div>
+
+      {% if puede_auditar %}
+      <div class="card mb-3 border-danger"><div class="card-body">
+        <h6 class="card-title text-danger"><i class="fas fa-gavel me-1"></i>Abrir auditoría de este piloto</h6>
+        <form method="post" action="{% url 'koru_stats:koruticket_accion' t.id %}">{% csrf_token %}
+          <textarea name="motivo" class="form-control form-control-sm mb-2" rows="2" minlength="10" required
+                    placeholder="Qué se ha visto y por qué merece mirarlo"></textarea>
+          <button class="btn btn-sm btn-danger" name="accion" value="auditar">Abrir auditoría</button>
+          <div class="small text-muted mt-1">Canal aparte para Asuntos Internos, sin el piloto.</div>
+        </form>
+      </div></div>
+      {% endif %}
 
       <div class="card"><div class="card-body small">
         {% if perms.koru_stats.auditor_access %}<a href="{% url 'koru_stats:auditor_pilot' t.main_character_id %}" class="me-2">Ficha del Auditor</a>{% endif %}

@@ -2287,6 +2287,7 @@ TICKET_TIPOS = (
     ("directores", "A Directores"),
     ("it",         "A IT"),
     ("soporte",    "A Soporte"),
+    ("asuntos",    "Asuntos Internos"),
 )
 
 
@@ -2364,6 +2365,14 @@ class KoruTicket(models.Model):
     main_character_name = models.CharField(max_length=100)
     discord_uid = models.CharField(max_length=30, blank=True, default="")
 
+    # ★ En una AUDITORÍA el piloto es el auditado (`user`), no quien la abre.
+    # Quién la abrió va aquí, y de qué ticket viene, si viene de uno: es lo que
+    # en n8n hacía D2 y se perdía en cuanto el canal se borraba.
+    abierto_por = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL,
+                                    related_name="+")
+    relacionado = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL,
+                                    related_name="derivados")
+
     categoria   = models.CharField(max_length=60, blank=True, default="")
     asunto      = models.CharField(max_length=200)
     descripcion = models.TextField(blank=True, default="")
@@ -2418,3 +2427,33 @@ class KoruTicketNote(models.Model):
 
     def __str__(self):
         return f"{self.autor_nombre}: {self.texto[:40]}"
+
+
+class TicketCheck(models.Model):
+    """
+    Un punto de la checklist en una auditoría de Asuntos Internos.
+
+    Mismos puntos (`AuditCheck`) y mismos estados que la auditoría dentro del
+    reclutamiento: una auditoría es la misma tarea venga de donde venga.
+    """
+    ticket   = models.ForeignKey(KoruTicket, on_delete=models.CASCADE, related_name="checks")
+    clave    = models.SlugField(max_length=40, db_index=True)
+    etiqueta = models.CharField(max_length=200, blank=True, default="")
+    estado   = models.CharField(max_length=10, choices=RecruitCheck.ESTADOS,
+                                default=RecruitCheck.PENDIENTE, db_index=True)
+    nota     = models.TextField(blank=True, default="")
+    # El valor que se VIO al marcar, congelado: corptools cambia solo.
+    valor    = models.TextField(blank=True, default="")
+    por        = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    por_nombre = models.CharField(max_length=100, blank=True, default="")
+    en         = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name        = "Tickets — punto de auditoría"
+        verbose_name_plural = "Tickets — puntos de auditoría"
+        constraints = [
+            models.UniqueConstraint(fields=["ticket", "clave"], name="uniq_ticket_check"),
+        ]
+
+    def __str__(self):
+        return f"{self.ticket_id} · {self.clave} · {self.estado}"

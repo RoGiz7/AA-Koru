@@ -391,7 +391,7 @@
         <span class="ms-auto">
         {% if auditoria_abierta %}
           <a class="btn btn-sm btn-outline-danger"
-             href="{% url 'koru_stats:ticket_detail' auditoria_abierta.pk %}">
+             href="{{ auditoria_url }}">
             <i class="fas fa-folder-open me-1"></i>Auditoría abierta
           </a>
         {% else %}
