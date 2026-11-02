@@ -6896,7 +6896,9 @@ def koruticket_nuevo(request, tipo=None):
 
     if tipo is None:
         opciones = []
-        for cfg in TicketTipoConfig.objects.filter(activo=True):
+        # ⚠ Asuntos Internos no se enseña ni apagado: el piloto no tiene por qué
+        # saber que existe una puerta que no es para él.
+        for cfg in TicketTipoConfig.objects.filter(activo=True).exclude(tipo="asuntos"):
             ok, motivo = motor.puede_abrir(request.user, cfg.tipo)
             opciones.append({"cfg": cfg, "puede": ok, "motivo": motivo})
         return render(request, "koru_stats/koruticket_nuevo.html", {"opciones": opciones, "cfg": None})

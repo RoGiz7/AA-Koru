@@ -3,6 +3,15 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.60.1] — 2026-11-02
+
+### Corregido
+
+- «¿A quién quieres escribir?» enseñaba Asuntos Internos (desactivado) a los
+  pilotos. Ya no sale.
+- En un ticket de alts cerrado a mano, los alts sin decidir seguían como
+  «Pendiente»: ahora salen como «no tramitado».
+
 ## [0.60.0] — 2026-11-02
 
 ### Añadido

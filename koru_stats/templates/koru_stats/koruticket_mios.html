@@ -28,8 +28,12 @@
               {% if t.tipo == "alts" %}
                 <div class="small mt-1">
                   {% for a in t.alts.all %}
+                    {% if not t.abierto and a.estado != 'dentro' and a.estado != 'rechazado' %}
+                      <span class="badge bg-secondary">{{ a.nombre }}: no tramitado</span>
+                    {% else %}
                     <span class="badge {% if a.estado == 'dentro' %}bg-success{% elif a.estado == 'aprobado' %}bg-info text-dark{% elif a.estado == 'rechazado' %}bg-danger{% else %}bg-warning text-dark{% endif %}"
                           {% if a.motivo %}title="{{ a.motivo }}"{% endif %}>{{ a.nombre }}: {{ a.get_estado_display }}</span>
+                    {% endif %}
                   {% endfor %}
                 </div>
               {% endif %}

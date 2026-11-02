@@ -111,7 +111,11 @@
               {% if a.aviso and a.estado != "dentro" %}<div class="small text-warning">⚠ {{ a.aviso }}</div>{% endif %}
               {% if a.por_nombre %}<div class="small text-muted">{{ a.get_estado_display }} · {{ a.por_nombre }}{% if a.en %} · {{ a.en|date:"d/m H:i" }} UTC{% endif %}{% if a.motivo %} — «{{ a.motivo }}»{% endif %}</div>{% endif %}
             </div>
+            {% if not t.abierto and a.estado != 'dentro' and a.estado != 'rechazado' %}
+              <span class="badge bg-secondary">No tramitado</span>
+            {% else %}
             <span class="badge {% if a.estado == 'dentro' %}bg-success{% elif a.estado == 'aprobado' %}bg-info text-dark{% elif a.estado == 'rechazado' %}bg-danger{% else %}bg-warning text-dark{% endif %}">{{ a.get_estado_display }}</span>
+            {% endif %}
             {% if t.abierto %}
               <div class="w-100 d-flex flex-wrap gap-2 ps-5">
                 {% if a.estado == "pendiente" or a.estado == "rechazado" %}
