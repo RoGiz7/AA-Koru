@@ -470,7 +470,7 @@ def lee_reservadas(user):
 # Guardar la conversación antes de que desaparezca
 # ---------------------------------------------------------------------------
 
-def transcribir(canal_id):
+def transcribir(canal_id, adjuntos=None):
     """
     La conversación de un canal, en el MISMO formato que guardaba el bot viejo:
 
@@ -485,18 +485,21 @@ def transcribir(canal_id):
     from . import discordapi
 
     lineas = []
-    for cuando, autor, texto, adjuntos in discordapi.leer_canal(canal_id):
+    for cuando, autor, texto, adjs in discordapi.leer_canal(canal_id):
         try:
             t = datetime.fromisoformat(str(cuando).replace("Z", "+00:00"))
             sello = t.strftime("%d/%m/%Y, %H:%M:%S")
         except (ValueError, TypeError):
             sello = str(cuando)
         cuerpo = texto or ""
-        for nombre in adjuntos:
-            # ⚠ Solo el NOMBRE del adjunto. El enlace de Discord caduca a las
-            # pocas horas, así que guardarlo sería guardar un enlace muerto y
-            # hacer creer que el fichero está.
+        for a in adjs:
+            nombre = a.get("nombre", "") if isinstance(a, dict) else str(a)
+            # ⚠ En el texto, solo el NOMBRE: el enlace de Discord caduca a las
+            # pocas horas. El fichero, si quien llama lo pide, se descarga
+            # aparte (lista `adjuntos`) en el MISMO orden que estas marcas.
             cuerpo += f" [ADJUNTO: {nombre}]"
+            if adjuntos is not None and isinstance(a, dict):
+                adjuntos.append(dict(a, autor=autor))
         lineas.append(f"[{sello}] {autor}: {cuerpo}".rstrip())
 
     return "\n".join(lineas)

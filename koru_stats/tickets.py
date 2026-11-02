@@ -216,6 +216,55 @@ def avisar(ticket, texto):
         logger.warning("koru tickets: aviso en %s falló: %s", ticket.discord_channel_id, exc)
 
 
+MAX_ADJUNTO = 25 * 1024 * 1024     # lo que deja subir Discord sin Nitro
+
+
+def guardar_adjuntos(ticket, origen, lista):
+    """
+    Descarga los adjuntos de una conversación al AA.
+
+    ★ Uno que falla no para el archivado: se queda la fila con el error y el
+    nombre, que es lo que había antes. Perder una captura es malo; dejar un
+    canal sin archivar para siempre por una captura, peor.
+    Si el archivado se repite (falló al borrar), se rehace desde cero: así no
+    quedan duplicados.
+    """
+    import os
+    import re
+
+    import requests
+    from django.core.files.base import ContentFile
+
+    from .models import KoruTicketAdjunto
+
+    for viejo in KoruTicketAdjunto.objects.filter(ticket=ticket, origen=origen):
+        if viejo.fichero:
+            viejo.fichero.delete(save=False)
+        viejo.delete()
+
+    for i, a in enumerate(lista):
+        fila = KoruTicketAdjunto(ticket=ticket, origen=origen, orden=i,
+                                 nombre=(a.get("nombre") or "")[:200],
+                                 autor=(a.get("autor") or "")[:100], tam=int(a.get("tam") or 0))
+        try:
+            if fila.tam > MAX_ADJUNTO:
+                raise ValueError("pasa de 25 MB")
+            r = requests.get(a.get("url") or "", timeout=60, stream=True)
+            r.raise_for_status()
+            datos = bytearray()
+            for trozo in r.iter_content(65536):
+                datos.extend(trozo)
+                if len(datos) > MAX_ADJUNTO:
+                    raise ValueError("pasa de 25 MB")
+            seguro = re.sub(r"[^\w.\-]", "_", os.path.basename(fila.nombre))[-80:] or "fichero"
+            fila.fichero.save(f"tickets/{ticket.id}/{origen}-{i}-{seguro}", ContentFile(bytes(datos)), save=False)
+            fila.tam = len(datos)
+        except Exception as exc:
+            logger.warning("koru tickets: adjunto %s de %s no guardado: %s", fila.nombre, ticket.id, exc)
+            fila.error = str(exc)[:200]
+        fila.save()
+
+
 def archivar_canal(ticket):
     """
     Guarda la conversación y luego borra el canal.
@@ -234,14 +283,20 @@ def archivar_canal(ticket):
     # segunda falla, no se ha perdido la primera y la pasada siguiente
     # vuelve a intentarlo todo.
     campos = ["transcrita_en", "updated_at"]
+    adj_canal, adj_sala = [], []
     if ticket.discord_channel_id:
-        ticket.transcripcion = transcribir(ticket.discord_channel_id)
+        ticket.transcripcion = transcribir(ticket.discord_channel_id, adjuntos=adj_canal)
         campos.append("transcripcion")
     if ticket.sala_channel_id:
-        ticket.sala_transcripcion = transcribir(ticket.sala_channel_id)
+        ticket.sala_transcripcion = transcribir(ticket.sala_channel_id, adjuntos=adj_sala)
         campos.append("sala_transcripcion")
     ticket.transcrita_en = timezone.now()
     ticket.save(update_fields=campos)
+    # Los ficheros, también antes de borrar: con el canal se van sus enlaces.
+    if ticket.discord_channel_id:
+        guardar_adjuntos(ticket, "canal", adj_canal)
+    if ticket.sala_channel_id:
+        guardar_adjuntos(ticket, "sala", adj_sala)
 
     if ticket.sala_channel_id:
         discordapi.borrar_canal(ticket.sala_channel_id)

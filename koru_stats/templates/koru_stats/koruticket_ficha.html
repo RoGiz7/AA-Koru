@@ -15,6 +15,8 @@
 .conv .msg.piloto { background:rgba(13,202,240,.12); }
 .conv .autor { font-weight:600; font-size:.8rem; }
 .conv .hora { font-size:.7rem; opacity:.6; }
+.conv .adj { margin-top:.3rem; font-size:.8rem; }
+.conv .adj img { max-width:320px; max-height:240px; border-radius:6px; display:block; }
 </style>
 {% endblock %}
 
@@ -103,7 +105,18 @@
             {% for m in conversacion %}
               <div class="msg {% if m.del_piloto %}piloto{% endif %}">
                 <span class="autor">{{ m.autor }}</span> <span class="hora">{{ m.dia }} {{ m.hora }}</span>
-                <div style="white-space:pre-wrap">{{ m.texto }}</div>
+                {% if m.html %}<div style="white-space:pre-wrap">{{ m.html }}</div>{% endif %}
+                {% for a in m.adj %}
+                  <div class="adj">
+                    {% if a.imagen %}
+                      <a href="{{ a.url }}" target="_blank" rel="noopener"><img src="{{ a.url }}" alt="{{ a.nombre }}" loading="lazy"></a>
+                    {% elif a.url %}
+                      <a href="{{ a.url }}">📎 {{ a.nombre }}</a> <span class="text-muted">({{ a.tam }})</span>
+                    {% else %}
+                      <span class="text-muted">📎 {{ a.nombre }} — no se guardó ({{ a.error }})</span>
+                    {% endif %}
+                  </div>
+                {% endfor %}
               </div>
             {% endfor %}
           </div>
@@ -127,7 +140,18 @@
             {% for m in conversacion_sala %}
               <div class="msg {% if m.del_piloto %}piloto{% endif %}">
                 <span class="autor">{{ m.autor }}</span> <span class="hora">{{ m.dia }} {{ m.hora }}</span>
-                <div style="white-space:pre-wrap">{{ m.texto }}</div>
+                {% if m.html %}<div style="white-space:pre-wrap">{{ m.html }}</div>{% endif %}
+                {% for a in m.adj %}
+                  <div class="adj">
+                    {% if a.imagen %}
+                      <a href="{{ a.url }}" target="_blank" rel="noopener"><img src="{{ a.url }}" alt="{{ a.nombre }}" loading="lazy"></a>
+                    {% elif a.url %}
+                      <a href="{{ a.url }}">📎 {{ a.nombre }}</a> <span class="text-muted">({{ a.tam }})</span>
+                    {% else %}
+                      <span class="text-muted">📎 {{ a.nombre }} — no se guardó ({{ a.error }})</span>
+                    {% endif %}
+                  </div>
+                {% endfor %}
               </div>
             {% endfor %}
           </div>

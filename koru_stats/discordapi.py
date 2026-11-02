@@ -328,7 +328,8 @@ def leer_canal(canal_id, tope=2000):
     """
     Todos los mensajes de un canal, del más viejo al más nuevo.
 
-    Devuelve [(cuando, autor, texto, [adjuntos])]. ⚠ Discord los da del más
+    Devuelve [(cuando, autor, texto, [adjuntos])], cada adjunto un dict
+    {nombre, url, tam}. ⚠ Discord los da del más
     NUEVO al más viejo y de 100 en 100, así que hay que paginar hacia atrás con
     `before` y darle la vuelta al final. Quedarse con la primera página sería
     guardar el final de la conversación y tirar el principio.
@@ -356,7 +357,10 @@ def leer_canal(canal_id, tope=2000):
                 m.get("timestamp") or "",
                 autor.get("global_name") or autor.get("username") or "?",
                 m.get("content") or "",
-                [a.get("filename") or "" for a in (m.get("attachments") or [])],
+                # ⚠ La url es firmada y caduca: sirve para descargarlo AHORA,
+                # no para guardarla.
+                [{"nombre": a.get("filename") or "", "url": a.get("url") or "",
+                  "tam": a.get("size") or 0} for a in (m.get("attachments") or [])],
             ))
         antes = lote[-1].get("id")
         if len(lote) < 100:

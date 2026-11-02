@@ -6964,7 +6964,71 @@ def _kt_conversacion_sala(t, invitados):
     conv = _conversacion_de(t.sala_transcripcion)
     for m in conv:
         m["del_piloto"] = m["autor"].strip().lower() in nombres
+    return _kt_preparar(conv, t, "sala")
+
+
+def _kt_preparar(conv, t, origen):
+    """
+    Deja cada mensaje listo para pintar: texto con **negritas** y enlaces, y
+    sus adjuntos casados con el fichero guardado.
+
+    ★ Se casan por POSICIÓN: el k-ésimo «[ADJUNTO: …]» de la conversación es
+    el adjunto `orden=k` de ese origen. Por nombre no se puede: casi todas las
+    capturas pegadas en Discord se llaman image.png.
+    """
+    import re as _re
+
+    from django.urls import reverse
+    from django.utils.html import escape
+    from django.utils.safestring import mark_safe
+
+    ADJ = _re.compile(r"\[ADJUNTO:\s*([^\]]+)\]")
+    guardados = {a.orden: a for a in t.adjuntos.filter(origen=origen)}
+    k = 0
+    for m in conv:
+        # ⚠ En un mensaje de varias líneas la marca cae en una línea de
+        # continuación y el parser la deja en el texto: se recoge aquí.
+        nombres = list(m.get("adjuntos") or []) + [x.strip() for x in ADJ.findall(m["texto"])]
+        texto = ADJ.sub("", m["texto"]).strip()
+        h = escape(texto)
+        h = _re.sub(r"&lt;(https?://[^\s&]+)&gt;", r"\1", h)
+        h = _re.sub(r"(https?://[^\s<&]+)", r'<a href="\1" target="_blank" rel="noopener">\1</a>', h)
+        h = _re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", h)
+        m["html"] = mark_safe(h)
+        lista = []
+        for nombre in nombres:
+            a = guardados.get(k)
+            k += 1
+            ok = bool(a and a.fichero)
+            lista.append({
+                "nombre": nombre,
+                "url": reverse("koru_stats:koruticket_adjunto", args=[a.id]) if ok else "",
+                "imagen": ok and a.es_imagen,
+                "tam": (f"{a.tam / 1048576:.1f} MB" if a.tam >= 1048576 else f"{max(1, a.tam // 1024)} KB") if ok else "",
+                "error": (a.error if a else "archivado antes de que el AA guardara ficheros"),
+            })
+        m["adj"] = lista
     return conv
+
+
+@login_required
+def koruticket_adjunto(request, aid):
+    """Sirve un adjunto guardado. Solo a quien gestiona ese tipo de ticket."""
+    from django.http import FileResponse, Http404, HttpResponseForbidden
+
+    from .models import KoruTicketAdjunto
+    from . import tickets as motor
+
+    a = KoruTicketAdjunto.objects.filter(id=aid).select_related("ticket").first()
+    if not a or not a.fichero:
+        raise Http404("Adjunto no encontrado")
+    if a.ticket.tipo not in motor.tipos_que_gestiona(request.user):
+        return HttpResponseForbidden("No gestionas este tipo de ticket.")
+    # ⚠ Solo las imágenes se abren en el navegador. Lo demás (un .html, un
+    # .svg) se descarga: abierto dentro del Auth podría ejecutar código.
+    resp = FileResponse(a.fichero.open("rb"), as_attachment=not a.es_imagen, filename=a.nombre or "adjunto")
+    resp["X-Content-Type-Options"] = "nosniff"
+    return resp
 
 
 def _kt_nombre(user):
@@ -6989,7 +7053,8 @@ def koruticket_ficha(request, tid):
     return render(request, "koru_stats/koruticket_ficha.html", {
         "t": t,
         "notas": t.notas.all(),
-        "conversacion": _conversacion_de(t.transcripcion, t.main_character_name) if t.transcripcion else [],
+        "conversacion": _kt_preparar(_conversacion_de(t.transcripcion, t.main_character_name), t, "canal")
+                        if t.transcripcion else [],
         "guild_id": str(getattr(settings, "DISCORD_GUILD_ID", "") or ""),
         "estados_abiertos": [(c, n) for c, n in KoruTicket.ESTADOS if c not in KoruTicket.CERRADOS],
         "finales": [(c, n) for c, n in KoruTicket.ESTADOS if c in KoruTicket.CERRADOS],

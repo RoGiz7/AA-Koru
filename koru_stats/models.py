@@ -2467,6 +2467,59 @@ class KoruTicketInvitado(models.Model):
         return self.retirado_en is None
 
 
+def _almacen_adjuntos():
+    """
+    Dónde se guardan los adjuntos de los tickets: `KORU_ADJUNTOS_DIR` en
+    local.py, o `koru_adjuntos/` junto al proyecto.
+
+    ⚠ NO es MEDIA: no lo sirve nginx. Se descarga por una vista que mira los
+    permisos del ticket, porque son capturas de conversaciones privadas.
+    """
+    import os
+
+    from django.conf import settings
+    from django.core.files.storage import FileSystemStorage
+
+    ruta = getattr(settings, "KORU_ADJUNTOS_DIR", "") or os.path.join(
+        str(getattr(settings, "BASE_DIR", "") or os.getcwd()), "koru_adjuntos")
+    return FileSystemStorage(location=ruta)
+
+
+class KoruTicketAdjunto(models.Model):
+    """
+    Un fichero subido al canal (o a la sala) de un ticket, descargado al AA
+    ANTES de borrar el canal: el enlace de Discord caduca y con el canal se va.
+
+    `orden` es la posición del adjunto en la transcripción de su `origen`: así
+    se casa cada «[ADJUNTO: image.png]» con SU fichero aunque todos se llamen
+    image.png, que es lo que pasa con cada captura pegada.
+    """
+    ORIGENES = (("canal", "Canal del ticket"), ("sala", "Sala con implicados"))
+    IMAGENES = (".png", ".jpg", ".jpeg", ".gif", ".webp")
+
+    ticket  = models.ForeignKey(KoruTicket, on_delete=models.CASCADE, related_name="adjuntos")
+    origen  = models.CharField(max_length=10, choices=ORIGENES, default="canal")
+    orden   = models.PositiveIntegerField(default=0)
+    nombre  = models.CharField(max_length=200, blank=True, default="")
+    autor   = models.CharField(max_length=100, blank=True, default="")
+    fichero = models.FileField(storage=_almacen_adjuntos, max_length=300, blank=True)
+    tam     = models.PositiveIntegerField(default=0)
+    error   = models.CharField(max_length=200, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name        = "Tickets — adjunto"
+        verbose_name_plural = "Tickets — adjuntos"
+        ordering = ["origen", "orden"]
+
+    def __str__(self):
+        return f"{self.ticket_id} · {self.origen} · {self.nombre}"
+
+    @property
+    def es_imagen(self):
+        return (self.nombre or "").lower().endswith(self.IMAGENES)
+
+
 class TicketCheck(models.Model):
     """
     Un punto de la checklist en una auditoría de Asuntos Internos.

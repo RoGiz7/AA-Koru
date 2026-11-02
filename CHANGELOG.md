@@ -3,6 +3,25 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.58.0] — 2026-11-02
+
+### Añadido
+
+- **Los adjuntos de los tickets se guardan en el AA.** Al archivar (a las
+  24 h o con «Archivar ya») se descargan los ficheros del canal y de la sala
+  antes de borrarlos. Las imágenes se ven dentro de la conversación y el
+  resto se descarga. Solo los ve quien gestiona ese tipo de ticket: no pasan
+  por MEDIA ni por nginx. Se guardan en `KORU_ADJUNTOS_DIR` (o
+  `koru_adjuntos/` junto al proyecto). Máximo 25 MB por fichero. Migración
+  0056.
+
+### Corregido
+
+- Un mensaje que solo llevaba una captura salía como un globo vacío: ahora
+  se ve la captura, o su nombre si se archivó antes de esta versión.
+- La conversación archivada enseñaba los `**` de Discord y los enlaces entre
+  `< >`: ahora salen las negritas y los enlaces se pueden pulsar.
+
 ## [0.57.0] — 2026-11-02
 
 ### Añadido

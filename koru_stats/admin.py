@@ -861,5 +861,17 @@ class KoruTicketInvitadoInline(admin.TabularInline):
     can_delete = False
 
 
-KoruTicketAdmin.inlines = [KoruTicketNoteInline, TicketCheckInline, KoruTicketInvitadoInline]
+from .models import KoruTicketAdjunto  # noqa: E402
+
+
+class KoruTicketAdjuntoInline(admin.TabularInline):
+    model = KoruTicketAdjunto
+    extra = 0
+    readonly_fields = ("origen", "orden", "nombre", "autor", "tam", "error", "created_at")
+    exclude = ("fichero",)
+    can_delete = False
+
+
+KoruTicketAdmin.inlines = [KoruTicketNoteInline, TicketCheckInline, KoruTicketInvitadoInline,
+                           KoruTicketAdjuntoInline]
 KoruTicketAdmin.readonly_fields = KoruTicketAdmin.readonly_fields + ("sala_transcripcion",)

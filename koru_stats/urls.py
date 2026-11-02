@@ -45,6 +45,7 @@ urlpatterns = [
     path("tickets/mios/", views.koruticket_mios, name="koruticket_mios"),
     path("tickets/aa/<int:tid>/", views.koruticket_ficha, name="koruticket_ficha"),
     path("tickets/aa/<int:tid>/accion/", views.koruticket_accion, name="koruticket_accion"),
+    path("tickets/aa/adjunto/<int:aid>/", views.koruticket_adjunto, name="koruticket_adjunto"),
     path("tickets/stats/", views.tickets_stats, name="tickets_stats"),
     path("tickets/<int:ticket_id>/", views.ticket_detail, name="ticket_detail"),
     path("tickets/<int:ticket_id>/reclamar/", views.ticket_reclamar, name="ticket_reclamar"),
