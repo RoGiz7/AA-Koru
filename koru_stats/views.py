@@ -4458,6 +4458,8 @@ def _tickets_allowed(user):
         allowed.add("asuntos")
     if user.has_perm("koru_stats.tickets_it"):
         allowed.update({"it", "soporte"})
+    if user.has_perm("koru_stats.tickets_soporte"):
+        allowed.add("soporte")
     return allowed
 
 

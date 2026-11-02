@@ -77,7 +77,7 @@ TARJETAS = [
      "Soporte, IT, Directores y Asuntos Internos.",
      _perm("koru_stats.tickets_admin", "koru_stats.tickets_reclutamiento",
            "koru_stats.tickets_directores", "koru_stats.tickets_asuntos_internos",
-           "koru_stats.tickets_it")),
+           "koru_stats.tickets_it", "koru_stats.tickets_soporte")),
     (GESTION, "koru_stats:auditor_dashboard", "Auditor", "fas fa-user-shield",
      "Alertas de seguridad y fichas de piloto.",
      _perm("koru_stats.auditor_access")),

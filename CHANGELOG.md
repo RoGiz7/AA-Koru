@@ -3,6 +3,15 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.55.1] — 2026-11-02
+
+### Corregido
+
+- **Un ayudante podía abrir un ticket de IT en el AA.** `tickets_it` daba IT y
+  Soporte a la vez y lo tenía también el grupo de ayudantes. Nuevo permiso
+  `tickets_soporte` (solo Soporte) para ellos; `tickets_it` sigue viendo los
+  dos, para Rekium TI. Migración 0053.
+
 ## [0.55.0] — 2026-11-02
 
 ### Añadido

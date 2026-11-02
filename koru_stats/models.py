@@ -21,6 +21,7 @@ class General(models.Model):
             ("tickets_directores",      "Tickets: ve A Directores"),
             ("tickets_asuntos_internos","Tickets: ve Asuntos Internos"),
             ("tickets_it",              "Tickets: ve IT y Soporte"),
+            ("tickets_soporte",         "Tickets: ve solo Soporte (ayudantes)"),
             ("tickets_admin",           "Tickets: ve todos los tipos"),
             ("gift_access",   "Regalos: ve lo suyo (Mi aportación)"),
             ("gift_manage",   "Regalos: gestiona aportaciones, sorteos y entregas"),

@@ -31,6 +31,8 @@ logger = logging.getLogger(__name__)
 PERMISO_TIPOS = {
     "koru_stats.tickets_directores": {"directores"},
     "koru_stats.tickets_it": {"it", "soporte"},
+    # ★ Los ayudantes atienden Soporte y nada más: IT tiene las llaves de todo.
+    "koru_stats.tickets_soporte": {"soporte"},
 }
 
 PREFIJO_NUMERO = {"directores": "D", "it": "IT", "soporte": "S"}
