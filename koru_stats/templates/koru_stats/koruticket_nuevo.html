@@ -1,0 +1,82 @@
+{% extends 'allianceauth/base-bs5.html' %}
+{% load i18n %}
+
+{% block title %}Abrir un ticket — Rekium{% endblock %}
+
+{% block page_title %}
+    {% include "framework/header/page-header.html" with title="Abrir un ticket" subtitle="Rekium" %}
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+  <div class="row justify-content-center"><div class="col-lg-8">
+
+  {% if not cfg %}
+    {# ---------------- Elegir a quién va ---------------- #}
+    <p class="text-muted">¿A quién quieres escribir?</p>
+    <div class="row g-3">
+      {% for o in opciones %}
+      <div class="col-md-4">
+        <div class="card h-100 {% if not o.puede %}opacity-50{% endif %}"><div class="card-body d-flex flex-column">
+          <h5 class="card-title">{{ o.cfg.titulo }}</h5>
+          <p class="small text-muted flex-grow-1">{{ o.cfg.descripcion }}</p>
+          {% if o.puede %}
+            <a class="btn btn-primary" href="{% url 'koru_stats:koruticket_nuevo_tipo' o.cfg.tipo %}">Abrir ticket</a>
+          {% else %}
+            <div class="small text-warning">{{ o.motivo }}</div>
+          {% endif %}
+        </div></div>
+      </div>
+      {% empty %}
+        <div class="alert alert-secondary">Ahora mismo no hay tipos de ticket abiertos desde el Auth.</div>
+      {% endfor %}
+    </div>
+    <p class="mt-3 small"><a href="{% url 'koru_stats:koruticket_mios' %}">Ver mis tickets</a></p>
+
+  {% else %}
+    {# ---------------- El formulario ---------------- #}
+    <div class="card"><div class="card-body">
+      <h4 class="mb-1">{{ cfg.titulo }}</h4>
+      {% if cfg.descripcion %}<p class="text-muted">{{ cfg.descripcion }}</p>{% endif %}
+
+      {% if not puede %}
+        <div class="alert alert-warning mb-0">{{ motivo }}</div>
+      {% else %}
+        {% if not tiene_discord %}
+          <div class="alert alert-warning small">
+            No tienes Discord vinculado en el Auth: el ticket se abrirá igual, pero <strong>no podremos meterte en su canal</strong>
+            y solo verás las respuestas aquí. Vincúlalo en <a href="/services/">Servicios</a> si puedes.
+          </div>
+        {% endif %}
+        <form method="post">{% csrf_token %}
+          {% if cfg.categorias %}
+          <div class="mb-3">
+            <label class="form-label">Tipo</label>
+            <select name="categoria" class="form-select" required>
+              <option value="">— elige —</option>
+              {% for c in cfg.categorias %}<option value="{{ c }}" {% if c == datos.categoria %}selected{% endif %}>{{ c }}</option>{% endfor %}
+            </select>
+          </div>
+          {% endif %}
+          <div class="mb-3">
+            <label class="form-label">Asunto</label>
+            <input type="text" name="asunto" class="form-control" maxlength="200" required
+                   value="{{ datos.asunto }}" placeholder="En una línea, de qué va">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Cuéntanos</label>
+            <textarea name="descripcion" class="form-control" rows="6" required
+                      placeholder="Todo lo que nos ayude a entenderlo a la primera">{{ datos.descripcion }}</textarea>
+          </div>
+          <div class="d-flex gap-2">
+            <button class="btn btn-primary">Abrir ticket</button>
+            <a class="btn btn-outline-secondary" href="{% url 'koru_stats:koruticket_nuevo' %}">Volver</a>
+          </div>
+        </form>
+      {% endif %}
+    </div></div>
+  {% endif %}
+
+  </div></div>
+</div>
+{% endblock %}

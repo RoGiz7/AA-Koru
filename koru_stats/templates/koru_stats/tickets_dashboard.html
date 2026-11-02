@@ -77,6 +77,30 @@
     <div class="col-auto ms-auto text-muted small align-self-center">{{ total }} resultado{{ total|pluralize }}</div>
   </form>
 
+  {# ★ Tickets abiertos desde el AA (0.55): la cola de trabajo, encima del archivo #}
+  {% if nuevos %}
+  <div class="card mb-3 border-info"><div class="card-body">
+    <h6 class="card-title"><i class="fas fa-inbox me-1"></i>Tickets del Auth</h6>
+    <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
+      <thead><tr><th>Nº</th><th>Tipo</th><th>Piloto</th><th>Asunto</th><th>Abierto</th><th>Estado</th><th>Lo lleva</th><th></th></tr></thead>
+      <tbody>
+      {% for k in nuevos %}
+        <tr{% if not k.abierto %} class="opacity-50"{% endif %}>
+          <td class="fw-bold">{{ k.numero }}</td>
+          <td>{{ k.get_tipo_display }}{% if k.categoria %} <span class="badge bg-secondary">{{ k.categoria }}</span>{% endif %}</td>
+          <td>{{ k.main_character_name }}</td>
+          <td>{{ k.asunto|truncatechars:60 }}{% if k.discord_error %} <span class="badge bg-warning text-dark">⚠ sin canal</span>{% endif %}</td>
+          <td class="small text-muted">{{ k.created_at|date:"d/m H:i" }}</td>
+          <td><span class="badge {% if k.abierto %}bg-info text-dark{% else %}bg-secondary{% endif %}">{{ k.get_estado_display }}</span></td>
+          <td class="small">{{ k.claim_por|default:"—" }}</td>
+          <td><a class="btn btn-sm btn-outline-info py-0" href="{% url 'koru_stats:koruticket_ficha' k.id %}">Abrir</a></td>
+        </tr>
+      {% endfor %}
+      </tbody></table></div>
+  </div></div>
+  <h6 class="text-muted small mb-2">Archivo de Baserow</h6>
+  {% endif %}
+
   <!-- Tabla -->
   <div class="card">
     <div class="card-body p-0">

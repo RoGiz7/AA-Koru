@@ -121,6 +121,33 @@ def publicar(canal_id, contenido):
     return ultimo
 
 
+def publicar_botones(canal_id, contenido, botones):
+    """
+    Un mensaje con botones-ENLACE: [(etiqueta, url), …].
+
+    ★ Un botón-enlace no lo atiende el bot: Discord abre la URL y ya está. No
+    hay cog que registrar, ni vista persistente que se pierda al reiniciar, ni
+    nada que falle si el bot se cae. Quién puede hacer qué lo decide el AA
+    cuando la página se abre.
+    """
+    filas, fila = [], []
+    for etiqueta, url in botones:
+        fila.append({"type": 2, "style": 5, "label": str(etiqueta)[:80], "url": url})
+        if len(fila) == 5:          # Discord: máximo 5 botones por fila
+            filas.append({"type": 1, "components": fila})
+            fila = []
+    if fila:
+        filas.append({"type": 1, "components": fila})
+    r = requests.post(f"{API}/channels/{canal_id}/messages",
+                      json={"content": contenido, "components": filas[:5]},
+                      headers=_cabeceras(), timeout=ESPERA)
+    if r.status_code >= 400:
+        logger.error("koru discord: panel en %s devolvio %s — %s",
+                     canal_id, r.status_code, r.text[:300])
+        raise RuntimeError(f"Discord respondió {r.status_code} al publicar el panel")
+    return r.json().get("id")
+
+
 def listar_roles():
     """
     Los roles del servidor, de mayor a menor posición: [(id, nombre), …].

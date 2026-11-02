@@ -1,0 +1,48 @@
+{% extends 'allianceauth/base-bs5.html' %}
+{% load i18n %}
+
+{% block title %}Mis tickets — Rekium{% endblock %}
+
+{% block page_title %}
+    {% include "framework/header/page-header.html" with title="Mis tickets" subtitle="Rekium" %}
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+  <div class="row justify-content-center"><div class="col-lg-9">
+
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <p class="text-muted mb-0">Los tickets que has abierto y cómo van. La conversación sigue en su canal de Discord.</p>
+      <a class="btn btn-primary btn-sm" href="{% url 'koru_stats:koruticket_nuevo' %}"><i class="fas fa-plus me-1"></i>Abrir ticket</a>
+    </div>
+
+    <div class="card"><div class="card-body p-0">
+      <table class="table table-sm align-middle mb-0">
+        <thead><tr><th>Nº</th><th>A</th><th>Asunto</th><th>Abierto</th><th>Estado</th><th></th></tr></thead>
+        <tbody>
+        {% for t in tickets %}
+          <tr>
+            <td class="fw-bold">{{ t.numero }}</td>
+            <td>{{ t.get_tipo_display }}</td>
+            <td>{{ t.asunto }}{% if t.categoria %} <span class="badge bg-secondary">{{ t.categoria }}</span>{% endif %}</td>
+            <td class="small text-muted">{{ t.created_at|date:"d/m/Y H:i" }}</td>
+            <td>
+              {% if t.abierto %}<span class="badge bg-info text-dark">{{ t.get_estado_display }}</span>
+              {% else %}<span class="badge bg-secondary">{{ t.get_estado_display }}</span>{% endif %}
+            </td>
+            <td>
+              {% if t.discord_channel_id and guild_id %}
+                <a class="btn btn-sm btn-outline-info py-0" href="https://discord.com/channels/{{ guild_id }}/{{ t.discord_channel_id }}" target="_blank" rel="noopener">Ir al canal</a>
+              {% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="text-center text-muted py-4">Todavía no has abierto ningún ticket.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div></div>
+
+  </div></div>
+</div>
+{% endblock %}

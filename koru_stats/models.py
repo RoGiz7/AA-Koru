@@ -2276,3 +2276,144 @@ class RecruitConfig(models.Model):
 
     def __str__(self):
         return "Reclutamiento" + ("" if self.activo else " (apagado)")
+
+
+# ---------------------------------------------------------------------------
+# Tickets del AA (0.55): Directores, IT y Soporte. Ver `tickets.py`.
+# ---------------------------------------------------------------------------
+
+TICKET_TIPOS = (
+    ("directores", "A Directores"),
+    ("it",         "A IT"),
+    ("soporte",    "A Soporte"),
+)
+
+
+class TicketTipoConfig(models.Model):
+    """
+    Cómo se comporta cada tipo de ticket. Lo que en n8n eran workflows
+    distintos, aquí es una fila: un motor, tres configuraciones.
+
+    ⚠ NACE APAGADO. Cada tipo se enciende cuando se apague su workflow en n8n;
+    si los dos estuvieran vivos a la vez, un piloto podría abrir el mismo
+    problema por dos sitios y el staff atendería uno sin saber del otro.
+    """
+    tipo   = models.CharField(max_length=20, choices=TICKET_TIPOS, unique=True)
+    activo = models.BooleanField(default=False,
+                                 help_text="Apagado: el formulario no acepta tickets de este tipo")
+    orden  = models.PositiveSmallIntegerField(default=0, help_text="Orden en la pantalla de elegir")
+    titulo = models.CharField(max_length=60)
+    descripcion = models.CharField(max_length=250, blank=True, default="",
+                                   help_text="Una línea para que el piloto sepa si es aquí")
+    solo_miembros = models.BooleanField(
+        default=False,
+        help_text="Solo quien tiene acceso a Mi Dashboard (miembros y Academy) puede abrirlo")
+    categorias = models.JSONField(
+        default=list, blank=True,
+        help_text='Opciones del desplegable «Tipo». Ej: ["Consulta", "Queja"]. Vacío = sin desplegable')
+    max_abiertos = models.PositiveSmallIntegerField(
+        default=2, help_text="Tickets abiertos a la vez por persona en este tipo. Frena el spam")
+
+    categoria_id  = models.CharField(max_length=30, blank=True, default="",
+                                     help_text="Categoría de Discord donde nacen los canales")
+    prefijo_canal = models.CharField(max_length=30, default="ticket-")
+    roles_ver     = models.JSONField(default=list, blank=True,
+                                     help_text='Roles de Discord que ven el canal. Ej: ["954100891844231238"]')
+    rol_avisar    = models.CharField(max_length=30, blank=True, default="",
+                                     help_text="Rol al que mencionar al abrir. Vacío = nadie")
+    avisar_en     = models.CharField(max_length=30, blank=True, default="",
+                                     help_text="Canal donde avisar de cada ticket nuevo. Opcional")
+    invitar_piloto = models.BooleanField(default=True,
+                                         help_text="Meter al piloto en el canal de su ticket")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name        = "Tickets — configuración por tipo"
+        verbose_name_plural = "Tickets — configuración por tipo"
+        ordering = ["orden", "tipo"]
+
+    def __str__(self):
+        return self.titulo + ("" if self.activo else " (apagado)")
+
+
+class KoruTicket(models.Model):
+    """Un ticket abierto desde el AA. El espejo de Baserow (`Ticket`) es el archivo."""
+
+    ABIERTO   = "abierto"
+    EN_CURSO  = "en_curso"
+    ESPERANDO = "esperando"
+    RESUELTO  = "resuelto"
+    CERRADO   = "cerrado"
+    ESTADOS = (
+        (ABIERTO,   "Abierto"),
+        (EN_CURSO,  "En curso"),
+        (ESPERANDO, "Esperando al piloto"),
+        (RESUELTO,  "Resuelto"),
+        (CERRADO,   "Cerrado sin más"),
+    )
+    CERRADOS = (RESUELTO, CERRADO)
+
+    tipo = models.CharField(max_length=20, choices=TICKET_TIPOS, db_index=True)
+
+    # ⚠ SET_NULL: borrar el usuario no se lleva el ticket. Quién era vive en
+    # las columnas de texto de abajo, congeladas al abrir.
+    user = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL,
+                             related_name="koru_tickets")
+    main_character_id   = models.BigIntegerField(db_index=True)
+    main_character_name = models.CharField(max_length=100)
+    discord_uid = models.CharField(max_length=30, blank=True, default="")
+
+    categoria   = models.CharField(max_length=60, blank=True, default="")
+    asunto      = models.CharField(max_length=200)
+    descripcion = models.TextField(blank=True, default="")
+
+    estado = models.CharField(max_length=20, choices=ESTADOS, default=ABIERTO, db_index=True)
+
+    claim_por = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    claim_en  = models.DateTimeField(null=True, blank=True)
+    cerrado_por  = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    fecha_cierre = models.DateTimeField(null=True, blank=True, db_index=True)
+    resolucion   = models.TextField(blank=True, default="", help_text="Qué se hizo. Obligatorio al cerrar")
+
+    discord_channel_id = models.CharField(max_length=30, blank=True, default="")
+    discord_error      = models.CharField(max_length=250, blank=True, default="")
+    transcripcion = models.TextField(blank=True, default="")
+    transcrita_en = models.DateTimeField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name        = "Tickets — ticket del AA"
+        verbose_name_plural = "Tickets — tickets del AA"
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["tipo", "estado"], name="koru_kt_tipo_estado")]
+
+    def __str__(self):
+        return f"{self.numero} {self.main_character_name}: {self.asunto[:40]}"
+
+    @property
+    def numero(self):
+        from .tickets import numero
+        return numero(self)
+
+    @property
+    def abierto(self):
+        return self.estado not in self.CERRADOS
+
+
+class KoruTicketNote(models.Model):
+    """Nota del staff. No se edita ni se borra, y el piloto no la ve."""
+    ticket = models.ForeignKey(KoruTicket, on_delete=models.CASCADE, related_name="notas")
+    autor = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    autor_nombre = models.CharField(max_length=100, blank=True, default="")
+    texto = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name        = "Tickets — nota"
+        verbose_name_plural = "Tickets — notas"
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"{self.autor_nombre}: {self.texto[:40]}"

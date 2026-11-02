@@ -3,6 +3,34 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.55.0] — 2026-11-02
+
+### Añadido
+
+- **Tickets dentro del AA: Directores, IT y Soporte** (Plan C, fase F3).
+  Dirección dio el visto bueno el 2026-11-02.
+  - **El ticket nace en la web.** El botón de Discord es un enlace al Auth
+    (`/koru/tickets/nuevo/`): el AA sabe quién abre cada ticket antes de
+    crearlo, y quien no tiene permiso no abre nada por mucho que pulse.
+  - **Directores, solo miembros**; IT y Soporte, cualquiera con cuenta (un
+    invitado que no consigue registrarse tiene que poder pedir ayuda).
+  - **Freno al spam**: dos abiertos a la vez por persona y tipo, configurable.
+  - **Canal privado en segundo plano** con la ficha y mención al rol; si
+    Discord falla, el ticket ya existe y sale «⚠ sin canal».
+  - **Ficha del staff** (`/koru/tickets/aa/<id>/`): coger, cambiar estado
+    (con «Esperando al piloto», que le menciona), notas que no se editan ni
+    ve el piloto, cerrar con resolución obligatoria y reabrir mientras viva el
+    canal. Cada paso deja una línea en el canal.
+  - **Cerrar no borra**: a las 24 h se guarda la conversación y luego se borra
+    el canal (colgado de `recruit_archivar_vencidas`, que ya corre cada hora).
+  - **Mis tickets** (`/koru/tickets/mios/`): el piloto ve los suyos y su
+    estado, nunca las notas.
+  - La lista de tickets del staff enseña los nuevos encima del archivo de
+    Baserow, con los mismos permisos de siempre.
+  - Comando `koru_panel_tickets <canal>` para publicar el panel de botones.
+  - **Un motor y tres configuraciones** (`TicketTipoConfig`), que nacen
+    **apagadas**: cada tipo se enciende cuando se apague su workflow en n8n.
+
 ## [0.54.1] — 2026-10-29
 
 ### Corregido

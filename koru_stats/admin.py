@@ -812,3 +812,31 @@ class AuditorExclusionAdmin(admin.ModelAdmin):
     list_display  = ("main_character_id", "tipo", "etiqueta", "motivo", "creado_por", "created_at")
     list_filter   = ("tipo",)
     search_fields = ("etiqueta", "motivo", "main_character_id", "objetivo_id")
+
+
+# ---------------------------------------------------------------------------
+# Tickets del AA (0.55)
+# ---------------------------------------------------------------------------
+from .models import TicketTipoConfig, KoruTicket, KoruTicketNote  # noqa: E402
+
+
+@admin.register(TicketTipoConfig)
+class TicketTipoConfigAdmin(admin.ModelAdmin):
+    list_display = ("titulo", "tipo", "activo", "solo_miembros", "max_abiertos", "categoria_id")
+    list_editable = ("activo",)
+
+
+class KoruTicketNoteInline(admin.TabularInline):
+    model = KoruTicketNote
+    extra = 0
+    readonly_fields = ("autor_nombre", "texto", "created_at")
+    can_delete = False
+
+
+@admin.register(KoruTicket)
+class KoruTicketAdmin(admin.ModelAdmin):
+    list_display  = ("id", "tipo", "main_character_name", "asunto", "estado", "created_at", "discord_error")
+    list_filter   = ("tipo", "estado")
+    search_fields = ("main_character_name", "asunto")
+    readonly_fields = ("transcripcion", "transcrita_en", "created_at", "updated_at")
+    inlines = [KoruTicketNoteInline]

@@ -3901,6 +3901,13 @@ def recruit_archivar_vencidas():
 
     if hechas or fallos:
         logger.info("koru recruit_archivar: %s archivadas, %s con fallo", hechas, fallos)
+
+    # Los tickets del AA siguen la misma regla de las 24 h. Se cuelgan de esta
+    # tarea, que ya corre cada hora, para no tener que dar de alta otra.
+    try:
+        tickets_archivar_vencidos()
+    except Exception as exc:
+        logger.exception("koru tickets_archivar: %s", exc)
     return f"archivadas {hechas}, fallos {fallos}"
 
 
@@ -3994,3 +4001,47 @@ def recruit_detectar_entradas():
                     sol.main_character_name, corps[corp])
 
     return f"cerradas {cerradas}"
+
+
+# ---------------------------------------------------------------------------
+# Tickets del AA (0.55)
+# ---------------------------------------------------------------------------
+
+@shared_task
+def tickets_preparar(ticket_id):
+    """Crea el canal del ticket en segundo plano. Si falla, el ticket ya existe."""
+    from .models import KoruTicket
+    from . import tickets as motor
+
+    t = KoruTicket.objects.filter(id=ticket_id).first()
+    if not t:
+        return "sin ticket"
+    try:
+        t.discord_channel_id = motor.crear_canal(t)
+        t.discord_error = ""
+    except Exception as exc:
+        t.discord_error = str(exc)[:240]
+        logger.error("koru tickets_preparar: %s: %s", ticket_id, exc)
+    t.save(update_fields=["discord_channel_id", "discord_error", "updated_at"])
+    return f"ticket {ticket_id}: canal={t.discord_channel_id or 'no'}"
+
+
+def tickets_archivar_vencidos():
+    """Guarda la conversación y borra el canal de los tickets cerrados hace más de 24 h."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from .models import KoruTicket
+    from . import tickets as motor
+
+    limite = timezone.now() - timedelta(hours=HORAS_DE_GRACIA)
+    hechos = 0
+    for t in (KoruTicket.objects.filter(estado__in=KoruTicket.CERRADOS, fecha_cierre__lt=limite)
+              .exclude(discord_channel_id="")):
+        try:
+            motor.archivar_canal(t)
+            hechos += 1
+        except Exception as exc:
+            logger.error("koru tickets_archivar: ticket %s: %s", t.id, exc)
+    return hechos

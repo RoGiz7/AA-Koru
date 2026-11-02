@@ -4490,10 +4490,19 @@ def tickets_dashboard(request):
         "id", "tipo", "numero", "discord_ticket", "main_character_name", "main_character_id",
         "estado", "tipo_detalle", "asunto", "claim_name", "fecha", "alerta_peligro", "visible_piloto"))
 
+    # ★ Los tickets abiertos desde el AA, encima del archivo de Baserow. Los
+    # abiertos primero: es la cola de trabajo.
+    from .models import KoruTicket
+    from . import tickets as motor
+    nuevos = list(KoruTicket.objects.filter(tipo__in=motor.tipos_que_gestiona(request.user))
+                  .select_related("claim_por").order_by("-created_at")[:200])
+    nuevos.sort(key=lambda k: (not k.abierto, -k.created_at.timestamp()))
+    nuevos = nuevos[:40]
+
     context = {
         "allowed": sorted(allowed), "por_tipo": por_tipo, "estados": estados,
         "tipo_sel": tipo_sel, "estado_sel": estado_sel, "q": q,
-        "tickets": tickets, "total": total,
+        "tickets": tickets, "total": total, "nuevos": nuevos,
     }
     return render(request, "koru_stats/tickets_dashboard.html", context)
 
@@ -6815,3 +6824,185 @@ def gift_ruleta(request, pk):
         "tiradas": tiradas,
         "n_tiradas": len(tiradas),
     })
+
+
+# ---------------------------------------------------------------------------
+# Tickets del AA (0.55): abrir, mis tickets, ficha del staff
+# ---------------------------------------------------------------------------
+
+@login_required
+def koruticket_nuevo(request, tipo=None):
+    """Elegir a quién escribir y abrir el ticket. Aquí apuntan los botones de Discord."""
+    from django.contrib import messages
+    from django.db import transaction
+    from django.http import Http404
+    from django.shortcuts import redirect
+    from django.urls import reverse
+
+    from .models import KoruTicket, TicketTipoConfig
+    from . import tickets as motor
+    from .tasks import tickets_preparar
+
+    if tipo is None:
+        opciones = []
+        for cfg in TicketTipoConfig.objects.filter(activo=True):
+            ok, motivo = motor.puede_abrir(request.user, cfg.tipo)
+            opciones.append({"cfg": cfg, "puede": ok, "motivo": motivo})
+        return render(request, "koru_stats/koruticket_nuevo.html", {"opciones": opciones, "cfg": None})
+
+    cfg = motor.config(tipo)
+    if not cfg:
+        raise Http404("Ese tipo de ticket no existe")
+    ok, motivo = motor.puede_abrir(request.user, tipo)
+    datos = {"categoria": "", "asunto": "", "descripcion": ""}
+
+    if request.method == "POST" and ok:
+        datos = {k: (request.POST.get(k) or "").strip() for k in datos}
+        if cfg.categorias and datos["categoria"] not in cfg.categorias:
+            messages.error(request, "Elige el tipo de la lista.")
+        elif not datos["asunto"] or not datos["descripcion"]:
+            messages.error(request, "Hace falta el asunto y contarnos qué pasa.")
+        else:
+            mid, mname = motor.main_de(request.user)
+            nuevo = KoruTicket.objects.create(
+                tipo=tipo, user=request.user,
+                main_character_id=mid, main_character_name=mname,
+                discord_uid=motor.uid_discord(request.user),
+                categoria=datos["categoria"][:60], asunto=datos["asunto"][:200],
+                descripcion=datos["descripcion"][:5000])
+            # Después del commit: si la tarea corriera antes, no encontraría el ticket.
+            transaction.on_commit(lambda: tickets_preparar.delay(nuevo.id))
+            messages.success(request, f"Ticket {nuevo.numero} abierto. En unos segundos tendrás su canal en Discord.")
+            return redirect(reverse("koru_stats:koruticket_mios"))
+
+    return render(request, "koru_stats/koruticket_nuevo.html", {
+        "cfg": cfg, "puede": ok, "motivo": motivo, "datos": datos,
+        "tiene_discord": bool(motor.uid_discord(request.user)),
+    })
+
+
+@login_required
+def koruticket_mios(request):
+    """Los tickets del propio piloto. Sin notas internas: no llegan ni a la consulta."""
+    from django.conf import settings
+
+    from .models import KoruTicket
+
+    tickets = (KoruTicket.objects.filter(user=request.user)
+               .only("id", "tipo", "categoria", "asunto", "estado", "created_at", "discord_channel_id")
+               .order_by("-created_at")[:100])
+    return render(request, "koru_stats/koruticket_mios.html", {
+        "tickets": tickets, "guild_id": str(getattr(settings, "DISCORD_GUILD_ID", "") or ""),
+    })
+
+
+def _kt_nombre(user):
+    return _quien_main(user) if user else "—"
+
+
+@login_required
+def koruticket_ficha(request, tid):
+    from django.conf import settings
+    from django.http import Http404, HttpResponseForbidden
+
+    from .models import KoruTicket
+    from . import tickets as motor
+
+    t = KoruTicket.objects.filter(id=tid).select_related("claim_por", "cerrado_por").first()
+    if not t:
+        raise Http404("Ticket no encontrado")
+    if t.tipo not in motor.tipos_que_gestiona(request.user):
+        return HttpResponseForbidden("No gestionas este tipo de ticket.")
+
+    return render(request, "koru_stats/koruticket_ficha.html", {
+        "t": t,
+        "notas": t.notas.all(),
+        "conversacion": _conversacion_de(t.transcripcion, t.main_character_name) if t.transcripcion else [],
+        "guild_id": str(getattr(settings, "DISCORD_GUILD_ID", "") or ""),
+        "estados_abiertos": [(c, n) for c, n in KoruTicket.ESTADOS if c not in KoruTicket.CERRADOS],
+        "finales": [(c, n) for c, n in KoruTicket.ESTADOS if c in KoruTicket.CERRADOS],
+        "claim_nombre": _kt_nombre(t.claim_por),
+        "cerrado_nombre": _kt_nombre(t.cerrado_por),
+    })
+
+
+@login_required
+def koruticket_accion(request, tid):
+    """Coger, cambiar estado, nota, cerrar y reabrir. Todo deja rastro en el canal."""
+    from django.contrib import messages
+    from django.http import Http404, HttpResponseForbidden
+    from django.shortcuts import redirect
+    from django.urls import reverse
+    from django.utils import timezone
+
+    from .models import KoruTicket, KoruTicketNote
+    from . import tickets as motor
+
+    t = KoruTicket.objects.filter(id=tid).first()
+    if not t:
+        raise Http404("Ticket no encontrado")
+    if t.tipo not in motor.tipos_que_gestiona(request.user):
+        return HttpResponseForbidden("No gestionas este tipo de ticket.")
+    destino = reverse("koru_stats:koruticket_ficha", args=[t.id])
+    if request.method != "POST":
+        return redirect(destino)
+
+    accion = request.POST.get("accion") or ""
+    quien = _quien_main(request.user)
+    piloto = f"<@{t.discord_uid}> " if t.discord_uid else ""
+
+    if accion == "coger" and t.abierto:
+        t.claim_por, t.claim_en = request.user, timezone.now()
+        if t.estado == KoruTicket.ABIERTO:
+            t.estado = KoruTicket.EN_CURSO
+        t.save(update_fields=["claim_por", "claim_en", "estado", "updated_at"])
+        motor.avisar(t, f"✋ **{quien}** se encarga de este ticket.")
+        messages.success(request, "Lo llevas tú.")
+
+    elif accion == "estado" and t.abierto:
+        nuevo = request.POST.get("estado") or ""
+        validos = [c for c, _ in KoruTicket.ESTADOS if c not in KoruTicket.CERRADOS]
+        if nuevo in validos and nuevo != t.estado:
+            t.estado = nuevo
+            t.save(update_fields=["estado", "updated_at"])
+            if nuevo == KoruTicket.ESPERANDO:
+                motor.avisar(t, f"{piloto}⏳ Te toca responder: el staff espera tu respuesta aquí.")
+            else:
+                motor.avisar(t, f"🔄 Estado: **{t.get_estado_display()}** ({quien}).")
+            messages.success(request, "Estado cambiado.")
+
+    elif accion == "nota":
+        texto = (request.POST.get("texto") or "").strip()
+        if texto:
+            KoruTicketNote.objects.create(ticket=t, autor=request.user, autor_nombre=quien, texto=texto[:5000])
+            messages.success(request, "Nota añadida.")
+
+    elif accion == "cerrar" and t.abierto:
+        final = request.POST.get("final") or ""
+        resolucion = (request.POST.get("resolucion") or "").strip()
+        if final not in KoruTicket.CERRADOS:
+            messages.error(request, "Elige cómo se cierra.")
+        elif len(resolucion) < 5:
+            messages.error(request, "Cuenta en una línea qué se hizo: dentro de un mes alguien lo preguntará.")
+        else:
+            t.estado, t.resolucion = final, resolucion
+            t.cerrado_por, t.fecha_cierre = request.user, timezone.now()
+            t.save(update_fields=["estado", "resolucion", "cerrado_por", "fecha_cierre", "updated_at"])
+            motor.avisar(t, f"{piloto}✅ Ticket cerrado por **{quien}**. Este canal se borrará en 24 horas; "
+                            "la conversación queda guardada.")
+            messages.success(request, "Cerrado. El canal se archiva en 24 h.")
+
+    elif accion == "reabrir" and not t.abierto:
+        if not t.discord_channel_id:
+            messages.error(request, "Su canal ya se archivó: abre un ticket nuevo.")
+        else:
+            # ⚠ El cierre no se borra en silencio: queda escrito cómo estaba.
+            KoruTicketNote.objects.create(
+                ticket=t, autor=request.user, autor_nombre=quien,
+                texto=f"Reabierto. Estaba «{t.get_estado_display()}»: {t.resolucion}")
+            t.estado, t.cerrado_por, t.fecha_cierre = KoruTicket.EN_CURSO, None, None
+            t.save(update_fields=["estado", "cerrado_por", "fecha_cierre", "updated_at"])
+            motor.avisar(t, f"↩️ Ticket reabierto por **{quien}**.")
+            messages.success(request, "Reabierto.")
+
+    return redirect(destino)
