@@ -3,6 +3,24 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.57.0] — 2026-11-02
+
+### Añadido
+
+- **Hablar con implicados** en los tickets de Directores y de Asuntos
+  Internos. Desde la ficha, el staff invita a uno o varios pilotos (por
+  nombre de cualquier personaje del Auth, o por id de Discord si es alguien
+  de fuera) a una **sala aparte** en Discord.
+  - Es un canal distinto al del ticket a propósito: Discord enseña todo el
+    historial a quien entra, y en el canal del ticket están el motivo, la
+    queja o la deliberación del staff. La sala empieza vacía.
+  - El invitado **no ve el ticket en el Auth** (ni en «Mis tickets» ni por
+    enlace) y se le puede sacar cuando se quiera. Queda quién le metió, quién
+    le sacó y cuándo.
+  - En una auditoría hay un botón directo para invitar al auditado.
+  - La sala se cierra y se archiva junto con el ticket; su conversación se
+    guarda en la ficha, aparte de la del staff. Migración 0055.
+
 ## [0.56.0] — 2026-11-02
 
 ### Añadido

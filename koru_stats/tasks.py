@@ -4037,8 +4037,10 @@ def tickets_archivar_vencidos():
 
     limite = timezone.now() - timedelta(hours=HORAS_DE_GRACIA)
     hechos = 0
+    # ⚠ exclude con dos campos = «los dos vacíos»: un ticket sin canal pero
+    # con sala también se archiva.
     for t in (KoruTicket.objects.filter(estado__in=KoruTicket.CERRADOS, fecha_cierre__lt=limite)
-              .exclude(discord_channel_id="")):
+              .exclude(discord_channel_id="", sala_channel_id="")):
         try:
             motor.archivar_canal(t)
             hechos += 1

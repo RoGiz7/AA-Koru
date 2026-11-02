@@ -113,6 +113,29 @@
           <p class="text-muted small mb-0">Sin conversación guardada.</p>
         {% endif %}
       </div></div>
+
+      {% if t.sala_channel_id or conversacion_sala %}
+      <div class="card mb-3 border-info"><div class="card-body">
+        <h6 class="card-title d-flex align-items-center gap-2">
+          <i class="fas fa-comments"></i> Sala con implicados
+          {% if t.sala_channel_id and guild_id %}
+            <a class="btn btn-sm btn-outline-info py-0 ms-auto" href="https://discord.com/channels/{{ guild_id }}/{{ t.sala_channel_id }}" target="_blank" rel="noopener">Ir a la sala</a>
+          {% endif %}
+        </h6>
+        {% if conversacion_sala %}
+          <div class="conv">
+            {% for m in conversacion_sala %}
+              <div class="msg {% if m.del_piloto %}piloto{% endif %}">
+                <span class="autor">{{ m.autor }}</span> <span class="hora">{{ m.dia }} {{ m.hora }}</span>
+                <div style="white-space:pre-wrap">{{ m.texto }}</div>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p class="text-muted small mb-0">La sala está viva en Discord. Se guarda aquí junto con el canal del ticket.</p>
+        {% endif %}
+      </div></div>
+      {% endif %}
     </div>
 
     {# ---------------- Derecha: acciones + notas ---------------- #}
@@ -182,6 +205,44 @@
           <button class="btn btn-sm btn-outline-light" name="accion" value="nota">Añadir nota</button>
         </form>
       </div></div>
+
+      {% if sala_disponible %}
+      <div class="card mb-3"><div class="card-body">
+        <h6 class="card-title"><i class="fas fa-user-plus me-1"></i>Hablar con implicados</h6>
+        <p class="small text-muted mb-2">Abre una sala aparte en Discord con el staff y los pilotos que añadas.
+          No ven el canal del ticket, ni su historial, ni este ticket en el Auth.</p>
+        {% for i in invitados %}
+          <div class="d-flex align-items-center gap-2 border-bottom py-1 small {% if not i.activo %}text-muted{% endif %}">
+            <div class="flex-grow-1">
+              <strong>{{ i.nombre }}</strong>
+              <div class="text-muted">por {{ i.invitado_por_nombre }} · {{ i.invitado_en|date:"d/m H:i" }} UTC
+                {% if not i.activo %} · salió {{ i.retirado_en|date:"d/m H:i" }} ({{ i.retirado_por_nombre }}){% endif %}</div>
+            </div>
+            {% if i.activo and t.abierto %}
+              <form method="post" action="{% url 'koru_stats:koruticket_accion' t.id %}">{% csrf_token %}
+                <input type="hidden" name="invitado" value="{{ i.id }}">
+                <button class="btn btn-sm btn-outline-warning py-0" name="accion" value="retirar">Sacar</button>
+              </form>
+            {% endif %}
+          </div>
+        {% endfor %}
+        {% if t.abierto %}
+          {% if t.tipo == "asuntos" and not auditado_dentro %}
+            <form method="post" action="{% url 'koru_stats:koruticket_accion' t.id %}" class="mt-2">{% csrf_token %}
+              <input type="hidden" name="piloto" value="{{ t.main_character_id }}">
+              <button class="btn btn-sm btn-outline-info w-100" name="accion" value="invitar">Invitar a {{ t.main_character_name }}</button>
+            </form>
+          {% endif %}
+          <form method="post" action="{% url 'koru_stats:koruticket_accion' t.id %}" class="mt-2">{% csrf_token %}
+            <div class="input-group input-group-sm">
+              <input type="text" name="piloto" class="form-control" required placeholder="Personaje o id de Discord">
+              <button class="btn btn-outline-info" name="accion" value="invitar">Invitar</button>
+            </div>
+            <div class="small text-muted mt-1">Vale cualquier personaje del Auth (main o alt). Para alguien de fuera, su id de Discord.</div>
+          </form>
+        {% endif %}
+      </div></div>
+      {% endif %}
 
       {% if puede_auditar %}
       <div class="card mb-3 border-danger"><div class="card-body">

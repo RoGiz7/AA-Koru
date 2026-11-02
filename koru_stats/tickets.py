@@ -40,6 +40,9 @@ PERMISO_TIPOS = {
 
 PREFIJO_NUMERO = {"directores": "D", "it": "IT", "soporte": "S", "asuntos": "AI"}
 
+# Tipos donde el staff puede abrir una sala con los pilotos implicados (0.57).
+TIPOS_CON_SALA = {"directores", "asuntos"}
+
 
 def config(tipo):
     from .models import TicketTipoConfig
@@ -225,17 +228,169 @@ def archivar_canal(ticket):
     from . import discordapi
     from .recruit import transcribir
 
-    if not ticket.discord_channel_id:
+    if not ticket.discord_channel_id and not ticket.sala_channel_id:
         return "sin canal"
-    texto = transcribir(ticket.discord_channel_id)
-    ticket.transcripcion = texto
+    # ★ Las DOS conversaciones se guardan antes de borrar ninguna: si la
+    # segunda falla, no se ha perdido la primera y la pasada siguiente
+    # vuelve a intentarlo todo.
+    campos = ["transcrita_en", "updated_at"]
+    if ticket.discord_channel_id:
+        ticket.transcripcion = transcribir(ticket.discord_channel_id)
+        campos.append("transcripcion")
+    if ticket.sala_channel_id:
+        ticket.sala_transcripcion = transcribir(ticket.sala_channel_id)
+        campos.append("sala_transcripcion")
     ticket.transcrita_en = timezone.now()
-    ticket.save(update_fields=["transcripcion", "transcrita_en", "updated_at"])
+    ticket.save(update_fields=campos)
 
-    discordapi.borrar_canal(ticket.discord_channel_id)
-    ticket.discord_channel_id = ""
-    ticket.save(update_fields=["discord_channel_id", "updated_at"])
-    return f"{len(texto)} caracteres guardados"
+    if ticket.sala_channel_id:
+        discordapi.borrar_canal(ticket.sala_channel_id)
+        ticket.sala_channel_id = ""
+        ticket.save(update_fields=["sala_channel_id", "updated_at"])
+    if ticket.discord_channel_id:
+        discordapi.borrar_canal(ticket.discord_channel_id)
+        ticket.discord_channel_id = ""
+        ticket.save(update_fields=["discord_channel_id", "updated_at"])
+    return f"{len(ticket.transcripcion) + len(ticket.sala_transcripcion)} caracteres guardados"
+
+
+# ---------------------------------------------------------------------------
+# Sala con implicados (0.57)
+# ---------------------------------------------------------------------------
+#
+# ★ POR QUÉ UN CANAL APARTE Y NO METER AL PILOTO EN EL DEL TICKET. Discord
+# enseña a quien entra TODO el historial del canal. En una auditoría eso es el
+# motivo, el riesgo del Auditor y lo que el staff ha hablado; en un ticket de
+# Directores, la queja de la otra parte. La sala empieza vacía: el piloto solo
+# lee lo que se escriba con él dentro.
+
+def avisar_sala(ticket, texto):
+    """Una línea en la sala. Nunca revienta la acción que la provoca."""
+    from . import discordapi
+
+    if not ticket.sala_channel_id:
+        return
+    try:
+        discordapi.publicar(ticket.sala_channel_id, texto)
+    except Exception as exc:
+        logger.warning("koru tickets: aviso en sala %s falló: %s", ticket.sala_channel_id, exc)
+
+
+def buscar_invitado(texto):
+    """
+    ({uid, nombre, user, main_id}, "") o (None, motivo).
+
+    Acepta el nombre de cualquier personaje del Auth (main o alt) o, para quien
+    no está en el Auth —la otra parte de un lío diplomático—, su id de Discord.
+    ⚠ Un id de Discord tiene 17-20 cifras; uno de personaje, 10 como mucho.
+    """
+    from django.contrib.auth.models import User
+
+    from . import discordapi
+
+    texto = (texto or "").strip().lstrip("@")
+    if not texto:
+        return None, "Escribe el nombre del personaje o su id de Discord."
+
+    if texto.isdigit() and len(texto) >= 15:
+        nombre = discordapi._nombre_de_uid(texto)
+        if not nombre:
+            return None, "Ese id no corresponde a nadie del Discord de Rekium."
+        with connection.cursor() as cur:
+            cur.execute("SELECT user_id FROM discord_discorduser WHERE uid = %s", [texto])
+            fila = cur.fetchone()
+        user = User.objects.filter(id=fila[0]).first() if fila else None
+        main_id = main_de(user)[0] if user else None
+        return {"uid": texto, "nombre": nombre, "user": user, "main_id": main_id}, ""
+
+    with connection.cursor() as cur:
+        if texto.isdigit():
+            cur.execute(
+                "SELECT ec.character_name, co.user_id FROM eveonline_evecharacter ec "
+                "LEFT JOIN authentication_characterownership co ON co.character_id = ec.id "
+                "WHERE ec.character_id = %s", [int(texto)])
+        else:
+            cur.execute(
+                "SELECT ec.character_name, co.user_id FROM eveonline_evecharacter ec "
+                "LEFT JOIN authentication_characterownership co ON co.character_id = ec.id "
+                "WHERE LOWER(ec.character_name) = LOWER(%s)", [texto])
+        filas = cur.fetchall()
+    fila = next((f for f in filas if f[1]), filas[0] if filas else None)
+    if not fila:
+        return None, (f"«{texto}» no está en el Auth. Si está en el Discord, pega su id de Discord "
+                      "(clic derecho sobre su nombre → Copiar ID).")
+    user = User.objects.filter(id=fila[1]).first() if fila[1] else None
+    if not user:
+        return None, f"«{fila[0]}» está en el Auth pero ningún usuario lo tiene como suyo."
+    uid = uid_discord(user)
+    if not uid:
+        return None, (f"«{fila[0]}» no tiene Discord vinculado en el Auth. "
+                      "Pega su id de Discord en su lugar.")
+    main_id, main_nombre = main_de(user)
+    return {"uid": uid, "nombre": main_nombre or fila[0], "user": user, "main_id": main_id}, ""
+
+
+def invitar(ticket, user, texto):
+    """Mete a un piloto en la sala del ticket, abriéndola si no existe. (ok, mensaje)."""
+    from . import discordapi
+    from .models import KoruTicketInvitado
+
+    if ticket.tipo not in TIPOS_CON_SALA:
+        return False, "Este tipo de ticket no tiene sala con implicados."
+    if not ticket.abierto:
+        return False, "El ticket está cerrado: reábrelo para invitar a alguien."
+    cfg = config(ticket.tipo)
+    if not cfg or not cfg.categoria_id:
+        return False, "Falta la categoría de Discord en la configuración de este tipo."
+
+    quien, error = buscar_invitado(texto)
+    if not quien:
+        return False, error
+    if ticket.invitados.filter(discord_uid=quien["uid"], retirado_en__isnull=True).exists():
+        return False, f"{quien['nombre']} ya está en la sala."
+
+    try:
+        if not ticket.sala_channel_id:
+            nombre = discordapi.nombre_canal(cfg.prefijo_canal, f"{ticket.id}-sala")
+            canal = discordapi.crear_canal(nombre, cfg.categoria_id,
+                                           roles_ver=cfg.roles_ver or [], uid_invitado=quien["uid"])
+            ticket.sala_channel_id = canal
+            ticket.save(update_fields=["sala_channel_id", "updated_at"])
+            # ⚠ Ni asunto ni descripción: los va a leer el invitado.
+            avisar_sala(ticket, f"🗣️ **Sala de {numero(ticket)}** — conversación del staff con los "
+                                "pilotos implicados. Lo que se hable aquí queda guardado con el ticket.")
+        else:
+            discordapi.dar_acceso(ticket.sala_channel_id, quien["uid"])
+    except Exception as exc:
+        logger.error("koru tickets: invitar a %s en %s: %s", quien["uid"], ticket.id, exc)
+        return False, f"Discord no dejó meterle ({exc})."
+
+    KoruTicketInvitado.objects.create(
+        ticket=ticket, user=quien["user"], main_character_id=quien["main_id"], nombre=quien["nombre"],
+        discord_uid=quien["uid"], invitado_por=user, invitado_por_nombre=_nombre(user))
+    avisar_sala(ticket, f"👋 <@{quien['uid']}> — **{_nombre(user)}** te ha añadido a esta conversación.")
+    return True, f"{quien['nombre']} está en la sala. No verá el canal del ticket ni este ticket en el Auth."
+
+
+def retirar(ticket, user, invitado_id):
+    """Saca a un invitado de la sala. La fila se queda, con quién y cuándo."""
+    from django.utils import timezone
+
+    from . import discordapi
+
+    inv = ticket.invitados.filter(id=invitado_id, retirado_en__isnull=True).first() \
+        if str(invitado_id).isdigit() else None
+    if not inv:
+        return False, "Ese piloto no está en la sala."
+    if ticket.sala_channel_id:
+        try:
+            discordapi.quitar_acceso(ticket.sala_channel_id, inv.discord_uid)
+        except Exception as exc:
+            return False, f"Discord no dejó sacarle ({exc})."
+    inv.retirado_en, inv.retirado_por_nombre = timezone.now(), _nombre(user)
+    inv.save(update_fields=["retirado_en", "retirado_por_nombre"])
+    avisar_sala(ticket, f"🚪 **{inv.nombre}** ya no está en esta conversación.")
+    return True, f"{inv.nombre} ha salido de la sala."
 
 
 # ---------------------------------------------------------------------------

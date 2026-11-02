@@ -849,4 +849,17 @@ class TicketCheckInline(admin.TabularInline):
     can_delete = False
 
 
-KoruTicketAdmin.inlines = [KoruTicketNoteInline, TicketCheckInline]
+from .models import KoruTicketInvitado  # noqa: E402
+
+
+class KoruTicketInvitadoInline(admin.TabularInline):
+    model = KoruTicketInvitado
+    extra = 0
+    readonly_fields = ("nombre", "discord_uid", "invitado_por_nombre", "invitado_en",
+                       "retirado_por_nombre", "retirado_en")
+    exclude = ("user", "invitado_por", "main_character_id")
+    can_delete = False
+
+
+KoruTicketAdmin.inlines = [KoruTicketNoteInline, TicketCheckInline, KoruTicketInvitadoInline]
+KoruTicketAdmin.readonly_fields = KoruTicketAdmin.readonly_fields + ("sala_transcripcion",)

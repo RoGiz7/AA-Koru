@@ -6942,7 +6942,7 @@ def _kt_archivar_ya(request, t):
     from django.contrib import messages
     from . import tickets as motor
 
-    if not t.discord_channel_id:
+    if not t.discord_channel_id and not t.sala_channel_id:
         messages.info(request, "Cerrado. No tenía canal que archivar.")
         return
     try:
@@ -6954,6 +6954,17 @@ def _kt_archivar_ya(request, t):
         logger.error("koru tickets: archivar ya %s: %s", t.id, exc)
         messages.warning(request, f"Cerrado, pero no se pudo archivar ahora ({exc}). "
                                   "Se reintentará solo en la próxima pasada.")
+
+
+def _kt_conversacion_sala(t, invitados):
+    """La sala archivada, con los mensajes de los invitados resaltados como los del piloto."""
+    if not t.sala_transcripcion:
+        return []
+    nombres = {(i.nombre or "").strip().lower() for i in invitados}
+    conv = _conversacion_de(t.sala_transcripcion)
+    for m in conv:
+        m["del_piloto"] = m["autor"].strip().lower() in nombres
+    return conv
 
 
 def _kt_nombre(user):
@@ -6973,6 +6984,7 @@ def koruticket_ficha(request, tid):
         raise Http404("Ticket no encontrado")
     if t.tipo not in motor.tipos_que_gestiona(request.user):
         return HttpResponseForbidden("No gestionas este tipo de ticket.")
+    invitados = list(t.invitados.all())
 
     return render(request, "koru_stats/koruticket_ficha.html", {
         "t": t,
@@ -6991,6 +7003,11 @@ def koruticket_ficha(request, tid):
         "puede_auditar": t.tipo == "directores" and t.abierto and motor.puede_auditar(request.user),
         "derivados": list(t.derivados.all()),
         "abierto_por_nombre": _kt_nombre(t.abierto_por),
+        # Sala con implicados (0.57)
+        "sala_disponible": t.tipo in motor.TIPOS_CON_SALA,
+        "invitados": invitados,
+        "auditado_dentro": any(i.activo and i.main_character_id == t.main_character_id for i in invitados),
+        "conversacion_sala": _kt_conversacion_sala(t, invitados),
     })
 
 
@@ -7056,6 +7073,7 @@ def koruticket_accion(request, tid):
             t.estado, t.resolucion = final, resolucion
             t.cerrado_por, t.fecha_cierre = request.user, timezone.now()
             t.save(update_fields=["estado", "resolucion", "cerrado_por", "fecha_cierre", "updated_at"])
+            motor.avisar_sala(t, f"✅ Conversación cerrada por **{quien}**.")
             ya = bool(request.POST.get("archivar_ya")) and motor.puede_archivar_ya(request.user)
             if ya:
                 motor.avisar(t, f"{piloto}✅ Ticket cerrado por **{quien}**.")
@@ -7089,6 +7107,14 @@ def koruticket_accion(request, tid):
                     messages.info(request, f"Ya había una auditoría abierta: {aud.numero}.")
                 return redirect(reverse("koru_stats:koruticket_ficha", args=[aud.id]))
 
+    elif accion == "invitar" and t.tipo in motor.TIPOS_CON_SALA:
+        ok, msg = motor.invitar(t, request.user, request.POST.get("piloto") or "")
+        (messages.success if ok else messages.error)(request, msg)
+
+    elif accion == "retirar" and t.tipo in motor.TIPOS_CON_SALA:
+        ok, msg = motor.retirar(t, request.user, request.POST.get("invitado") or "")
+        (messages.success if ok else messages.error)(request, msg)
+
     elif accion == "archivar_ya" and not t.abierto:
         if not motor.puede_archivar_ya(request.user):
             messages.error(request, "Archivar sin esperar es cosa de CEO, Directores o Rekium TI.")
@@ -7106,6 +7132,7 @@ def koruticket_accion(request, tid):
             t.estado, t.cerrado_por, t.fecha_cierre = KoruTicket.EN_CURSO, None, None
             t.save(update_fields=["estado", "cerrado_por", "fecha_cierre", "updated_at"])
             motor.avisar(t, f"↩️ Ticket reabierto por **{quien}**.")
+            motor.avisar_sala(t, f"↩️ Conversación reabierta por **{quien}**.")
             messages.success(request, "Reabierto.")
 
     return redirect(destino)

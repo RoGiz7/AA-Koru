@@ -2389,6 +2389,10 @@ class KoruTicket(models.Model):
     discord_error      = models.CharField(max_length=250, blank=True, default="")
     transcripcion = models.TextField(blank=True, default="")
     transcrita_en = models.DateTimeField(null=True, blank=True)
+    # Sala con implicados (0.57): canal APARTE donde el staff habla con los
+    # pilotos que invite. El canal del ticket sigue siendo solo del staff.
+    sala_channel_id    = models.CharField(max_length=30, blank=True, default="")
+    sala_transcripcion = models.TextField(blank=True, default="")
 
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -2427,6 +2431,40 @@ class KoruTicketNote(models.Model):
 
     def __str__(self):
         return f"{self.autor_nombre}: {self.texto[:40]}"
+
+
+class KoruTicketInvitado(models.Model):
+    """
+    Un piloto al que el staff ha metido en la sala de un ticket de Directores
+    o de Asuntos Internos.
+
+    ★ Estar invitado NO da nada en el Auth: no es el dueño del ticket, así que
+    no le sale en «Mis tickets» y la ficha le da 403. Solo ve la sala de
+    Discord mientras siga invitado.
+    Retirar no borra la fila: queda quién entró, quién le metió y cuándo salió.
+    """
+    ticket = models.ForeignKey(KoruTicket, on_delete=models.CASCADE, related_name="invitados")
+    user   = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    main_character_id = models.BigIntegerField(null=True, blank=True)
+    nombre      = models.CharField(max_length=100, blank=True, default="")
+    discord_uid = models.CharField(max_length=30)
+    invitado_por        = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    invitado_por_nombre = models.CharField(max_length=100, blank=True, default="")
+    invitado_en         = models.DateTimeField(auto_now_add=True)
+    retirado_en         = models.DateTimeField(null=True, blank=True)
+    retirado_por_nombre = models.CharField(max_length=100, blank=True, default="")
+
+    class Meta:
+        verbose_name        = "Tickets — piloto invitado"
+        verbose_name_plural = "Tickets — pilotos invitados"
+        ordering = ["invitado_en"]
+
+    def __str__(self):
+        return f"{self.ticket_id} · {self.nombre}"
+
+    @property
+    def activo(self):
+        return self.retirado_en is None
 
 
 class TicketCheck(models.Model):

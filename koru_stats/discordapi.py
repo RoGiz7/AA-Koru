@@ -366,6 +366,29 @@ def leer_canal(canal_id, tope=2000):
     return fuera
 
 
+def dar_acceso(canal_id, uid):
+    """Mete a una persona en un canal privado que ya existe (permiso de miembro)."""
+    r = requests.put(f"{API}/channels/{canal_id}/permissions/{uid}",
+                     json={"type": 1, "allow": str(PARTICIPAR), "deny": "0"},
+                     headers=_cabeceras(), timeout=ESPERA)
+    if r.status_code >= 400:
+        logger.error("koru discord: dar acceso %s en %s devolvio %s — %s",
+                     uid, canal_id, r.status_code, r.text[:200])
+        raise RuntimeError(f"Discord respondió {r.status_code} al dar acceso")
+    return True
+
+
+def quitar_acceso(canal_id, uid):
+    """Le saca del canal. Si ya no tenía permiso (404), ya está fuera: no es error."""
+    r = requests.delete(f"{API}/channels/{canal_id}/permissions/{uid}",
+                        headers=_cabeceras(), timeout=ESPERA)
+    if r.status_code >= 400 and r.status_code != 404:
+        logger.error("koru discord: quitar acceso %s en %s devolvio %s — %s",
+                     uid, canal_id, r.status_code, r.text[:200])
+        raise RuntimeError(f"Discord respondió {r.status_code} al quitar el acceso")
+    return True
+
+
 def borrar_canal(canal_id):
     """Borra el canal. Solo después de haberlo guardado."""
     r = requests.delete(f"{API}/channels/{canal_id}",
