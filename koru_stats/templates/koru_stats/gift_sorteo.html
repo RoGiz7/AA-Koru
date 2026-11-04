@@ -34,10 +34,22 @@
             <h4 class="mb-0">{{ r.nombre }}</h4>
             <div class="small text-muted">
                 {{ r.get_tipo_display }} ·
-                {% if r.ponderar_por_rango %}papeletas por rango{% else %}una papeleta por cabeza{% endif %}
+                {% if r.reparto_completo %}<strong>reparto completo</strong>: todos reciben, ningún regalo sobra
+                {% else %}{% if r.ponderar_por_rango %}papeletas por rango{% else %}una papeleta por cabeza{% endif %}
+                {% if r.permitir_repetir_ganador %}· se puede repetir ganador{% endif %}{% endif %}
                 {% if r.excluir_propio_regalo %}· no te toca lo tuyo{% endif %}
-                {% if r.permitir_repetir_ganador %}· se puede repetir ganador{% endif %}
             </div>
+            {% if r.reparto_completo and r.estado == "borrador" %}
+              {% with n=entrants|length m=prizes|length %}
+                {% if m < n %}
+                  <div class="alert alert-danger py-1 px-2 small mb-0 mt-1">⚠ {{ n }} nombres y {{ m }} regalos: faltan regalos para que todos reciban. No se podrá cerrar así.</div>
+                {% elif m > n %}
+                  <div class="alert alert-info py-1 px-2 small mb-0 mt-1">{{ n }} nombres y {{ m }} regalos: todos reciben uno y a algunos, al azar, les toca más de uno.</div>
+                {% else %}
+                  <div class="small text-success mt-1">✓ {{ n }} nombres y {{ m }} regalos: uno para cada uno.</div>
+                {% endif %}
+              {% endwith %}
+            {% endif %}
         </div>
 
         <div class="ms-auto d-flex gap-2 align-items-center flex-wrap">

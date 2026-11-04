@@ -99,6 +99,78 @@ def sortear_core(entrants, prizes, semilla, *, ponderar=True,
     return resultados, incidencias
 
 
+def _permutar(lista, semilla, etiqueta):
+    """Fisher-Yates con sha256 en vez de `random`: reproducible en cualquier lenguaje."""
+    fuera = list(lista)
+    for i in range(len(fuera) - 1, 0, -1):
+        h = hashlib.sha256(f"{semilla}:{etiqueta}:{i}".encode("utf-8")).hexdigest()
+        j = int(h, 16) % (i + 1)
+        fuera[i], fuera[j] = fuera[j], fuera[i]
+    return fuera
+
+
+def faltan_regalos(n_nombres, n_regalos):
+    """Cuántos regalos faltan para que todos reciban. 0 = se puede repartir."""
+    return max(0, int(n_nombres) - int(n_regalos))
+
+
+def repartir_core(entrants, prizes, semilla, *, excluir_propio=True, intentos=500):
+    """
+    REPARTO COMPLETO (0.63): todos los nombres reciben y ningún regalo queda
+    sin dueño. Función PURA, como `sortear_core`.
+
+    Cómo: se barajan los nombres con la semilla y el regalo k (en orden
+    canónico) va al nombre k módulo N. Con N nombres y M ≥ N regalos, cada uno
+    recibe uno y los M−N que sobran van a los primeros de la baraja, que se
+    llevan dos (o más). Si con esa baraja a alguien le toca algo que aportó él,
+    se baraja otra vez con el intento siguiente: sigue siendo reproducible,
+    porque el intento bueno es el primero que cumple.
+
+    ⚠ Las papeletas por rango no pintan nada aquí: si todos reciben, no hay a
+    quién dar ventaja.
+    """
+    prem = sorted(prizes, key=lambda p: (p.get("orden", 0), p["id"]))
+    base = sorted(entrants, key=lambda e: int(e["main_char_id"]))
+    n, m = len(base), len(prem)
+    if not n or not m:
+        return [], ["no hay nombres o no hay regalos"]
+    falta = faltan_regalos(n, m)
+    if falta:
+        return [], [f"faltan {falta} regalo(s): hay {n} nombres y {m} regalos"]
+
+    for intento in range(intentos):
+        baraja = _permutar(base, semilla, f"reparto:{intento}")
+        asignado = [baraja[k % n] for k in range(m)]
+        if excluir_propio and any(
+                p.get("donante_main_id") is not None
+                and int(p["donante_main_id"]) == int(asignado[k]["main_char_id"])
+                for k, p in enumerate(prem)):
+            continue
+        h = hashlib.sha256(f"{semilla}:reparto:{intento}".encode("utf-8")).hexdigest()
+        resultados = [{"prize_id": p["id"], "entrant_id": asignado[k]["id"], "orden": k, "hash": h}
+                      for k, p in enumerate(prem)]
+        avisos = [] if intento == 0 else [
+            f"barajado {intento + 1} veces para que a nadie le toque lo que aportó"]
+        return resultados, avisos
+
+    return [], ["no hay forma de repartir sin que a alguien le toque lo suyo: "
+                "una persona aportó casi todos los regalos de este sorteo"]
+
+
+def _resolver(raffle, entrants, prizes):
+    """El método que corresponde a este sorteo. El MISMO para sortear y verificar."""
+    from .models import Raffle
+    excluir = raffle.excluir_propio_regalo and raffle.tipo == Raffle.TIPO_COMUNITARIO
+    if getattr(raffle, "reparto_completo", False):
+        return repartir_core(entrants, prizes, raffle.semilla, excluir_propio=excluir)
+    return sortear_core(
+        entrants, prizes, raffle.semilla,
+        ponderar=raffle.ponderar_por_rango,
+        excluir_propio=excluir,
+        permitir_repetir=raffle.permitir_repetir_ganador,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Envoltorio sobre los modelos
 # ---------------------------------------------------------------------------
@@ -134,6 +206,14 @@ def cerrar(raffle):
         raise ValueError("No hay participantes")
     if not raffle.prizes.exists():
         raise ValueError("No hay premios")
+    if getattr(raffle, "reparto_completo", False):
+        n, m = raffle.entrants.count(), raffle.prizes.count()
+        falta = faltan_regalos(n, m)
+        if falta:
+            # ★ Se para AQUÍ, antes de publicar la semilla: después ya no se
+            # puede tocar la bolsa sin anular el sorteo.
+            raise ValueError(f"Reparto completo: faltan {falta} regalo(s) — hay {n} nombres y {m} "
+                             "regalos. Mete más regalos o saca nombres antes de cerrar.")
 
     semilla = nueva_semilla()
     raffle.semilla = semilla
@@ -154,12 +234,10 @@ def sortear(raffle):
         raise ValueError("Hay que cerrar el sorteo antes de sortearlo")
 
     entrants, prizes = _payload(raffle)
-    resultados, incidencias = sortear_core(
-        entrants, prizes, raffle.semilla,
-        ponderar=raffle.ponderar_por_rango,
-        excluir_propio=raffle.excluir_propio_regalo and raffle.tipo == Raffle.TIPO_COMUNITARIO,
-        permitir_repetir=raffle.permitir_repetir_ganador,
-    )
+    resultados, incidencias = _resolver(raffle, entrants, prizes)
+    if getattr(raffle, "reparto_completo", False) and not resultados:
+        # Sin reparto válido no se sortea: se queda cerrado y se dice por qué.
+        raise ValueError("No se ha podido repartir: " + "; ".join(incidencias))
 
     with transaction.atomic():
         RaffleDraw.objects.bulk_create([
@@ -191,12 +269,7 @@ def verificar(raffle):
         problemas.append("La semilla no casa con el hash publicado al cerrar")
 
     entrants, prizes = _payload(raffle)
-    resultados, _ = sortear_core(
-        entrants, prizes, raffle.semilla,
-        ponderar=raffle.ponderar_por_rango,
-        excluir_propio=raffle.excluir_propio_regalo and raffle.tipo == Raffle.TIPO_COMUNITARIO,
-        permitir_repetir=raffle.permitir_repetir_ganador,
-    )
+    resultados, _ = _resolver(raffle, entrants, prizes)
     esperado = {r["prize_id"]: r["entrant_id"] for r in resultados}
     guardado = {d.prize_id: d.entrant_id for d in raffle.draws.all()}
 

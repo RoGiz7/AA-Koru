@@ -3,6 +3,20 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.63.0] — 2026-11-04
+
+### Añadido
+
+- **Reparto completo en los sorteos** (activado por defecto). Todos los
+  nombres de la ruleta reciben regalo y ningún regalo se queda en la corp.
+  - Hacen falta al menos tantos regalos como nombres: si faltan, el sorteo no
+    deja cerrarse y dice cuántos faltan. Si sobran, a algunos les tocan dos,
+    elegidos al azar con la misma semilla.
+  - Sigue sin tocarte lo que tú aportaste, y el resultado se reproduce y se
+    verifica igual que antes.
+  - Los sorteos ya cerrados o sorteados siguen con su regla de siempre, para
+    que se puedan seguir verificando. Migración 0060.
+
 ## [0.62.2] — 2026-11-04
 
 ### Corregido

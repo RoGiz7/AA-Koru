@@ -1508,6 +1508,11 @@ class Raffle(models.Model):
         default=True, help_text="Que no te toque lo que tu aportaste (solo aplica a los comunitarios)")
     permitir_repetir_ganador = models.BooleanField(
         default=False, help_text="Si una persona puede llevarse mas de un premio del mismo sorteo")
+    reparto_completo = models.BooleanField(
+        default=True,
+        help_text="Todos los nombres reciben regalo y ningún regalo se queda sin dueño. Hacen falta "
+                  "al menos tantos regalos como nombres; si sobran, a algunos les tocan dos. "
+                  "Con esto activo no se usan papeletas ni «repetir ganador»")
 
     # Limpieza demostrable
     semilla      = models.CharField(max_length=64, blank=True, default="",
