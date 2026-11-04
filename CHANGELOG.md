@@ -3,6 +3,16 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.62.1] — 2026-11-04
+
+### Corregido
+
+- **Regalos en ISK dentro de un contrato.** Un intercambio sin objetos y con
+  recompensa (el donante mete el ISK en el contrato) se descartaba como si
+  fuera una petición vacía, y la recompensa no se sumaba nunca al valor. Ahora
+  entra como aportación, su ISK cuenta y sale «Por revisar» con el aviso de
+  cuánto ISK lleva.
+
 ## [0.62.0] — 2026-11-02
 
 ### Añadido

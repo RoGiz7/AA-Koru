@@ -3657,14 +3657,18 @@ def sync_gift_contributions(campaign_id=None):
             continue
 
         es_personal = c["_personal"]
-        items = items_por_contrato.get((es_personal, c["id"]))
+        items = items_por_contrato.get((es_personal, c["id"])) or []
+        # ★ La RECOMPENSA de un intercambio es ISK que paga quien lo emite a
+        # quien lo acepta: un regalo en ISK metido en un contrato. Se vio con
+        # uno de 2.000 M sin un solo objeto dentro (2026-11-04).
+        recompensa = c["reward"] or 0
 
         # ⚠ Un contrato a precio 0 y sin nada incluido existe de verdad y sale a
         # puñados: es alguien PIDIENDO cosas a la corp (sus lineas son
         # `is_included = 0`, que ya se descartan al leer los items). Crear una
         # aportacion de 0 ISK por cada uno llenaria la pantalla del director de
-        # filas que no significan nada.
-        if not items:
+        # filas que no significan nada. Pero si lleva ISK, es un regalo.
+        if not items and not recompensa:
             continue
 
         destino = por_destino.get(int(c["assignee_id"] or 0))
@@ -3692,10 +3696,15 @@ def sync_gift_contributions(campaign_id=None):
                 "requiere_valoracion": requiere, "motivo": motivo,
             })
 
-        if not detalle:
+        # ⚠ Por Decimal: los precios pueden venir en float y la recompensa en
+        # Decimal, y sumarlos tal cual revienta con TypeError.
+        from decimal import Decimal as _D
+        valor_total = _D(str(valor_total)) + _D(str(recompensa))
+        if not detalle and not recompensa:
             continue
 
-        cobra_isk = bool((c["price"] or 0) or (c["reward"] or 0))
+        # Solo «cobra» si pide ISK (price). La recompensa no es cobrar: es el regalo.
+        cobra_isk = bool(c["price"] or 0)
         ubicacion_rara = bool(
             destino and destino.expected_location_id
             and int(c["start_location_id"] or 0) != int(destino.expected_location_id)
@@ -3705,7 +3714,8 @@ def sync_gift_contributions(campaign_id=None):
         if es_personal:      avisos.append(_aviso_personal(destino))
         if hay_que_valorar:  avisos.append("hay items sin precio fiable")
         if ubicacion_rara:   avisos.append("entregado fuera de la ubicacion esperada")
-        if cobra_isk:        avisos.append("price/reward distinto de cero")
+        if cobra_isk:        avisos.append("el contrato pide ISK (price)")
+        if recompensa:       avisos.append("incluye %s ISK en el contrato" % f"{recompensa:,.0f}".replace(",", "."))
         if main_id is None:  avisos.append("el donante no resuelve a ningun main")
         if (c["contract_type"] or "") != "item_exchange":
             avisos.append("tipo de contrato %s" % c["contract_type"])
