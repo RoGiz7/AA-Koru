@@ -3,6 +3,18 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado semántico, con el `0.x` indicando que la API interna puede moverse.
 
+## [0.62.2] — 2026-11-04
+
+### Corregido
+
+- **Los regalos que acepta el CEO tardaban un día en verse**, y alguno no
+  salía nunca. Corptools lee los contratos de cada personaje una vez al día y
+  sus objetos más tarde; un contrato leído sin objetos se descartaba como
+  vacío. Ahora la sincronización de cada hora pide antes a corptools los
+  contratos de los destinatarios personales y los objetos de los aceptados en
+  los últimos 3 días que aún no los tengan. Son un par de llamadas a ESI por
+  hora.
+
 ## [0.62.1] — 2026-11-04
 
 ### Corregido

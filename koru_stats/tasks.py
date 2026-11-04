@@ -3421,6 +3421,63 @@ SQL_DONACIONES_REGALO_PERSONAL = """
 """
 
 
+def _refrescar_contratos_personales(eve_ids):
+    """
+    Pide a corptools los contratos de los destinatarios PERSONAJE, y los
+    objetos de los aceptados que aún no los tengan.
+
+    ★ POR QUÉ. Corptools lee los contratos de cada personaje una vez al día, y
+    los objetos de cada contrato en otra cola, más tarde. Lo que el CEO acepta
+    de madrugada no se veía hasta la noche siguiente, y un contrato leído sin
+    sus objetos se descartaba como vacío (pasó el 2026-11-04 con una
+    Nidhoggur y 502 PLEX).
+
+    ⚠ ESI, lo justo: la lista va SIN force_refresh (si no ha cambiado, ESI
+    contesta 304 y casi no cuenta) y los objetos solo de contratos aceptados
+    en los últimos 3 días que no tengan ninguno. Un contrato de solo ISK
+    tampoco tiene objetos: por eso la ventana de 3 días, para no pedirlo
+    cada hora para siempre.
+    """
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    try:
+        import corptools.tasks as ct
+    except Exception as exc:
+        logger.warning("koru regalos: corptools no disponible para refrescar: %s", exc)
+        return
+    hace3 = timezone.now() - timedelta(days=3)
+    for eid in eve_ids:
+        try:
+            ct.update_char_contracts(int(eid))
+        except Exception as exc:
+            logger.warning("koru regalos: refrescar contratos de %s: %s", eid, exc)
+        try:
+            with connection.cursor() as cur:
+                cur.execute(
+                    "SELECT DISTINCT c.contract_id FROM corptools_contract c "
+                    "JOIN corptools_characteraudit cau ON cau.id = c.character_id "
+                    "JOIN eveonline_evecharacter ec ON ec.id = cau.character_id "
+                    "WHERE ec.character_id = %s AND c.assignee_id = %s "
+                    "AND c.contract_type = 'item_exchange' "
+                    "AND c.status IN ('finished', 'finished_issuer', 'finished_contractor') "
+                    "AND c.date_accepted >= %s "
+                    "AND NOT EXISTS (SELECT 1 FROM corptools_contractitem i WHERE i.contract_id = c.id) "
+                    "LIMIT 25", [int(eid), int(eid), hace3])
+                faltan = [int(f[0]) for f in cur.fetchall()]
+        except Exception as exc:
+            logger.warning("koru regalos: buscar contratos sin objetos de %s: %s", eid, exc)
+            continue
+        for cid in faltan:
+            try:
+                ct.update_char_contract_items(int(eid), cid, force_refresh=True)
+            except Exception as exc:
+                logger.warning("koru regalos: objetos del contrato %s: %s", cid, exc)
+        if faltan:
+            logger.info("koru regalos: %s contrato(s) de %s sin objetos, pedidos a corptools", len(faltan), eid)
+
+
 def _destinos_personales(entity_ids):
     """
     {character_id: auditado} de los destinatarios que son PERSONAJES.
@@ -3558,6 +3615,7 @@ def sync_gift_contributions(campaign_id=None):
 
     pers_contratos = [e for e in pers_ids if por_destino[e].acepta_contratos]
     if pers_contratos:
+        _refrescar_contratos_personales(pers_contratos)
         sql = SQL_CONTRATOS_REGALO_PERSONAL.format(dest=",".join(["%s"] * len(pers_contratos)))
         ya_vistos = {int(c["contract_id"]) for c in contratos}
         with connection.cursor() as cursor:
