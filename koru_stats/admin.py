@@ -17,6 +17,7 @@ from .models import (
     GiftDelivery,
     AuditCheck,
     RecruitApplication, RecruitNote, RecruitQuestion, RecruitConfig,
+    PapFleetType, PapPeriod, PapMonthly, PapAccountAlias,
 )
 
 
@@ -913,3 +914,36 @@ class KoruVinculoAdmin(admin.ModelAdmin):
 class KoruVinculoEventoAdmin(KoruVinculoAdmin):
     list_display = ("en", "evento", "motivo", "character_name", "main_character_name")
     list_filter = ("evento", "motivo")
+
+
+# --- PAPs de la alianza ----------------------------------------------------
+# El trabajo se hace en las pantallas de Koru; esto es la puerta de atrás para
+# cuando algo haya que mirar o arreglar a pelo.
+
+@admin.register(PapFleetType)
+class PapFleetTypeAdmin(admin.ModelAdmin):
+    list_display = ("nombre", "categoria", "es_corp", "declarada_por_alianza")
+    list_filter = ("categoria", "es_corp", "declarada_por_alianza")
+    search_fields = ("nombre",)
+
+
+@admin.register(PapPeriod)
+class PapPeriodAdmin(admin.ModelAdmin):
+    list_display = ("periodo", "origen", "regimen", "requeridas", "filas",
+                    "sin_casar", "fichero", "importado_en")
+    list_filter = ("origen", "regimen", "anio")
+    search_fields = ("fichero",)
+
+
+@admin.register(PapMonthly)
+class PapMonthlyAdmin(admin.ModelAdmin):
+    list_display = ("account_name", "periodo", "total", "estrategicas",
+                    "actividades", "corp", "main_character_id", "cuadra")
+    list_filter = ("periodo", "cuadra")
+    search_fields = ("account_name", "main_character_name")
+
+
+@admin.register(PapAccountAlias)
+class PapAccountAliasAdmin(admin.ModelAdmin):
+    list_display = ("account_name", "main_character_name", "main_character_id", "nota")
+    search_fields = ("account_name", "main_character_name")

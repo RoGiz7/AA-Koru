@@ -1,0 +1,226 @@
+{% extends 'allianceauth/base-bs5.html' %}
+{% load i18n koru_stats_tags %}
+
+{% block page_title %}PAPs de la alianza{% endblock %}
+
+{% block content %}
+<style>
+.kpi-card { border-left: 4px solid #6c757d; }
+.kpi-card.green  { border-left-color: #22c55e; }
+.kpi-card.red    { border-left-color: #ef4444; }
+.kpi-card.yellow { border-left-color: #f59e0b; }
+.kpi-card.blue   { border-left-color: #3b82f6; }
+.stat-big   { font-size: 1.6rem; font-weight: 700; line-height: 1.1; }
+.stat-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: #6c757d; }
+.fila-no     { background: rgba(239,68,68,.07); }
+.fila-dudoso { background: rgba(245,158,11,.07); }
+.barra { height: 6px; border-radius: 3px; background: rgba(127,127,127,.25); overflow: hidden; min-width: 70px; }
+.barra > span { display: block; height: 100%; background: #22c55e; }
+.barra.corta > span { background: #ef4444; }
+.sin-casar { border-bottom: 1px dotted #f59e0b; cursor: help; }
+</style>
+
+<div class="container-fluid">
+
+    <div class="d-flex align-items-center gap-3 mb-3 flex-wrap">
+        <h4 class="mb-0"><i class="fas fa-users-rectangle text-info me-2"></i>PAPs de la alianza</h4>
+        {% if periodos %}
+        <form method="get" class="d-flex align-items-center gap-2 mb-0">
+            <select name="periodo" class="form-select form-select-sm w-auto" onchange="this.form.submit()">
+                {% for p in periodos %}
+                <option value="{{ p.periodo }}" {% if p.pk == periodo.pk %}selected{% endif %}>
+                    {{ p.periodo }}{% if p.regimen == 'guerra' %} · guerra{% endif %}
+                </option>
+                {% endfor %}
+            </select>
+        </form>
+        {% endif %}
+        {% if puede_admin %}
+        <a href="{% url 'koru_stats:paps_importar' %}" class="btn btn-sm btn-outline-info">
+            <i class="fas fa-file-import me-1"></i>Importar
+        </a>
+        <a href="{% url 'koru_stats:paps_catalogo' %}" class="btn btn-sm btn-outline-secondary">
+            <i class="fas fa-tags me-1"></i>Flotas y nombres
+        </a>
+        {% endif %}
+    </div>
+
+    {% if not periodo %}
+        <div class="card"><div class="card-body text-center py-5">
+            <i class="fas fa-inbox fa-2x text-muted mb-3 d-block"></i>
+            <p class="mb-3">Todavía no hay ningún mes importado.</p>
+            {% if puede_admin %}
+            <a href="{% url 'koru_stats:paps_importar' %}" class="btn btn-primary">
+                <i class="fas fa-file-import me-1"></i>Importar el primero
+            </a>
+            {% else %}
+            <p class="text-muted small mb-0">Pídeselo a alguien de Dirección.</p>
+            {% endif %}
+        </div></div>
+    {% else %}
+
+    {# El régimen del mes: es lo que decide el listón, así que va arriba y a la vista #}
+    <div class="card mb-3"><div class="card-body py-2">
+        <div class="d-flex align-items-center gap-3 flex-wrap">
+            <span class="stat-label mb-0">Régimen de {{ periodo.periodo }}</span>
+            {% if puede_admin %}
+            <form method="post" class="d-flex align-items-center gap-2 mb-0">
+                {% csrf_token %}
+                <input type="hidden" name="periodo_id" value="{{ periodo.pk }}">
+                <input type="hidden" name="periodo_txt" value="{{ periodo.periodo }}">
+                <select name="regimen" class="form-select form-select-sm w-auto">
+                    <option value="paz"    {% if periodo.regimen == 'paz' %}selected{% endif %}>Paz (5)</option>
+                    <option value="guerra" {% if periodo.regimen == 'guerra' %}selected{% endif %}>Guerra (10)</option>
+                </select>
+                <span class="text-muted small">o a mano</span>
+                <input type="number" name="requeridas" min="0" max="200" value="{{ periodo.requeridas }}"
+                       class="form-control form-control-sm" style="width:5rem">
+                <button class="btn btn-sm btn-primary">Guardar</button>
+            </form>
+            {% else %}
+            <span class="badge bg-secondary">{{ periodo.get_regimen_display }}</span>
+            <span>Se piden <strong>{{ periodo.requeridas }}</strong> estratégicas</span>
+            {% endif %}
+            <span class="ms-auto text-muted small">
+                {% if periodo.origen == 'json' %}
+                    <i class="fas fa-check-circle text-success me-1"></i>Datos de la API — completos
+                {% else %}
+                    <i class="fas fa-exclamation-triangle text-warning me-1"></i>Datos del CSV — se deja gente fuera
+                {% endif %}
+                · {{ periodo.fichero|default:"—" }}
+            </span>
+        </div>
+    </div></div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-2">
+            <div class="card kpi-card green h-100"><div class="card-body">
+                <div class="stat-label mb-1">Cumplen</div>
+                <div class="stat-big text-success">{{ kpi.cumplen }}/{{ kpi.pilotos }}</div>
+                <small class="text-muted">{{ periodo.requeridas }}+ estratégicas</small>
+            </div></div>
+        </div>
+        <div class="col-6 col-md-2">
+            <div class="card kpi-card red h-100"><div class="card-body">
+                <div class="stat-label mb-1">No llegan</div>
+                <div class="stat-big text-danger">{{ kpi.no_cumplen }}</div>
+                <small class="text-muted">pilotos</small>
+            </div></div>
+        </div>
+        <div class="col-6 col-md-2">
+            <div class="card kpi-card yellow h-100"><div class="card-body">
+                <div class="stat-label mb-1">En duda</div>
+                <div class="stat-big text-warning">{{ kpi.dudosos }}</div>
+                <small class="text-muted">flotas sin clasificar</small>
+            </div></div>
+        </div>
+        <div class="col-6 col-md-2">
+            <div class="card kpi-card blue h-100"><div class="card-body">
+                <div class="stat-label mb-1">PAPs</div>
+                <div class="stat-big text-info">{{ kpi.paps|rknum }}</div>
+                <small class="text-muted">{{ kpi.estrategicas|rknum }} estratégicas</small>
+            </div></div>
+        </div>
+        <div class="col-6 col-md-2">
+            <div class="card kpi-card h-100"><div class="card-body">
+                <div class="stat-label mb-1">De corp</div>
+                <div class="stat-big text-primary">{{ kpi.corp|rknum }}</div>
+                <small class="text-muted">PAPs en flotas propias</small>
+            </div></div>
+        </div>
+        <div class="col-6 col-md-2">
+            <div class="card kpi-card {% if kpi.sin_casar %}yellow{% endif %} h-100"><div class="card-body">
+                <div class="stat-label mb-1">Sin atar</div>
+                <div class="stat-big {% if kpi.sin_casar %}text-warning{% else %}text-muted{% endif %}">{{ kpi.sin_casar }}</div>
+                <small class="text-muted">no casan con el Auth</small>
+            </div></div>
+        </div>
+    </div>
+
+    {% if kpi.descuadres %}
+    <div class="alert alert-warning py-2 small">
+        <i class="fas fa-triangle-exclamation me-1"></i>
+        <strong>{{ kpi.descuadres }}</strong> línea(s) no cuadran: el desglose no suma el total.
+        El fichero traía algo que no supimos leer, así que esos números pueden estar cortos.
+    </div>
+    {% endif %}
+
+    <div class="card">
+        <div class="card-header d-flex align-items-center">
+            <span>Pilotos — los que no llegan, primero</span>
+            <span class="ms-auto text-muted small">{{ kpi.pilotos }} en {{ periodo.periodo }}</span>
+        </div>
+        <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0 align-middle">
+            <thead>
+                <tr>
+                    <th>Piloto</th>
+                    <th class="text-end">Estratégicas</th>
+                    <th style="width:120px"></th>
+                    <th class="text-end">Faltan</th>
+                    <th class="text-end">Actividades</th>
+                    <th class="text-end">De corp</th>
+                    <th class="text-end">Total</th>
+                    <th>Estado</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for f in filas %}
+                <tr class="{% if f.estado == 'no' %}fila-no{% elif f.estado == 'dudoso' %}fila-dudoso{% endif %}">
+                    <td>
+                        {% if f.linea.main_character_id %}
+                            {{ f.linea.main_character_name|default:f.linea.account_name }}
+                            {% if f.linea.main_character_name and f.linea.main_character_name != f.linea.account_name %}
+                                <small class="text-muted">· {{ f.linea.account_name }}</small>
+                            {% endif %}
+                        {% else %}
+                            <span class="sin-casar" title="Este nombre no casa con ningún personaje del Auth">
+                                {{ f.linea.account_name }}</span>
+                        {% endif %}
+                        {% if not f.linea.cuadra %}
+                            <i class="fas fa-triangle-exclamation text-warning ms-1" title="El desglose no suma el total"></i>
+                        {% endif %}
+                    </td>
+                    <td class="text-end fw-bold">{{ f.linea.estrategicas }}</td>
+                    <td>
+                        <div class="barra {% if not f.cumple %}corta{% endif %}">
+                            <span style="width: {% widthratio f.linea.estrategicas periodo.requeridas 100 %}%"></span>
+                        </div>
+                    </td>
+                    <td class="text-end {% if f.linea.faltan %}text-danger{% else %}text-muted{% endif %}">
+                        {% if f.linea.faltan %}{{ f.linea.faltan }}{% else %}—{% endif %}
+                    </td>
+                    <td class="text-end text-muted">{{ f.linea.actividades|rknum }}</td>
+                    <td class="text-end">{{ f.linea.corp|rknum }}</td>
+                    <td class="text-end">{{ f.linea.total|rknum }}</td>
+                    <td>
+                        {% if f.estado == 'cumple' %}
+                            <span class="badge bg-success">Cumple</span>
+                        {% elif f.estado == 'dudoso' %}
+                            <span class="badge bg-warning text-dark"
+                                  title="Tiene {{ f.linea.sin_clasificar }} PAPs en flotas sin clasificar que podrían darle el aprobado">
+                                En duda
+                            </span>
+                        {% else %}
+                            <span class="badge bg-danger">No llega</span>
+                        {% endif %}
+                    </td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="8" class="text-center text-muted py-4">Este mes no tiene líneas.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        </div>
+    </div>
+
+    {% if periodo.avisos %}
+    <details class="mt-3">
+        <summary class="text-muted small">Avisos de la importación de este mes</summary>
+        <pre class="small text-muted mt-2 mb-0" style="white-space:pre-wrap">{{ periodo.avisos }}</pre>
+    </details>
+    {% endif %}
+
+    {% endif %}
+</div>
+{% endblock %}

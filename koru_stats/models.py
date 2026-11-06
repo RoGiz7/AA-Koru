@@ -28,6 +28,8 @@ class General(models.Model):
             ("gift_ceo",      "Regalos: monta los sorteos especiales del CEO"),
             ("recruit_apply",  "Reclutamiento: puede enviar una solicitud"),
             ("recruit_manage", "Reclutamiento: gestiona solicitudes y entrevista"),
+            ("paps_access",  "PAPs: ve el cumplimiento de la alianza"),
+            ("paps_admin",   "PAPs: importa ficheros y clasifica flotas"),
         )
 
 
@@ -2659,3 +2661,198 @@ class KoruVinculoEvento(models.Model):
 
     def __str__(self):
         return f"{self.en:%Y-%m-%d} {self.evento} {self.character_name} ({self.main_character_name})"
+
+
+# ---------------------------------------------------------------------------
+# PAPs de la alianza (fleets.gnf.lt) — ver koru_stats/paps.py para el porqué
+# de cada decisión: ahí está medido por qué el JSON manda sobre el CSV y por
+# qué las actividades se calculan restando en vez de sumando.
+# ---------------------------------------------------------------------------
+
+class PapFleetType(models.Model):
+    """Catálogo de tipos de flota. Qué cuenta para el filtro lo dice ESTA tabla.
+
+    ★ El importador APRENDE: una flota desconocida entra SIN CLASIFICAR y espera
+    a que alguien decida. Nunca da por hecho que no cuenta, porque eso rebajaría
+    el cumplimiento de alguien en silencio.
+    """
+
+    ESTRATEGICA = "estrategica"
+    ACTIVIDAD = "actividad"
+    SIN = "sin"
+    CATEGORIAS = [
+        (ESTRATEGICA, "Estratégica — cuenta para el filtro"),
+        (ACTIVIDAD, "Actividad — no obligatoria"),
+        (SIN, "Sin clasificar"),
+    ]
+
+    nombre = models.CharField(max_length=80, unique=True)
+    categoria = models.CharField(max_length=12, choices=CATEGORIAS, default=SIN)
+    es_corp = models.BooleanField(
+        default=False, help_text="Cuenta aparte como asistencia a flotas de la corp.")
+    declarada_por_alianza = models.BooleanField(
+        default=False,
+        help_text="La categoría la dio la propia fuente (isStrategic del JSON o el "
+                  "sufijo :strategic del CSV). Lo que diga la alianza pisa lo puesto a mano.")
+
+    class Meta:
+        verbose_name = "PAPs · tipo de flota"
+        verbose_name_plural = "PAPs · tipos de flota"
+        ordering = ["categoria", "nombre"]
+
+    def __str__(self):
+        return f"{self.nombre} ({self.get_categoria_display()})"
+
+
+class PapPeriod(models.Model):
+    """Un mes importado. El régimen decide cuántas estratégicas se piden."""
+
+    PAZ = "paz"
+    GUERRA = "guerra"
+    REGIMENES = [(PAZ, "Paz"), (GUERRA, "Guerra")]
+    EXIGIDAS = {PAZ: 5, GUERRA: 10}
+
+    anio = models.PositiveSmallIntegerField()
+    mes = models.PositiveSmallIntegerField()
+    origen = models.CharField(
+        max_length=8, default="csv",
+        help_text="json = API de la web (completo). csv = exportación (se deja gente fuera).")
+    regimen = models.CharField(max_length=8, choices=REGIMENES, default=PAZ)
+    requeridas = models.PositiveSmallIntegerField(
+        default=5,
+        help_text="Estratégicas exigidas ese mes. Se pone sola al cambiar el régimen, "
+                  "pero se puede tocar si un mes concreto fue distinto.")
+    fichero = models.CharField(max_length=160, blank=True)
+    fichero_hash = models.CharField(max_length=64, blank=True, db_index=True)
+    importado_en = models.DateTimeField(auto_now=True)
+    importado_por = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    filas = models.PositiveIntegerField(default=0)
+    sin_casar = models.PositiveIntegerField(default=0)
+    avisos = models.TextField(blank=True)
+
+    class Meta:
+        verbose_name = "PAPs · mes"
+        verbose_name_plural = "PAPs · meses"
+        unique_together = [("anio", "mes")]
+        ordering = ["-anio", "-mes"]
+
+    def __str__(self):
+        return self.periodo
+
+    @property
+    def periodo(self):
+        return f"{self.anio:04d}-{self.mes:02d}"
+
+    def aplicar_regimen(self):
+        self.requeridas = self.EXIGIDAS.get(self.regimen, 5)
+
+
+class PapMonthly(models.Model):
+    """Lo de una persona en un mes.
+
+    ⚠ `actividades` NO es la suma de las flotas de paz: una misma PAP puede
+    llevar dos tags y se contaría dos veces. Es Total − estratégicas.
+    """
+
+    periodo = models.ForeignKey(PapPeriod, on_delete=models.CASCADE, related_name="lineas")
+    account_name = models.CharField(max_length=100, db_index=True)
+    main_character_id = models.PositiveIntegerField(default=0, db_index=True)
+    main_character_name = models.CharField(max_length=100, blank=True)
+    total = models.PositiveIntegerField(default=0)
+    estrategicas = models.PositiveIntegerField(default=0)
+    estrategicas_declaradas = models.IntegerField(
+        null=True, blank=True,
+        help_text="La cifra que dio la fuente. Si está puesta, manda: reclasificar "
+                  "una flota a mano no mejora un dato que viene de la alianza.")
+    actividades = models.PositiveIntegerField(default=0)
+    corp = models.PositiveIntegerField(default=0)
+    sin_clasificar = models.PositiveIntegerField(
+        default=0, help_text="PAPs en flotas que nadie ha clasificado todavía.")
+    cuadra = models.BooleanField(
+        default=True,
+        help_text="La suma del desglose coincide con el total. Si está en falso, "
+                  "el fichero traía algo que no supimos leer.")
+
+    class Meta:
+        verbose_name = "PAPs · línea mensual"
+        verbose_name_plural = "PAPs · líneas mensuales"
+        unique_together = [("periodo", "account_name")]
+        ordering = ["-estrategicas", "-total"]
+        indexes = [models.Index(fields=["main_character_id", "periodo"],
+                                name="koru_pap_main_periodo")]
+
+    def __str__(self):
+        return f"{self.account_name} {self.periodo.periodo}: {self.estrategicas}/{self.total}"
+
+    @property
+    def cumple(self):
+        return self.estrategicas >= self.periodo.requeridas
+
+    @property
+    def dudoso(self):
+        """No llega, pero tiene PAPs sin clasificar que podrían cambiarlo.
+
+        Se distingue de un «no cumple» limpio a propósito: acusar a alguien de
+        no llegar cuando la duda es NUESTRA sería injusto.
+        """
+        return (not self.cumple
+                and self.sin_clasificar > 0
+                and self.estrategicas + self.sin_clasificar >= self.periodo.requeridas)
+
+    @property
+    def faltan(self):
+        return max(self.periodo.requeridas - self.estrategicas, 0)
+
+
+class PapMonthlyDetalle(models.Model):
+    """El desglose de una línea, en tres dimensiones.
+
+    ⚠ `flota` es la que hace falta de verdad: sin ella, clasificar una flota
+    obligaría a reimportar todos los ficheros. `rol` solo lo trae el JSON y
+    `nave` solo el CSV — ninguna fuente da las dos.
+    """
+
+    FLOTA = "flota"
+    NAVE = "nave"
+    ROL = "rol"
+    DIMENSIONES = [(FLOTA, "Flota"), (NAVE, "Grupo de nave"), (ROL, "Rol de flota")]
+
+    fila = models.ForeignKey(PapMonthly, on_delete=models.CASCADE, related_name="detalles")
+    dimension = models.CharField(max_length=6, choices=DIMENSIONES)
+    nombre = models.CharField(max_length=80)
+    paps = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        verbose_name = "PAPs · desglose"
+        verbose_name_plural = "PAPs · desglose"
+        ordering = ["dimension", "-paps", "nombre"]
+        indexes = [models.Index(fields=["fila", "dimension"],
+                                name="koru_pap_fila_dim")]
+
+    def __str__(self):
+        return f"{self.nombre}: {self.paps}"
+
+
+class PapAccountAlias(models.Model):
+    """Atar a mano un nombre del fichero con un personaje del Auth.
+
+    Hace falta para los que se cambiaron el nombre y para los que no están en
+    el Auth. Lo que se ate aquí manda sobre la búsqueda automática.
+    """
+
+    account_name = models.CharField(max_length=100, unique=True)
+    main_character_id = models.PositiveIntegerField(default=0)
+    main_character_name = models.CharField(max_length=100, blank=True)
+    nota = models.CharField(max_length=200, blank=True)
+    creado_en = models.DateTimeField(auto_now_add=True)
+    creado_por = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+
+    class Meta:
+        verbose_name = "PAPs · nombre atado"
+        verbose_name_plural = "PAPs · nombres atados"
+        ordering = ["account_name"]
+
+    def __str__(self):
+        return f"{self.account_name} → {self.main_character_name or self.main_character_id}"

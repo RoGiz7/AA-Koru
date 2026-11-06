@@ -1,0 +1,172 @@
+{% extends 'allianceauth/base-bs5.html' %}
+{% load i18n koru_stats_tags %}
+
+{% block page_title %}PAPs · flotas y nombres{% endblock %}
+
+{% block content %}
+<style>
+.stat-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: #6c757d; }
+.fila-sin { background: rgba(245,158,11,.08); }
+</style>
+
+<div class="container-fluid">
+
+    <div class="d-flex align-items-center gap-3 mb-3 flex-wrap">
+        <h4 class="mb-0"><i class="fas fa-tags text-info me-2"></i>Flotas y nombres</h4>
+        <a href="{% url 'koru_stats:paps_dashboard' %}" class="btn btn-sm btn-outline-secondary">
+            <i class="fas fa-arrow-left me-1"></i>Volver al cumplimiento
+        </a>
+        <a href="{% url 'koru_stats:paps_importar' %}" class="btn btn-sm btn-outline-info">
+            <i class="fas fa-file-import me-1"></i>Importar
+        </a>
+    </div>
+
+    {% if sin_clasificar %}
+    <div class="alert alert-warning py-2 small">
+        <i class="fas fa-triangle-exclamation me-1"></i>
+        Hay <strong>{{ sin_clasificar }}</strong> flota(s) sin clasificar. Sus PAPs no cuentan
+        para el filtro, y quien dependa de ellas sale «en duda» en vez de «no llega».
+    </div>
+    {% endif %}
+
+    <div class="row g-3">
+
+        <div class="col-12 col-xl-7">
+            <div class="card">
+                <div class="card-header d-flex align-items-center">
+                    <span>Tipos de flota</span>
+                    <span class="ms-auto text-muted small">
+                        Cambiar una categoría recalcula todos los meses afectados
+                    </span>
+                </div>
+                <form method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="accion" value="flotas">
+                    <div class="table-responsive">
+                    <table class="table table-sm mb-0 align-middle">
+                        <thead>
+                            <tr>
+                                <th>Flota</th>
+                                <th class="text-end">PAPs</th>
+                                <th style="width:14rem">Cuenta como</th>
+                                <th class="text-center">De corp</th>
+                                <th>Origen</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        {% for ft in flotas %}
+                            <tr class="{% if ft.categoria == 'sin' %}fila-sin{% endif %}">
+                                <td><code>{{ ft.nombre }}</code></td>
+                                <td class="text-end">{{ ft.volumen|rknum }}</td>
+                                <td>
+                                    <select name="cat_{{ ft.pk }}" class="form-select form-select-sm">
+                                        {% for valor, texto in ft.CATEGORIAS %}
+                                        <option value="{{ valor }}" {% if valor == ft.categoria %}selected{% endif %}>{{ texto }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                                <td class="text-center">
+                                    <input type="checkbox" class="form-check-input" name="corp_{{ ft.pk }}"
+                                           {% if ft.es_corp %}checked{% endif %}>
+                                </td>
+                                <td class="small">
+                                    {% if ft.declarada_por_alianza %}
+                                        <span class="text-success" title="La categoría la declara la propia web de la alianza">
+                                            <i class="fas fa-check-circle me-1"></i>la alianza
+                                        </span>
+                                    {% else %}
+                                        <span class="text-muted">a mano</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        {% empty %}
+                            <tr><td colspan="5" class="text-center text-muted py-4">
+                                Aún no hay flotas. Importa un fichero.
+                            </td></tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                    </div>
+                    {% if flotas %}
+                    <div class="card-body py-2 d-flex align-items-center gap-2">
+                        <button class="btn btn-sm btn-primary">Guardar y recalcular</button>
+                        <span class="text-muted small">
+                            Lo que toques a mano deja de contar como declarado por la alianza, pero el
+                            próximo fichero que lo declare volverá a pisarlo.
+                        </span>
+                    </div>
+                    {% endif %}
+                </form>
+            </div>
+        </div>
+
+        <div class="col-12 col-xl-5">
+            <div class="card mb-3">
+                <div class="card-header">Atar un nombre a un personaje</div>
+                <div class="card-body">
+                    <p class="small text-muted">
+                        Para los que se cambiaron el nombre o no están en el Auth. Lo que ates aquí
+                        manda sobre la búsqueda automática, y se aplica también a lo ya importado.
+                    </p>
+                    <form method="post" class="row g-2">
+                        {% csrf_token %}
+                        <input type="hidden" name="accion" value="alias">
+                        <div class="col-12">
+                            <input name="account_name" class="form-control form-control-sm"
+                                   placeholder="Nombre tal cual sale en el fichero" required>
+                        </div>
+                        <div class="col-6">
+                            <input name="main_character_id" class="form-control form-control-sm"
+                                   placeholder="character_id del main" required>
+                        </div>
+                        <div class="col-6">
+                            <input name="main_character_name" class="form-control form-control-sm"
+                                   placeholder="Nombre del main">
+                        </div>
+                        <div class="col-12">
+                            <input name="nota" class="form-control form-control-sm" placeholder="Nota (opcional)">
+                        </div>
+                        <div class="col-12">
+                            <button class="btn btn-sm btn-primary">Atar</button>
+                        </div>
+                    </form>
+
+                    {% if alias %}
+                    <hr>
+                    <div class="stat-label mb-2">Ya atados</div>
+                    <ul class="small mb-0">
+                        {% for a in alias %}
+                        <li><code>{{ a.account_name }}</code> → {{ a.main_character_name|default:a.main_character_id }}
+                            {% if a.nota %}<span class="text-muted">· {{ a.nota }}</span>{% endif %}</li>
+                        {% endfor %}
+                    </ul>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header d-flex align-items-center">
+                    <span>Sin atar</span>
+                    <span class="ms-auto text-muted small">por PAPs, de más a menos</span>
+                </div>
+                <div class="table-responsive" style="max-height:24rem;overflow:auto">
+                <table class="table table-sm mb-0">
+                    <tbody>
+                    {% for s in sin_casar %}
+                        <tr>
+                            <td>{{ s.account_name }}</td>
+                            <td class="text-end text-muted">{{ s.paps|rknum }}</td>
+                        </tr>
+                    {% empty %}
+                        <tr><td class="text-center text-muted py-4">
+                            Todos los nombres casan con un personaje del Auth.
+                        </td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

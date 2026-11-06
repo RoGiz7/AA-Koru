@@ -1,0 +1,185 @@
+{% extends 'allianceauth/base-bs5.html' %}
+{% load i18n koru_stats_tags %}
+
+{% block page_title %}Importar PAPs{% endblock %}
+
+{% block content %}
+<style>
+.stat-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: #6c757d; }
+.caja-codigo { background:#0b0b0b; border:1px solid #333; border-radius:6px; padding:.75rem;
+               font-family:monospace; font-size:.7rem; color:#ddd; max-height:16rem; overflow:auto;
+               white-space:pre; }
+.paso { border-left: 3px solid #3b82f6; padding-left: .75rem; }
+</style>
+
+<div class="container-fluid">
+
+    <div class="d-flex align-items-center gap-3 mb-3 flex-wrap">
+        <h4 class="mb-0"><i class="fas fa-file-import text-info me-2"></i>Importar PAPs</h4>
+        <a href="{% url 'koru_stats:paps_dashboard' %}" class="btn btn-sm btn-outline-secondary">
+            <i class="fas fa-arrow-left me-1"></i>Volver al cumplimiento
+        </a>
+    </div>
+
+    <div class="row g-3">
+
+        <div class="col-12 col-lg-5">
+            <div class="card h-100">
+                <div class="card-header">Subir un fichero</div>
+                <div class="card-body">
+                    <form method="post" enctype="multipart/form-data">
+                        {% csrf_token %}
+                        <div class="mb-3">
+                            <label class="form-label small">Fichero JSON o CSV</label>
+                            <input type="file" name="fichero" accept=".json,.csv,text/csv,application/json"
+                                   class="form-control form-control-sm">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label small">…o pega el contenido aquí</label>
+                            <textarea name="pegado" rows="4" class="form-control form-control-sm"
+                                      placeholder="Pega el JSON tal cual"></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label small">Período, solo si el CSV no trae columna «Month»</label>
+                            <input type="text" name="periodo_forzado" placeholder="2026-10"
+                                   class="form-control form-control-sm">
+                        </div>
+                        <div class="form-check mb-3">
+                            <input class="form-check-input" type="checkbox" name="forzar" id="forzar">
+                            <label class="form-check-label small" for="forzar">
+                                Forzar: reimportar aunque el fichero ya esté, y dejar que un CSV
+                                pise un mes que vino de la API
+                            </label>
+                        </div>
+                        <button class="btn btn-primary btn-sm">
+                            <i class="fas fa-upload me-1"></i>Importar
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-lg-7">
+            <div class="card h-100">
+                <div class="card-header">Sacar los datos buenos de la web de la alianza</div>
+                <div class="card-body">
+                    <div class="alert alert-info py-2 small mb-3">
+                        El CSV de la pantalla de Export <strong>omite entre 16 y 43 personas por mes</strong>
+                        (casi todas con 0 PAPs, que son justo las que busca el filtro) y además rebaja
+                        números de los que sí salen. El JSON de la API trae a todo el mundo, la
+                        clasificación oficial de cada mes y el rol de flota. Usa el JSON siempre que puedas.
+                    </div>
+                    <ol class="small mb-3">
+                        <li class="paso mb-2">Abre <code>fleets.gnf.lt</code> y entra con tu cuenta.</li>
+                        <li class="paso mb-2">Abre la consola del navegador con <kbd>F12</kbd> → pestaña <em>Console</em>.</li>
+                        <li class="paso mb-2">Pega el código de abajo y dale a <kbd>Enter</kbd>. Tarda un rato: va mes a mes.</li>
+                        <li class="paso mb-0">Te deja un fichero <code>paps-AAAA-MM-DD.json</code>. Súbelo aquí.</li>
+                    </ol>
+                    <div class="d-flex align-items-center gap-2 mb-2">
+                        <span class="stat-label mb-0">El código</span>
+                        <button class="btn btn-sm btn-outline-info ms-auto" type="button" id="copiar">
+                            <i class="fas fa-copy me-1"></i>Copiar
+                        </button>
+                    </div>
+                    <div class="caja-codigo" id="recolector">{{ recolector }}</div>
+                    <p class="text-muted small mt-2 mb-0">
+                        <i class="fas fa-shield-halved me-1"></i>
+                        No guarda ninguna contraseña ni sesión en Koru: se ejecuta en tu navegador,
+                        donde ya estás dentro, y lo único que sale de ahí es un fichero.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if informe %}
+    <div class="card mt-3">
+        <div class="card-header d-flex align-items-center">
+            <span>Qué ha entrado — {{ informe.fichero|default:"sin nombre" }}</span>
+            {% if informe.origen %}
+            <span class="badge {% if informe.origen == 'json' %}bg-success{% else %}bg-secondary{% endif %} ms-2">
+                {{ informe.origen|upper }}
+            </span>
+            {% endif %}
+        </div>
+        <div class="card-body">
+            {% if informe.periodos %}
+            <div class="mb-3">
+                <div class="stat-label mb-1">Meses importados</div>
+                {% for p, n in informe.periodos %}
+                    <span class="badge bg-primary me-1 mb-1">{{ p }} · {{ n }}</span>
+                {% endfor %}
+                <div class="mt-2 small text-muted">
+                    {{ informe.filas|rknum }} registros · {{ informe.total_paps|rknum }} PAPs
+                </div>
+            </div>
+            {% endif %}
+
+            {% if informe.saltados %}
+            <div class="alert alert-warning py-2 small">
+                <strong>Meses no pisados:</strong> {{ informe.saltados|join:", " }}.
+                Ya venían del JSON de la API y este fichero es un CSV, que trae menos.
+                Marca «forzar» si de verdad quieres sustituirlos.
+            </div>
+            {% endif %}
+
+            {% if informe.flotas_nuevas %}
+            <div class="alert alert-info py-2 small">
+                <strong>Flotas nuevas:</strong> {{ informe.flotas_nuevas|join:", " }}.
+                Las que salgan «SIN CLASIFICAR» no cuentan para el filtro hasta que las clasifiques en
+                <a href="{% url 'koru_stats:paps_catalogo' %}">Flotas y nombres</a>.
+            </div>
+            {% endif %}
+
+            {% if informe.flotas_corregidas %}
+            <div class="alert alert-secondary py-2 small">
+                <strong>Clasificación corregida por la fuente:</strong>
+                {{ informe.flotas_corregidas|join:", " }}
+            </div>
+            {% endif %}
+
+            {% if informe.sin_casar %}
+            <details class="mb-2">
+                <summary class="small text-warning">
+                    {{ informe.sin_casar|length }} nombre(s) no casan con ningún personaje del Auth
+                </summary>
+                <p class="small text-muted mt-2 mb-1">
+                    Sus líneas se han guardado igual — tirarlas haría que el total del mes mintiera.
+                    Átalos en <a href="{% url 'koru_stats:paps_catalogo' %}">Flotas y nombres</a>.
+                </p>
+                <div class="small">{{ informe.sin_casar|join:" · " }}</div>
+            </details>
+            {% endif %}
+
+            {% if informe.descuadres %}
+            <details class="mb-2">
+                <summary class="small text-warning">
+                    {{ informe.descuadres|length }} línea(s) donde el desglose no suma el total
+                </summary>
+                <div class="small mt-2">{{ informe.descuadres|join:" · " }}</div>
+            </details>
+            {% endif %}
+
+            {% if informe.avisos %}
+            <details>
+                <summary class="small text-muted">Todos los avisos ({{ informe.avisos|length }})</summary>
+                <ul class="small text-muted mt-2 mb-0">
+                    {% for a in informe.avisos %}<li>{{ a }}</li>{% endfor %}
+                </ul>
+            </details>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+document.getElementById('copiar')?.addEventListener('click', function () {
+    const txt = document.getElementById('recolector').textContent;
+    navigator.clipboard.writeText(txt).then(() => {
+        this.innerHTML = '<i class="fas fa-check me-1"></i>Copiado';
+        setTimeout(() => { this.innerHTML = '<i class="fas fa-copy me-1"></i>Copiar'; }, 2000);
+    });
+});
+</script>
+{% endblock %}

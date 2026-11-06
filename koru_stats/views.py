@@ -7320,3 +7320,278 @@ def koruticket_accion(request, tid):
             messages.success(request, "Reabierto.")
 
     return redirect(destino)
+
+
+# ---------------------------------------------------------------------------
+# PAPs de la alianza
+#
+# El trabajo de verdad (leer ficheros, clasificar, calcular) vive en
+# `koru_stats/paps.py`, con el porqué de cada decisión. Aquí solo hay pantallas.
+# ---------------------------------------------------------------------------
+
+def _paps_periodo(request):
+    """El mes elegido y la lista para el selector. None si no hay nada importado."""
+    from .models import PapPeriod
+
+    periodos = list(PapPeriod.objects.all())
+    if not periodos:
+        return None, []
+    pedido = (request.GET.get("periodo") or "").strip()
+    elegido = next((p for p in periodos if p.periodo == pedido), periodos[0])
+    return elegido, periodos
+
+
+@login_required
+@permission_required("koru_stats.paps_access")
+def paps_dashboard(request):
+    """El cumplimiento del mes: quién llega al filtro y quién no.
+
+    ⚠ Tres estados, no dos. «Dudoso» es el que no llega pero tiene PAPs en
+    flotas sin clasificar que podrían darle el aprobado: la duda es NUESTRA, y
+    pintarlo como incumplidor sería acusarle de algo que no sabemos.
+    """
+    from django.contrib import messages
+    from django.shortcuts import redirect
+    from django.urls import reverse
+
+    from .models import PapMonthly, PapPeriod
+
+    periodo, periodos = _paps_periodo(request)
+
+    if request.method == "POST" and periodo:
+        if not request.user.has_perm("koru_stats.paps_admin"):
+            messages.error(request, "No tienes permiso para cambiar el régimen del mes.")
+        else:
+            per = PapPeriod.objects.filter(pk=request.POST.get("periodo_id")).first()
+            if per:
+                regimen = request.POST.get("regimen")
+                if regimen in dict(PapPeriod.REGIMENES):
+                    per.regimen = regimen
+                    per.aplicar_regimen()
+                pedidas = (request.POST.get("requeridas") or "").strip()
+                if pedidas.isdigit():
+                    per.requeridas = min(int(pedidas), 200)
+                per.save(update_fields=["regimen", "requeridas"])
+                messages.success(
+                    request,
+                    f"{per.periodo}: {per.get_regimen_display().lower()}, "
+                    f"{per.requeridas} estratégicas.")
+        destino = reverse("koru_stats:paps_dashboard")
+        return redirect(f"{destino}?periodo={request.POST.get('periodo_txt', '')}")
+
+    filas = []
+    kpi = {"pilotos": 0, "cumplen": 0, "no_cumplen": 0, "dudosos": 0,
+           "sin_casar": 0, "paps": 0, "estrategicas": 0, "corp": 0, "descuadres": 0}
+
+    if periodo:
+        lineas = (PapMonthly.objects
+                  .filter(periodo=periodo)
+                  .select_related("periodo"))
+        for ln in lineas:
+            cumple, dudoso = ln.cumple, ln.dudoso
+            filas.append({
+                "linea": ln, "cumple": cumple, "dudoso": dudoso,
+                "estado": "cumple" if cumple else ("dudoso" if dudoso else "no"),
+            })
+            kpi["pilotos"] += 1
+            kpi["paps"] += ln.total
+            kpi["estrategicas"] += ln.estrategicas
+            kpi["corp"] += ln.corp
+            kpi["cumplen"] += int(cumple)
+            kpi["dudosos"] += int(dudoso)
+            kpi["no_cumplen"] += int(not cumple and not dudoso)
+            kpi["sin_casar"] += int(not ln.main_character_id)
+            kpi["descuadres"] += int(not ln.cuadra)
+        # Los que no llegan, arriba: es la lista que se mira, no la de honor.
+        orden = {"no": 0, "dudoso": 1, "cumple": 2}
+        filas.sort(key=lambda f: (orden[f["estado"]], -f["linea"].estrategicas,
+                                  f["linea"].account_name.casefold()))
+
+    return render(request, "koru_stats/paps_dashboard.html", {
+        "periodo": periodo,
+        "periodos": periodos,
+        "filas": filas,
+        "kpi": kpi,
+        "puede_admin": request.user.has_perm("koru_stats.paps_admin"),
+    })
+
+
+@login_required
+@permission_required("koru_stats.paps_admin")
+def paps_importar(request):
+    """Subir un fichero (JSON de la API o CSV de Export) y ver qué ha entrado."""
+    from django.contrib import messages
+
+    from . import paps as motor
+
+    informe = None
+    if request.method == "POST":
+        pegado = (request.POST.get("pegado") or "").strip()
+        subido = request.FILES.get("fichero")
+        nombre = ""
+        contenido = None
+
+        if subido:
+            # 16 MB: el paquete entero de 36 meses pesa 0,4 MB, así que esto es
+            # un tope para que nadie suba una película, no una restricción real.
+            if subido.size > 16 * 1024 * 1024:
+                messages.error(request, "El fichero pasa de 16 MB. Eso no es una exportación de PAPs.")
+            else:
+                contenido = subido.read()
+                nombre = subido.name
+        elif pegado:
+            contenido = pegado.encode("utf-8")
+            nombre = "pegado a mano"
+        else:
+            messages.error(request, "Elige un fichero o pega el contenido.")
+
+        if contenido is not None:
+            forzado = None
+            txt = (request.POST.get("periodo_forzado") or "").strip()
+            if txt:
+                forzado = motor.parse_mes(txt)
+                if not forzado:
+                    messages.error(request, f"No entiendo el período «{txt}». Usa 2026-10.")
+                    contenido = None
+
+        if contenido is not None:
+            try:
+                informe = motor.importar(
+                    contenido, nombre, request.user, forzado,
+                    forzar=bool(request.POST.get("forzar")))
+            except Exception as exc:
+                logger.exception("koru paps: la importación ha reventado")
+                messages.error(request, f"La importación ha fallado: {exc}")
+            else:
+                if informe.ok:
+                    messages.success(
+                        request,
+                        f"Importados {informe.filas} registros en "
+                        f"{len(informe.periodos)} mes(es).")
+                elif informe.ya_estaba:
+                    messages.info(request, "Ese fichero ya estaba importado.")
+                else:
+                    messages.error(request, "No ha entrado nada. Mira los avisos.")
+
+    return render(request, "koru_stats/paps_importar.html", {
+        "informe": informe,
+        "recolector": PAPS_RECOLECTOR,
+    })
+
+
+@login_required
+@permission_required("koru_stats.paps_admin")
+def paps_catalogo(request):
+    """Clasificar flotas y atar nombres que no casan con ningún personaje.
+
+    ★ Al cambiar una categoría se RECALCULAN los meses afectados en el acto.
+    Por eso el desglose se guarda: sin él habría que reimportar los ficheros.
+    """
+    from django.contrib import messages
+    from django.shortcuts import redirect
+    from django.urls import reverse
+
+    from . import paps as motor
+    from .models import PapAccountAlias, PapFleetType, PapMonthly
+
+    if request.method == "POST":
+        accion = request.POST.get("accion")
+
+        if accion == "flotas":
+            tocadas = 0
+            for ft in PapFleetType.objects.all():
+                cat = request.POST.get(f"cat_{ft.pk}")
+                corp = bool(request.POST.get(f"corp_{ft.pk}"))
+                cambios = {}
+                if cat in dict(PapFleetType.CATEGORIAS) and cat != ft.categoria:
+                    cambios["categoria"] = cat
+                if corp != ft.es_corp:
+                    cambios["es_corp"] = corp
+                if cambios:
+                    for k, v in cambios.items():
+                        setattr(ft, k, v)
+                    # Lo tocado a mano deja de ser «lo que dijo la alianza».
+                    ft.declarada_por_alianza = False
+                    ft.save(update_fields=list(cambios) + ["declarada_por_alianza"])
+                    tocadas += 1
+            if tocadas:
+                n = motor.recalcular()
+                messages.success(
+                    request,
+                    f"{tocadas} flota(s) cambiadas. Se han recalculado {n} líneas.")
+            else:
+                messages.info(request, "No había nada que cambiar.")
+
+        elif accion == "alias":
+            nombre = (request.POST.get("account_name") or "").strip()
+            char_id = (request.POST.get("main_character_id") or "").strip()
+            if nombre and char_id.isdigit():
+                PapAccountAlias.objects.update_or_create(
+                    account_name=nombre,
+                    defaults={"main_character_id": int(char_id),
+                              "main_character_name": (request.POST.get("main_character_name") or "").strip()[:100],
+                              "nota": (request.POST.get("nota") or "").strip()[:200],
+                              "creado_por": request.user})
+                # Se aplica a lo ya importado, no solo a lo que venga.
+                resuelto = motor.resolver_cuentas([nombre]).get(nombre, (0, ""))
+                PapMonthly.objects.filter(account_name=nombre).update(
+                    main_character_id=resuelto[0], main_character_name=resuelto[1][:100])
+                messages.success(request, f"«{nombre}» atado.")
+            else:
+                messages.error(request, "Hace falta el nombre del fichero y un character_id.")
+
+        return redirect(reverse("koru_stats:paps_catalogo"))
+
+    flotas = list(PapFleetType.objects.all())
+    # Cuántas PAPs mueve cada flota: clasificar a ciegas una que mueve 2.000 no
+    # es lo mismo que una que mueve 3.
+    from django.db.models import Sum
+    from .models import PapMonthlyDetalle
+    volumen = {
+        r["nombre"]: r["n"] for r in
+        PapMonthlyDetalle.objects.filter(dimension=PapMonthlyDetalle.FLOTA)
+        .values("nombre").annotate(n=Sum("paps"))
+    }
+    for ft in flotas:
+        ft.volumen = volumen.get(ft.nombre, 0)
+
+    sin_casar = (PapMonthly.objects.filter(main_character_id=0)
+                 .values("account_name")
+                 .annotate(paps=Sum("total"))
+                 .order_by("-paps")[:100])
+
+    return render(request, "koru_stats/paps_catalogo.html", {
+        "flotas": flotas,
+        "alias": PapAccountAlias.objects.all(),
+        "sin_casar": sin_casar,
+        "sin_clasificar": sum(1 for f in flotas if f.categoria == PapFleetType.SIN),
+    })
+
+
+# El recolector que se pega en la consola de la web de la alianza. Vive aquí y
+# no en la plantilla para que no haya que escapar llaves de Django.
+#
+# ⚠ No guarda ninguna sesión en ningún sitio: se ejecuta en el navegador de
+# quien ya está logueado y lo único que sale de ahí es un fichero.
+PAPS_RECOLECTOR = r"""(async () => {
+  const base = '/api/v1/corporation/participation';
+  const per = await fetch(base + '/periods').then(r => r.json());
+  const paquete = {
+    generado: new Date().toISOString(),
+    origen: location.origin + base,
+    roles: ['Undefined','Combat','Logistics','Ewar','Booster','Support',
+            'Interdictors','Cyno','CommandDestroyers',
+            '(rol sin identificar 9)','(rol sin identificar 10)'],
+    periodos: []
+  };
+  for (const p of per) for (const m of p.months) {
+    const d = await fetch(`${base}/${p.year}/${m}`).then(r => r.json()).catch(() => null);
+    if (d) paquete.periodos.push({ anio: p.year, mes: m, datos: d });
+    console.log('PAPs:', p.year + '-' + m);
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(paquete)], { type: 'application/json' }));
+  a.download = 'paps-' + new Date().toISOString().slice(0, 10) + '.json';
+  document.body.appendChild(a); a.click(); a.remove();
+  console.log('Listo:', paquete.periodos.length, 'meses');
+})();"""
