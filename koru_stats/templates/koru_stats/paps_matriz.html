@@ -11,8 +11,11 @@
 .matriz .piloto { position: sticky; left: 0; z-index: 1; background: var(--bs-body-bg); }
 .matriz thead .piloto { z-index: 3; }
 .matriz .cero { color: rgba(127,127,127,.35); }
-.matriz .col-rot { writing-mode: vertical-rl; transform: rotate(180deg); height: 8rem;
-                   vertical-align: bottom; font-weight: 600; }
+/* 13rem porque «Capital Industrial Ship» son 23 caracteres: con 8rem se
+   cortaba por arriba y no se leía cuál era. */
+.matriz .col-rot { writing-mode: vertical-rl; transform: rotate(180deg); height: 13rem;
+                   vertical-align: bottom; font-weight: 600; padding-bottom: .35rem; }
+.matriz thead th { vertical-align: bottom; }
 .envoltura { max-height: 75vh; overflow: auto; }
 </style>
 
