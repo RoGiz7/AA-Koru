@@ -7389,17 +7389,25 @@ def paps_dashboard(request):
                 pedidas = (request.POST.get("requeridas") or "").strip()
                 if pedidas.isdigit():
                     per.requeridas = min(int(pedidas), 200)
-                per.save(update_fields=["regimen", "requeridas"])
+                # ⚠ El régimen NO toca el listón de corp: la paz y la guerra las
+                # declara la alianza, lo que Rekium pide a los suyos lo decide
+                # Rekium. Solo cambia si lo escriben a mano.
+                corp = (request.POST.get("requeridas_corp") or "").strip()
+                if corp.isdigit():
+                    per.requeridas_corp = min(int(corp), 200)
+                per.save(update_fields=["regimen", "requeridas", "requeridas_corp"])
                 messages.success(
                     request,
                     f"{per.periodo}: {per.get_regimen_display().lower()}, "
-                    f"{per.requeridas} estratégicas.")
+                    f"{per.requeridas} estratégicas de alianza y "
+                    f"{per.requeridas_corp} de corp.")
         destino = reverse("koru_stats:paps_dashboard")
         return redirect(f"{destino}?periodo={request.POST.get('periodo_txt', '')}")
 
     filas = []
     kpi = {"pilotos": 0, "cumplen": 0, "no_cumplen": 0, "dudosos": 0,
-           "sin_casar": 0, "paps": 0, "estrategicas": 0, "corp": 0, "descuadres": 0}
+           "sin_casar": 0, "paps": 0, "estrategicas": 0, "corp": 0, "descuadres": 0,
+           "cumplen_corp": 0, "solo_corp": 0}
 
     if periodo:
         lineas = (PapMonthly.objects
@@ -7407,10 +7415,16 @@ def paps_dashboard(request):
                   .select_related("periodo"))
         for ln in lineas:
             cumple, dudoso = ln.cumple, ln.dudoso
+            cumple_corp = ln.cumple_corp
             filas.append({
                 "linea": ln, "cumple": cumple, "dudoso": dudoso,
+                "cumple_corp": cumple_corp,
                 "estado": "cumple" if cumple else ("dudoso" if dudoso else "no"),
             })
+            kpi["cumplen_corp"] += int(cumple_corp)
+            # Los que la alianza da por incumplidores y la corp no: el grupo
+            # que no existía mientras solo se medía una cosa.
+            kpi["solo_corp"] += int(cumple_corp and not cumple)
             kpi["pilotos"] += 1
             kpi["paps"] += ln.total
             kpi["estrategicas"] += ln.estrategicas

@@ -103,12 +103,18 @@
                 </select>
                 <span class="text-muted small">o a mano</span>
                 <input type="number" name="requeridas" min="0" max="200" value="{{ periodo.requeridas }}"
-                       class="form-control form-control-sm" style="width:5rem">
+                       class="form-control form-control-sm" style="width:5rem"
+                       title="Estratégicas de alianza">
+                <span class="text-muted small ms-2">y de corp</span>
+                <input type="number" name="requeridas_corp" min="0" max="200" value="{{ periodo.requeridas_corp }}"
+                       class="form-control form-control-sm" style="width:5rem"
+                       title="PAPs de flotas de corp. El régimen no lo toca: esto lo decide Rekium.">
                 <button class="btn btn-sm btn-primary">Guardar</button>
             </form>
             {% else %}
             <span class="badge bg-secondary">{{ periodo.get_regimen_display }}</span>
-            <span>Se piden <strong>{{ periodo.requeridas }}</strong> estratégicas</span>
+            <span>Se piden <strong>{{ periodo.requeridas }}</strong> estratégicas
+                  y <strong>{{ periodo.requeridas_corp }}</strong> de corp</span>
             {% endif %}
             <span class="ms-auto text-muted small">
                 {% if periodo.origen == 'json' %}
@@ -152,9 +158,9 @@
         </div>
         <div class="col-6 col-md-2">
             <div class="card kpi-card h-100"><div class="card-body">
-                <div class="stat-label mb-1">De corp</div>
-                <div class="stat-big text-primary">{{ kpi.corp|rknum }}</div>
-                <small class="text-muted">PAPs en flotas propias</small>
+                <div class="stat-label mb-1">Cumplen corp</div>
+                <div class="stat-big text-primary">{{ kpi.cumplen_corp }}/{{ kpi.pilotos }}</div>
+                <small class="text-muted">{{ periodo.requeridas_corp }}+ · {{ kpi.corp|rknum }} PAPs</small>
             </div></div>
         </div>
         <div class="col-6 col-md-2">
@@ -165,6 +171,16 @@
             </div></div>
         </div>
     </div>
+
+    {% if kpi.solo_corp %}
+    <div class="alert alert-info py-2 small">
+        <i class="fas fa-circle-info me-1"></i>
+        <strong>{{ kpi.solo_corp }}</strong> piloto(s) no llegan al listón de la alianza
+        <strong>pero sí cumplen con el de la corp</strong>. Salen en rojo porque la alianza
+        pide estratégicas y las flotas de corp no lo son, pero no son gente que no arrime:
+        arriman donde la alianza no lo cuenta.
+    </div>
+    {% endif %}
 
     {% if kpi.descuadres %}
     <div class="alert alert-warning py-2 small">
@@ -221,7 +237,11 @@
                         {% if f.linea.faltan %}{{ f.linea.faltan }}{% else %}—{% endif %}
                     </td>
                     <td class="text-end text-muted">{{ f.linea.actividades|rknum }}</td>
-                    <td class="text-end">{{ f.linea.corp|rknum }}</td>
+                    <td class="text-end">
+                        {{ f.linea.corp|rknum }}
+                        {% if f.cumple_corp %}<i class="fas fa-check text-success ms-1"
+                           title="Llega al listón de corp de este mes"></i>{% endif %}
+                    </td>
                     <td class="text-end">{{ f.linea.total|rknum }}</td>
                     <td>
                         {% if f.estado == 'cumple' %}

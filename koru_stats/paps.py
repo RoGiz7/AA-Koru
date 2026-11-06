@@ -1234,7 +1234,12 @@ def reincidentes(minimo=3):
             for f in lineas)
 
         paps = sum(x.total for x in racha)
+        corp_ok = sum(1 for x in racha if x.cumple_corp)
         fuera.append({
+            # ★ Cuántos meses de la racha SÍ llegaron al listón de corp. Es lo
+            # que impide leer esta tabla como una lista de vagos: alguien puede
+            # no llegar a la alianza y estar cumpliendo de sobra con la corp.
+            "corp_ok": corp_ok,
             "piloto": racha[0].main_character_name or racha[0].account_name,
             "cuenta": racha[0].account_name,
             "main_character_id": racha[0].main_character_id,

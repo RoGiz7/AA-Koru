@@ -75,7 +75,8 @@
             Están, vuelan, y no van a las estratégicas
             <span class="text-muted small ms-2">
                 Primero los que <strong>dejaron</strong> de cumplir — eso es un cambio.
-                Después los que no lo han hecho nunca, que son un censo.
+                Después los que no lo han hecho nunca. Y mira la columna de corp:
+                muchos de estos vuelan mucho, solo que donde la alianza no lo cuenta.
             </span>
         </div>
         <div class="table-responsive">
@@ -114,7 +115,15 @@
                     <td class="meses text-muted">{{ r.desde }} → {{ r.hasta }}</td>
                     <td class="text-end">{{ r.paps|rknum }}</td>
                     <td class="text-end text-danger">{{ r.estrategicas }}</td>
-                    <td class="text-end">{{ r.corp|rknum }}</td>
+                    <td class="text-end">
+                        {{ r.corp|rknum }}
+                        {% if r.corp_ok %}
+                        <span class="badge bg-success ms-1"
+                              title="Meses de la racha en los que sí llegó al listón de corp">
+                            corp {{ r.corp_ok }}/{{ r.meses }}
+                        </span>
+                        {% endif %}
+                    </td>
                     <td class="text-end">
                         {% if puede_auditor and r.main_character_id %}
                         <a href="{% url 'koru_stats:auditor_pilot' r.main_character_id %}"

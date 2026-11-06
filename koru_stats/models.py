@@ -2721,8 +2721,13 @@ class PapPeriod(models.Model):
     regimen = models.CharField(max_length=8, choices=REGIMENES, default=PAZ)
     requeridas = models.PositiveSmallIntegerField(
         default=5,
-        help_text="Estratégicas exigidas ese mes. Se pone sola al cambiar el régimen, "
-                  "pero se puede tocar si un mes concreto fue distinto.")
+        help_text="Estratégicas de ALIANZA exigidas ese mes. Se pone sola al cambiar el "
+                  "régimen, pero se puede tocar si un mes concreto fue distinto.")
+    requeridas_corp = models.PositiveSmallIntegerField(
+        default=5,
+        help_text="PAPs de flotas de CORP exigidas ese mes. No la toca el régimen: la paz "
+                  "y la guerra las declara la alianza, y lo que Rekium pide a los suyos es "
+                  "decisión de Rekium. Se cambia a mano cuando un mes lo pida.")
     fichero = models.CharField(max_length=160, blank=True)
     fichero_hash = models.CharField(max_length=64, blank=True, db_index=True)
     importado_en = models.DateTimeField(auto_now=True)
@@ -2809,6 +2814,21 @@ class PapMonthly(models.Model):
     @property
     def faltan(self):
         return max(self.periodo.requeridas - self.estrategicas, 0)
+
+    @property
+    def cumple_corp(self):
+        """★ Se mide APARTE, no suma al filtro de la alianza.
+
+        La alianza pide estratégicas y las flotas de corp no lo son. Pero el
+        74% de las PAPs de la gente que no llega al listón son de corp: sin
+        esta segunda medida, la pantalla parece una lista de vagos y es
+        justo al revés para dos de cada tres.
+        """
+        return self.corp >= self.periodo.requeridas_corp
+
+    @property
+    def faltan_corp(self):
+        return max(self.periodo.requeridas_corp - self.corp, 0)
 
 
 class PapMonthlyDetalle(models.Model):
