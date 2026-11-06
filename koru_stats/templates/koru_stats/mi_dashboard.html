@@ -682,6 +682,107 @@
 
     </div>{# /tab-content #}
 
+    {% if paps %}
+    <!-- PAPs de la alianza -->
+    <div class="card mt-4">
+      <div class="card-header d-flex align-items-center gap-2 flex-wrap">
+        <h5 class="mb-0"><i class="fas fa-users-rectangle me-2 text-info"></i>Mis PAPs de la alianza</h5>
+        <span class="text-muted small ms-auto">últimos {{ paps.meses }} meses importados</span>
+      </div>
+      <div class="card-body">
+        <div class="row g-3 mb-3">
+          <div class="col-6 col-md-3">
+            <div class="border-start border-4 border-success ps-2">
+              <div class="text-uppercase text-muted" style="font-size:.7rem">Estratégicas</div>
+              <div class="fs-4 fw-bold text-success">{{ paps.estrategicas|rknum }}</div>
+            </div>
+          </div>
+          <div class="col-6 col-md-3">
+            <div class="border-start border-4 border-info ps-2">
+              <div class="text-uppercase text-muted" style="font-size:.7rem">PAPs totales</div>
+              <div class="fs-4 fw-bold text-info">{{ paps.total|rknum }}</div>
+            </div>
+          </div>
+          <div class="col-6 col-md-3">
+            <div class="border-start border-4 border-primary ps-2">
+              <div class="text-uppercase text-muted" style="font-size:.7rem">De corp</div>
+              <div class="fs-4 fw-bold text-primary">{{ paps.corp|rknum }}</div>
+            </div>
+          </div>
+          <div class="col-6 col-md-3">
+            <div class="border-start border-4 border-warning ps-2">
+              <div class="text-uppercase text-muted" style="font-size:.7rem">Meses cumplidos</div>
+              <div class="fs-4 fw-bold text-warning">{{ paps.cumplidos }}/{{ paps.meses }}</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="row g-3">
+          <div class="col-12 col-lg-6">
+            <div class="text-uppercase text-muted mb-2" style="font-size:.7rem">Mes a mes</div>
+            <div class="table-responsive" style="max-height:20rem;overflow:auto">
+            <table class="table table-sm table-hover mb-0">
+              <thead><tr>
+                <th>Mes</th><th class="text-end">Estrat.</th><th class="text-end">Piden</th>
+                <th class="text-end">Total</th><th></th>
+              </tr></thead>
+              <tbody>
+              {% for f in paps.filas %}
+                <tr>
+                  <td>{{ f.periodo.periodo }}</td>
+                  <td class="text-end fw-bold">{{ f.estrategicas }}</td>
+                  <td class="text-end text-muted">{{ f.periodo.requeridas }}</td>
+                  <td class="text-end text-muted">{{ f.total|rknum }}</td>
+                  <td class="text-end">
+                    {% if f.cumple %}<span class="badge bg-success">ok</span>
+                    {% elif f.dudoso %}<span class="badge bg-warning text-dark">en duda</span>
+                    {% else %}<span class="badge bg-danger">faltan {{ f.faltan }}</span>{% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+            </div>
+          </div>
+
+          <div class="col-12 col-lg-3">
+            <div class="text-uppercase text-muted mb-2" style="font-size:.7rem">En qué flotas</div>
+            <table class="table table-sm mb-0">
+              <tbody>
+              {% for x in paps.flotas %}
+                <tr><td class="small">{{ x.nombre }}</td><td class="text-end small">{{ x.paps|rknum }}</td></tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="col-12 col-lg-3">
+            <div class="text-uppercase text-muted mb-2" style="font-size:.7rem">Haciendo qué</div>
+            <table class="table table-sm mb-0">
+              <tbody>
+              {% for x in paps.roles %}
+                <tr><td class="small">{{ x.nombre }}</td><td class="text-end small">{{ x.paps|rknum }}</td></tr>
+              {% empty %}
+                <tr><td class="small text-muted">Sin rol registrado</td></tr>
+              {% endfor %}
+              </tbody>
+            </table>
+            {% if paps.fc %}
+            <div class="mt-3 small">
+              <i class="fas fa-star text-warning me-1"></i>
+              Has sacado <strong>{{ paps.fc|rknum }}</strong> flota(s).
+            </div>
+            {% endif %}
+          </div>
+        </div>
+        <p class="text-muted small mt-3 mb-0">
+          La nave concreta no sale aquí: la web de la alianza solo la da para tu propia cuenta
+          y Koru importa el resumen de toda la corp.
+        </p>
+      </div>
+    </div>
+    {% endif %}
+
     <!-- Mis Tickets: los del Auth -->
     <div class="card mt-4">
       <div class="card-header d-flex align-items-center gap-2">

@@ -286,6 +286,46 @@
   </div>
 </div>
 
+
+{% if paps_top and puede_paps %}
+<div class="row mb-4">
+  <div class="col-12 col-lg-7">
+    <div class="card h-100">
+      <div class="card-header d-flex align-items-center">
+        <i class="fas fa-users-rectangle text-info me-2"></i>
+        <strong>PAPs estratégicas — top 10 de {{ paps_top.periodo.periodo }}</strong>
+        <a href="{% url 'koru_stats:paps_dashboard' %}?periodo={{ paps_top.periodo.periodo }}"
+           class="btn btn-sm btn-outline-info ms-auto">Ver todo</a>
+      </div>
+      <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0 align-middle">
+        <tbody>
+        {% for f in paps_top.filas %}
+          <tr>
+            <td style="width:2rem" class="text-muted">{{ forloop.counter }}</td>
+            <td>{{ f.main_character_name|default:f.account_name }}</td>
+            <td style="width:45%">
+              <div style="height:6px;border-radius:3px;background:rgba(127,127,127,.2)">
+                <span style="display:block;height:100%;border-radius:3px;background:#22c55e;width: {% widthratio f.estrategicas paps_top.tope 100 %}%"></span>
+              </div>
+            </td>
+            <td class="text-end fw-bold" style="width:4rem">{{ f.estrategicas }}</td>
+            <td class="text-end text-muted" style="width:6rem">de {{ f.total|rknum }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      </div>
+      <div class="card-body py-2">
+        <small class="text-muted">
+          Se piden {{ paps_top.periodo.requeridas }} en {{ paps_top.periodo.get_regimen_display|lower }}.
+        </small>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 </div>{# /container #}
 {% endblock %}
 

@@ -1,0 +1,158 @@
+{% extends 'allianceauth/base-bs5.html' %}
+{% load i18n koru_stats_tags %}
+
+{% block page_title %}PAPs · reincidencia{% endblock %}
+
+{% block content %}
+<style>
+.stat-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: #6c757d; }
+.kpi-card { border-left: 4px solid #6c757d; }
+.kpi-card.red    { border-left-color: #ef4444; }
+.kpi-card.grey   { border-left-color: #6b7280; }
+.stat-big { font-size: 1.6rem; font-weight: 700; line-height: 1.1; }
+.meses { font-family: monospace; font-size: .75rem; }
+</style>
+
+<div class="container-fluid">
+
+    <div class="d-flex align-items-center gap-3 mb-3 flex-wrap">
+        <h4 class="mb-0"><i class="fas fa-user-clock text-warning me-2"></i>Reincidencia</h4>
+        <a href="{% url 'koru_stats:paps_dashboard' %}" class="btn btn-sm btn-outline-secondary">
+            <i class="fas fa-table me-1"></i>Cumplimiento del mes
+        </a>
+        <form method="get" class="d-flex align-items-center gap-2 mb-0 ms-auto">
+            <span class="text-muted small">Meses seguidos:</span>
+            <select name="meses" class="form-select form-select-sm w-auto" onchange="this.form.submit()">
+                {% for o in opciones %}
+                <option value="{{ o }}" {% if o == minimo %}selected{% endif %}>{{ o }} o más</option>
+                {% endfor %}
+            </select>
+        </form>
+    </div>
+
+    <div class="alert alert-secondary py-2 small">
+        <i class="fas fa-circle-info me-1"></i>
+        La racha se cuenta hacia atrás desde el último mes en que la persona aparece, y
+        <strong>un mes en el que no aparece la corta</strong> — no sabemos si estaba en la corp.
+        Quien sale «en duda» por flotas sin clasificar tampoco cuenta como fallo.
+        Y como todos los meses están ahora en paz con listón de 5, esta lista sale corta de más,
+        nunca larga de más.
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-3">
+            <div class="card kpi-card red h-100"><div class="card-body">
+                <div class="stat-label mb-1">Están y no van</div>
+                <div class="stat-big text-danger">{{ datos.activos|length }}</div>
+                <small class="text-muted">vuelan, pero no lo obligatorio</small>
+            </div></div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card kpi-card grey h-100"><div class="card-body">
+                <div class="stat-label mb-1">Sin actividad</div>
+                <div class="stat-big text-secondary">{{ datos.inactivos|length }}</div>
+                <small class="text-muted">cero PAPs en toda la racha</small>
+            </div></div>
+        </div>
+    </div>
+
+    {# La tabla que de verdad importa: gente activa que no va a lo obligatorio #}
+    <div class="card mb-4">
+        <div class="card-header">
+            <i class="fas fa-triangle-exclamation text-danger me-1"></i>
+            Están, vuelan, y no van a las estratégicas
+            <span class="text-muted small ms-2">
+                Estos sí son una conversación: están jugando y eligen no ir
+            </span>
+        </div>
+        <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0 align-middle">
+            <thead>
+                <tr>
+                    <th>Piloto</th>
+                    <th class="text-end">Meses</th>
+                    <th>Racha</th>
+                    <th class="text-end">PAPs</th>
+                    <th class="text-end">Estratégicas</th>
+                    <th class="text-end">De corp</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for r in datos.activos %}
+                <tr>
+                    <td>
+                        {{ r.piloto }}
+                        {% if r.cuenta != r.piloto %}<small class="text-muted">· {{ r.cuenta }}</small>{% endif %}
+                    </td>
+                    <td class="text-end"><span class="badge bg-danger">{{ r.meses }}</span></td>
+                    <td class="meses text-muted">{{ r.desde }} → {{ r.hasta }}</td>
+                    <td class="text-end">{{ r.paps|rknum }}</td>
+                    <td class="text-end text-danger">{{ r.estrategicas }}</td>
+                    <td class="text-end">{{ r.corp|rknum }}</td>
+                    <td class="text-end">
+                        {% if puede_auditor and r.main_character_id %}
+                        <a href="{% url 'koru_stats:auditor_pilot' r.main_character_id %}"
+                           class="btn btn-sm btn-outline-info" title="Ver su ficha en el Auditor">
+                            <i class="fas fa-user-shield"></i>
+                        </a>
+                        {% endif %}
+                    </td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="7" class="text-center text-muted py-4">
+                    Nadie lleva {{ minimo }} meses seguidos volando sin ir a estratégicas.
+                </td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <i class="fas fa-ghost text-secondary me-1"></i>
+            Sin una sola PAP en toda la racha
+            <span class="text-muted small ms-2">
+                Aquí la pregunta no es por qué no van, es si siguen
+            </span>
+        </div>
+        <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0 align-middle">
+            <thead>
+                <tr>
+                    <th>Piloto</th>
+                    <th class="text-end">Meses</th>
+                    <th>Racha</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for r in datos.inactivos %}
+                <tr class="text-muted">
+                    <td>
+                        {{ r.piloto }}
+                        {% if r.cuenta != r.piloto %}<small>· {{ r.cuenta }}</small>{% endif %}
+                    </td>
+                    <td class="text-end"><span class="badge bg-secondary">{{ r.meses }}</span></td>
+                    <td class="meses">{{ r.desde }} → {{ r.hasta }}</td>
+                    <td class="text-end">
+                        {% if puede_auditor and r.main_character_id %}
+                        <a href="{% url 'koru_stats:auditor_pilot' r.main_character_id %}"
+                           class="btn btn-sm btn-outline-secondary" title="Ver su ficha en el Auditor">
+                            <i class="fas fa-user-shield"></i>
+                        </a>
+                        {% endif %}
+                    </td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="4" class="text-center text-muted py-4">
+                    Nadie lleva {{ minimo }} meses seguidos a cero.
+                </td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

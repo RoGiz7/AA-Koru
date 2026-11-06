@@ -35,6 +35,9 @@
             </select>
         </form>
         {% endif %}
+        <a href="{% url 'koru_stats:paps_reincidentes' %}" class="btn btn-sm btn-outline-warning">
+            <i class="fas fa-user-clock me-1"></i>Reincidencia
+        </a>
         {% if puede_admin %}
         <a href="{% url 'koru_stats:paps_importar' %}" class="btn btn-sm btn-outline-info">
             <i class="fas fa-file-import me-1"></i>Importar
@@ -162,6 +165,7 @@
                     <th class="text-end">De corp</th>
                     <th class="text-end">Total</th>
                     <th>Estado</th>
+                    <th></th>
                 </tr>
             </thead>
             <tbody>
@@ -205,9 +209,17 @@
                             <span class="badge bg-danger">No llega</span>
                         {% endif %}
                     </td>
+                    <td class="text-end">
+                        {% if puede_auditor and f.linea.main_character_id %}
+                        <a href="{% url 'koru_stats:auditor_pilot' f.linea.main_character_id %}"
+                           class="btn btn-sm btn-outline-info py-0 px-1" title="Ver su ficha en el Auditor">
+                            <i class="fas fa-user-shield"></i>
+                        </a>
+                        {% endif %}
+                    </td>
                 </tr>
             {% empty %}
-                <tr><td colspan="8" class="text-center text-muted py-4">Este mes no tiene líneas.</td></tr>
+                <tr><td colspan="9" class="text-center text-muted py-4">Este mes no tiene líneas.</td></tr>
             {% endfor %}
             </tbody>
         </table>

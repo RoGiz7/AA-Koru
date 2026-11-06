@@ -65,6 +65,8 @@ CAT_SIN = "sin"
 DIM_FLOTA = "flota"
 DIM_NAVE = "nave"
 DIM_ROL = "rol"
+DIM_FC = "fc"
+DIM_LOGI = "logi"
 
 ORIGEN_JSON = "json"
 ORIGEN_CSV = "csv"
@@ -242,9 +244,11 @@ class Analisis:
 
 
 def _fila(periodo, cuenta, total, estrategicas, declaradas, corp,
-          sin_clasificar, cuadra, detalle):
+          sin_clasificar, cuadra, detalle, fc=0, logi=0):
     """Una fila ya calculada. `estrategicas` viene recortada al total."""
     return {
+        "fc": fc,
+        "logi": logi,
         "periodo": periodo,
         "cuenta": cuenta,
         "total": total,
@@ -261,6 +265,29 @@ def _fila(periodo, cuenta, total, estrategicas, declaradas, corp,
 # ---------------------------------------------------------------------------
 # JSON de la API — el camino bueno
 # ---------------------------------------------------------------------------
+
+def _por_cuenta(bloque):
+    """{cuenta: (total, [(tag, valor)])} de un bloque de mando o de anclaje.
+
+    `/corporation/commander/` y `/corporation/logi-anchor/` devuelven la misma
+    forma: `{"accounts": [{"name", "total", "series": [{"name","value"}]}]}`.
+    Un bloque que no venga (un paquete viejo, o el mes sin datos) da {}, y las
+    filas salen con 0 — que es la verdad, no un hueco.
+    """
+    fuera = {}
+    if not isinstance(bloque, dict):
+        return fuera
+    for cuenta in bloque.get("accounts") or []:
+        if not isinstance(cuenta, dict):
+            continue
+        nombre = _clave(cuenta.get("name"))
+        if not nombre:
+            continue
+        series = [(_norm(s.get("name")), _entero(s.get("value")))
+                  for s in (cuenta.get("series") or []) if isinstance(s, dict)]
+        fuera[nombre] = (_entero(cuenta.get("total")), series)
+    return fuera
+
 
 def analizar_json(contenido, corps=None):
     """Lee el JSON de la API. Admite tres envoltorios, porque hay tres maneras
@@ -289,17 +316,21 @@ def analizar_json(contenido, corps=None):
             roles = [str(r) for r in datos["roles"]]
         for p in datos["periodos"]:
             if isinstance(p, dict) and isinstance(p.get("datos"), dict):
-                bloques.append(p["datos"])
+                # `fc` y `logi` son opcionales: un paquete bajado antes de que
+                # el recolector los trajera sigue entrando, con 0 en esas dos.
+                bloques.append((p["datos"], p.get("fc"), p.get("logi")))
     elif isinstance(datos, list):
-        bloques = [b for b in datos if isinstance(b, dict)]
+        bloques = [(b, None, None) for b in datos if isinstance(b, dict)]
     elif isinstance(datos, dict):
-        bloques = [datos]
+        bloques = [(datos, datos.get("fc"), datos.get("logi"))]
 
     if not bloques:
         out.avisos.append("El JSON no trae ningún mes reconocible.")
         return out
 
-    for d in bloques:
+    for d, bloque_fc, bloque_logi in bloques:
+        mando = _por_cuenta(bloque_fc)
+        anclaje = _por_cuenta(bloque_logi)
         miembros = d.get("members")
         tags = d.get("tags")
         if not isinstance(miembros, list) or not isinstance(tags, list):
@@ -357,6 +388,11 @@ def analizar_json(contenido, corps=None):
             detalle += [(DIM_ROL, roles[i] if i < len(roles) else f"rol {i}", v)
                         for i, v in enumerate(rt) if v]
 
+            fc_total, fc_series = mando.get(_clave(cuenta), (0, []))
+            logi_total, logi_series = anclaje.get(_clave(cuenta), (0, []))
+            detalle += [(DIM_FC, n, v) for n, v in fc_series if v]
+            detalle += [(DIM_LOGI, n, v) for n, v in logi_series if v]
+
             out.filas.append(_fila(
                 periodo, cuenta, total,
                 estrategicas=estrategicas,
@@ -364,7 +400,9 @@ def analizar_json(contenido, corps=None):
                 corp=sum(v for n, v in zip(nombres_tag, tt) if _clave(n) in corps),
                 sin_clasificar=0,
                 cuadra=cuadra,
-                detalle=detalle))
+                detalle=detalle,
+                fc=fc_total,
+                logi=logi_total))
 
     return out
 
@@ -780,6 +818,7 @@ def importar(contenido, fichero="", usuario=None, periodo_forzado=None, forzar=F
                         total=f["total"], estrategicas=f["estrategicas"],
                         estrategicas_declaradas=f["estrategicas_declaradas"],
                         actividades=f["actividades"], corp=f["corp"],
+                        fc=f.get("fc", 0), logi=f.get("logi", 0),
                         sin_clasificar=f["sin_clasificar"], cuadra=f["cuadra"]))
                 # El desglose se borra y se reescribe: es la foto del fichero,
                 # no un histórico que haya que conservar.
@@ -847,3 +886,146 @@ def recalcular(periodos=None):
             fila.save(update_fields=list(cambios))
             tocadas += 1
     return tocadas
+
+
+# ---------------------------------------------------------------------------
+# Consultas para las pantallas. Viven aquí y no en views.py porque son del
+# dominio de las PAPs, y views.py ya tiene 7.600 líneas.
+# ---------------------------------------------------------------------------
+
+def top_estrategicas(periodo, n=10):
+    """Los `n` que más estratégicas hicieron en ese mes. None si no está importado.
+
+    Devolver None y no una lista vacía está hecho a propósito: la pantalla de
+    Estadísticas cubre meses que pueden no tener PAPs, y una tarjeta vacía
+    haría pensar que ese mes nadie voló.
+    """
+    from .models import PapMonthly, PapPeriod
+    try:
+        anio, mes = str(periodo).split("-")[:2]
+        per = PapPeriod.objects.filter(anio=int(anio), mes=int(mes)).first()
+    except (ValueError, TypeError):
+        per = None
+    if not per:
+        return None
+    filas = list(PapMonthly.objects
+                 .filter(periodo=per)
+                 .select_related("periodo")
+                 .order_by("-estrategicas", "-total", "account_name")[:n])
+    if not filas:
+        return None
+    return {"periodo": per, "filas": filas, "tope": filas[0].estrategicas or 1}
+
+
+def historial_piloto(main_character_id, meses=24):
+    """Lo de una persona: sus últimos meses y en qué ha volado.
+
+    El desglose por ROL (Combat, Logistics, Ewar, Cyno…) es lo que no enseña ni
+    la web de la alianza por persona, y es lo que de verdad dice a qué juega
+    alguien dentro de una flota.
+    """
+    from django.db.models import Sum
+
+    from .models import PapMonthly, PapMonthlyDetalle
+
+    if not main_character_id:
+        return None
+    filas = list(PapMonthly.objects
+                 .filter(main_character_id=main_character_id)
+                 .select_related("periodo")
+                 .order_by("-periodo__anio", "-periodo__mes")[:meses])
+    if not filas:
+        return None
+
+    agregado = (PapMonthlyDetalle.objects
+                .filter(fila_id__in=[f.id for f in filas])
+                .values("dimension", "nombre")
+                .annotate(n=Sum("paps"))
+                .order_by("-n"))
+    por_dim = {}
+    for r in agregado:
+        if r["n"]:
+            por_dim.setdefault(r["dimension"], []).append({"nombre": r["nombre"], "paps": r["n"]})
+
+    return {
+        "filas": filas,
+        "flotas": por_dim.get(DIM_FLOTA, [])[:12],
+        "roles": por_dim.get(DIM_ROL, [])[:12],
+        "mando": por_dim.get(DIM_FC, [])[:8],
+        "total": sum(f.total for f in filas),
+        "estrategicas": sum(f.estrategicas for f in filas),
+        "corp": sum(f.corp for f in filas),
+        "fc": sum(f.fc for f in filas),
+        "cumplidos": sum(1 for f in filas if f.cumple),
+        "meses": len(filas),
+    }
+
+
+def reincidentes(minimo=3):
+    """Quién lleva `minimo` meses SEGUIDOS por debajo del listón.
+
+    ★ DOS DECISIONES QUE CAMBIAN QUIÉN SALE:
+
+    · SEGUIDOS, no sueltos. Fallar enero, marzo y agosto de años distintos no
+      es un patrón; tres meses encadenados sí. Y la racha se cuenta hacia atrás
+      desde el último mes en que la persona aparece: lo que importa es si sigue
+      pasando, no si pasó en 2024.
+
+    · UN MES EN EL QUE ALGUIEN NO APARECE CORTA LA RACHA, no la continúa. No
+      sabemos si estaba en la corp, y contar un hueco como fallo es acusar sin
+      dato. La lista sale corta de más, que es el lado correcto por el que
+      equivocarse.
+
+    «En duda» tampoco cuenta como fallo: si la duda es nuestra —flotas sin
+    clasificar— no se le carga a él.
+    """
+    from .models import PapMonthly
+
+    filas = (PapMonthly.objects
+             .select_related("periodo")
+             .order_by("-periodo__anio", "-periodo__mes"))
+
+    por_persona = {}
+    for f in filas:
+        clave = f.main_character_id or ("?" + _clave(f.account_name))
+        por_persona.setdefault(clave, []).append(f)
+
+    fuera = []
+    for lineas in por_persona.values():
+        racha, anterior = [], None
+        for f in lineas:
+            if anterior is not None:
+                hueco = (anterior.periodo.anio * 12 + anterior.periodo.mes) - 1
+                if (f.periodo.anio * 12 + f.periodo.mes) != hueco:
+                    break
+            if f.cumple or f.dudoso:
+                break
+            racha.append(f)
+            anterior = f
+        if len(racha) < minimo:
+            continue
+        paps = sum(x.total for x in racha)
+        fuera.append({
+            "piloto": racha[0].main_character_name or racha[0].account_name,
+            "cuenta": racha[0].account_name,
+            "main_character_id": racha[0].main_character_id,
+            "meses": len(racha),
+            "desde": racha[-1].periodo.periodo,
+            "hasta": racha[0].periodo.periodo,
+            "paps": paps,
+            "estrategicas": sum(x.estrategicas for x in racha),
+            "corp": sum(x.corp for x in racha),
+            # ★ La separación que hace útil la lista: tres meses a cero es
+            # alguien que se ha ido; tres meses volando mucho sin tocar lo
+            # obligatorio es alguien que está y decide no ir. Son dos
+            # conversaciones distintas y no deben salir en la misma tabla.
+            "activo": paps > 0,
+            "lineas": racha,
+        })
+
+    fuera.sort(key=lambda r: (-r["meses"], -r["paps"]))
+    return {
+        "minimo": minimo,
+        "activos": [r for r in fuera if r["activo"]],
+        "inactivos": [r for r in fuera if not r["activo"]],
+    }

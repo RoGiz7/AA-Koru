@@ -65,6 +65,7 @@ urlpatterns = [
     path("regalos/entregas/<int:pk>/accion/", views.gift_entrega_accion, name="gift_entrega_accion"),
     path("paps/", views.paps_dashboard, name="paps_dashboard"),
     path("paps/importar/", views.paps_importar, name="paps_importar"),
+    path("paps/reincidentes/", views.paps_reincidentes, name="paps_reincidentes"),
     path("paps/flotas/", views.paps_catalogo, name="paps_catalogo"),
     path("export/resumen/", views.export_csv_summary, name="export_csv_summary"),
     path("export/pvp/",     views.export_csv_pvp,     name="export_csv_pvp"),

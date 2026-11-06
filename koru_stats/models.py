@@ -2768,6 +2768,11 @@ class PapMonthly(models.Model):
                   "una flota a mano no mejora un dato que viene de la alianza.")
     actividades = models.PositiveIntegerField(default=0)
     corp = models.PositiveIntegerField(default=0)
+    fc = models.PositiveIntegerField(
+        default=0, help_text="PAPs sacando flota. Va aparte porque no suma al total: "
+                             "quien saca una flota también participa en ella.")
+    logi = models.PositiveIntegerField(
+        default=0, help_text="PAPs anclando logi. En Rekium casi no se usa: 4 en tres años.")
     sin_clasificar = models.PositiveIntegerField(
         default=0, help_text="PAPs en flotas que nadie ha clasificado todavía.")
     cuadra = models.BooleanField(
@@ -2817,7 +2822,10 @@ class PapMonthlyDetalle(models.Model):
     FLOTA = "flota"
     NAVE = "nave"
     ROL = "rol"
-    DIMENSIONES = [(FLOTA, "Flota"), (NAVE, "Grupo de nave"), (ROL, "Rol de flota")]
+    FC = "fc"
+    LOGI = "logi"
+    DIMENSIONES = [(FLOTA, "Flota"), (NAVE, "Grupo de nave"), (ROL, "Rol de flota"),
+                   (FC, "Flota sacada"), (LOGI, "Logi anclada")]
 
     fila = models.ForeignKey(PapMonthly, on_delete=models.CASCADE, related_name="detalles")
     dimension = models.CharField(max_length=6, choices=DIMENSIONES)

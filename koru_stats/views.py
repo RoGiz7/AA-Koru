@@ -646,6 +646,13 @@ def dashboard(request):
             "ships_destroyed": [r["ships_destroyed"] for r in top_pvp],
         }),
     }
+    # PAPs: solo si ese mes está importado. `top_estrategicas` devuelve None
+    # si no lo está, y la plantilla no pinta la tarjeta — un mes sin PAPs no es
+    # un mes en el que nadie voló.
+    from . import paps as _paps
+    context["paps_top"] = _paps.top_estrategicas(periodo_sel)
+    context["puede_paps"] = request.user.has_perm("koru_stats.paps_access")
+
     return render(request, "koru_stats/dashboard.html", context)
 
 
@@ -955,6 +962,12 @@ def mi_dashboard(request):
     context["guild_id"] = str(getattr(_settings, "DISCORD_GUILD_ID", "") or "")
 
     context["mt"] = _moon_tax_mi_ctx(request)
+
+    # PAPs de la alianza: se enseñan al dueño de la cuenta sin pedir permiso
+    # extra. `paps_access` es para ver el cumplimiento de LOS DEMÁS; lo tuyo
+    # es tuyo.
+    from . import paps as _paps
+    context["paps"] = _paps.historial_piloto(getattr(main, "character_id", 0))
 
     return render(request, "koru_stats/mi_dashboard.html", context)
 
@@ -7419,6 +7432,7 @@ def paps_dashboard(request):
         "puede_admin": request.user.has_perm("koru_stats.paps_admin"),
         "puede_regimen": (request.user.has_perm("koru_stats.paps_regimen")
                           or request.user.has_perm("koru_stats.paps_admin")),
+        "puede_auditor": request.user.has_perm("koru_stats.auditor_access"),
     })
 
 
@@ -7574,14 +7588,42 @@ def paps_catalogo(request):
     })
 
 
+@login_required
+@permission_required("koru_stats.paps_access")
+def paps_reincidentes(request):
+    """Quién lleva varios meses seguidos sin llegar al listón.
+
+    ★ Es la única pantalla de todo esto sobre la que se ACTÚA. Las demás
+    cuentan; esta señala.
+
+    ⚠ Separada en dos tablas a propósito. Tres meses a cero es alguien que se
+    ha ido o está AFK; tres meses volando mucho sin tocar lo obligatorio es
+    alguien que está y decide no ir. Juntarlos haría que el segundo pareciera
+    el primero, y es justo al revés de quien interesa.
+    """
+    from . import paps as motor
+
+    pedido = (request.GET.get("meses") or "").strip()
+    minimo = int(pedido) if pedido.isdigit() and 2 <= int(pedido) <= 12 else 3
+    datos = motor.reincidentes(minimo)
+
+    return render(request, "koru_stats/paps_reincidentes.html", {
+        "datos": datos,
+        "minimo": minimo,
+        "opciones": [2, 3, 4, 6],
+        "puede_auditor": request.user.has_perm("koru_stats.auditor_access"),
+    })
+
+
 # El recolector que se pega en la consola de la web de la alianza. Vive aquí y
 # no en la plantilla para que no haya que escapar llaves de Django.
 #
 # ⚠ No guarda ninguna sesión en ningún sitio: se ejecuta en el navegador de
 # quien ya está logueado y lo único que sale de ahí es un fichero.
 PAPS_RECOLECTOR = r"""(async () => {
-  const base = '/api/v1/corporation/participation';
-  const per = await fetch(base + '/periods').then(r => r.json());
+  const base = '/api/v1/corporation';
+  const per = await fetch(base + '/participation/periods').then(r => r.json());
+  const traer = (u) => fetch(u).then(r => r.ok ? r.json() : null).catch(() => null);
   const paquete = {
     generado: new Date().toISOString(),
     origen: location.origin + base,
@@ -7591,8 +7633,12 @@ PAPS_RECOLECTOR = r"""(async () => {
     periodos: []
   };
   for (const p of per) for (const m of p.months) {
-    const d = await fetch(`${base}/${p.year}/${m}`).then(r => r.json()).catch(() => null);
-    if (d) paquete.periodos.push({ anio: p.year, mes: m, datos: d });
+    const [datos, fc, logi] = await Promise.all([
+      traer(`${base}/participation/${p.year}/${m}`),
+      traer(`${base}/commander/${p.year}/${m}`),
+      traer(`${base}/logi-anchor/${p.year}/${m}`)
+    ]);
+    if (datos) paquete.periodos.push({ anio: p.year, mes: m, datos, fc, logi });
     console.log('PAPs:', p.year + '-' + m);
   }
   const a = document.createElement('a');
