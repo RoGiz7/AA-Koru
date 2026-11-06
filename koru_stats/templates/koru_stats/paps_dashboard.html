@@ -63,7 +63,7 @@
     <div class="card mb-3"><div class="card-body py-2">
         <div class="d-flex align-items-center gap-3 flex-wrap">
             <span class="stat-label mb-0">Régimen de {{ periodo.periodo }}</span>
-            {% if puede_admin %}
+            {% if puede_regimen %}
             <form method="post" class="d-flex align-items-center gap-2 mb-0">
                 {% csrf_token %}
                 <input type="hidden" name="periodo_id" value="{{ periodo.pk }}">

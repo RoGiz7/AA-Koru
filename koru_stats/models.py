@@ -30,6 +30,7 @@ class General(models.Model):
             ("recruit_manage", "Reclutamiento: gestiona solicitudes y entrevista"),
             ("paps_access",  "PAPs: ve el cumplimiento de la alianza"),
             ("paps_admin",   "PAPs: importa ficheros y clasifica flotas"),
+            ("paps_regimen", "PAPs: marca los meses de paz o guerra"),
         )
 
 

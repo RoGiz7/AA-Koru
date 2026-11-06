@@ -114,6 +114,14 @@ SEMILLA_FLOTAS = {
 # (`PapFleetType.es_corp`); esto es solo con qué arranca.
 SEMILLA_CORP = frozenset({"Corp"})
 
+# ⚠ `*LAWN` es la ÚNICA de la semilla que la alianza nunca declaró: desapareció
+# antes de que empezaran a etiquetar. La ponemos como actividad porque está a
+# cero en los 34 ficheros y la API no la lista como tag en ningún mes, pero esa
+# es una decisión NUESTRA. La pantalla tiene una columna que dice de dónde sale
+# cada categoría, y poner ahí «la alianza» sería mentir en el sitio exacto donde
+# alguien va a mirar para saber de quién fiarse.
+SEMILLA_NO_DECLARADAS = frozenset({"*LAWN"})
+
 # ⚠ RED DE SEGURIDAD, no la fuente: los grupos de nave buenos salen del SDE.
 # Son los 45 que aparecen en los ficheros reales, y solo se usan si el SDE no
 # contesta — sin ellos, un SDE caído convertiría 45 columnas de nave en 45
@@ -599,7 +607,7 @@ def sembrar_catalogo():
             nombre=nombre,
             defaults={"categoria": cat,
                       "es_corp": nombre in SEMILLA_CORP,
-                      "declarada_por_alianza": True})
+                      "declarada_por_alianza": nombre not in SEMILLA_NO_DECLARADAS})
         creadas += bool(nuevo)
     return creadas
 

@@ -7359,7 +7359,11 @@ def paps_dashboard(request):
     periodo, periodos = _paps_periodo(request)
 
     if request.method == "POST" and periodo:
-        if not request.user.has_perm("koru_stats.paps_admin"):
+        # El régimen es un juicio sobre la historia de la alianza, no un acto
+        # técnico: lo sabe Dirección mejor que quien importa los ficheros. Por eso
+        # tiene permiso propio y `paps_admin` lo incluye por arrastre.
+        if not (request.user.has_perm("koru_stats.paps_regimen")
+                or request.user.has_perm("koru_stats.paps_admin")):
             messages.error(request, "No tienes permiso para cambiar el régimen del mes.")
         else:
             per = PapPeriod.objects.filter(pk=request.POST.get("periodo_id")).first()
@@ -7413,6 +7417,8 @@ def paps_dashboard(request):
         "filas": filas,
         "kpi": kpi,
         "puede_admin": request.user.has_perm("koru_stats.paps_admin"),
+        "puede_regimen": (request.user.has_perm("koru_stats.paps_regimen")
+                          or request.user.has_perm("koru_stats.paps_admin")),
     })
 
 
