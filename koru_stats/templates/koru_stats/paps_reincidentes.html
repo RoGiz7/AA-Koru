@@ -35,11 +35,11 @@
 
     <div class="alert alert-secondary py-2 small">
         <i class="fas fa-circle-info me-1"></i>
-        La racha se cuenta hacia atrás desde el último mes en que la persona aparece, y
-        <strong>un mes en el que no aparece la corta</strong> — no sabemos si estaba en la corp.
-        Quien sale «en duda» por flotas sin clasificar tampoco cuenta como fallo.
-        Y como todos los meses están ahora en paz con listón de 5, esta lista sale corta de más,
-        nunca larga de más.
+        Solo sale quien sigue apareciendo en <strong>{{ datos.ultimo }}</strong>, el último mes
+        importado. La racha se cuenta hacia atrás desde ahí, y <strong>un mes en el que la
+        persona no aparece la corta</strong> — no sabemos si estaba en la corp. Quien sale
+        «en duda» por flotas sin clasificar tampoco cuenta como fallo. Y como todos los meses
+        están ahora en paz con listón de 5, esta lista sale corta de más, nunca larga de más.
     </div>
 
     <div class="row g-3 mb-4">
@@ -57,7 +57,16 @@
                 <small class="text-muted">cero PAPs en toda la racha</small>
             </div></div>
         </div>
+        <div class="col-6 col-md-3">
+            <div class="card kpi-card h-100"><div class="card-body">
+                <div class="stat-label mb-1">Ya no aparecen</div>
+                <div class="stat-big text-muted">{{ datos.idos }}</div>
+                <small class="text-muted">su racha no llega a {{ datos.ultimo }}</small>
+            </div></div>
+        </div>
     </div>
+
+</div>
 
     {# La tabla que de verdad importa: gente activa que no va a lo obligatorio #}
     <div class="card mb-4">
@@ -65,7 +74,8 @@
             <i class="fas fa-triangle-exclamation text-danger me-1"></i>
             Están, vuelan, y no van a las estratégicas
             <span class="text-muted small ms-2">
-                Estos sí son una conversación: están jugando y eligen no ir
+                Primero los que <strong>dejaron</strong> de cumplir — eso es un cambio.
+                Después los que no lo han hecho nunca, que son un censo.
             </span>
         </div>
         <div class="table-responsive">
@@ -73,6 +83,7 @@
             <thead>
                 <tr>
                     <th>Piloto</th>
+                    <th></th>
                     <th class="text-end">Meses</th>
                     <th>Racha</th>
                     <th class="text-end">PAPs</th>
@@ -88,7 +99,18 @@
                         {{ r.piloto }}
                         {% if r.cuenta != r.piloto %}<small class="text-muted">· {{ r.cuenta }}</small>{% endif %}
                     </td>
-                    <td class="text-end"><span class="badge bg-danger">{{ r.meses }}</span></td>
+                    <td>
+                        {% if r.cumplio_antes %}
+                            <span class="badge bg-danger" title="Cumplía antes y dejó de hacerlo. Esto sí es un cambio.">
+                                dejó de cumplir
+                            </span>
+                        {% else %}
+                            <span class="badge bg-secondary" title="No ha llegado al listón en ningún mes del histórico.">
+                                nunca ha cumplido
+                            </span>
+                        {% endif %}
+                    </td>
+                    <td class="text-end"><span class="badge bg-dark">{{ r.meses }}</span></td>
                     <td class="meses text-muted">{{ r.desde }} → {{ r.hasta }}</td>
                     <td class="text-end">{{ r.paps|rknum }}</td>
                     <td class="text-end text-danger">{{ r.estrategicas }}</td>
@@ -103,7 +125,7 @@
                     </td>
                 </tr>
             {% empty %}
-                <tr><td colspan="7" class="text-center text-muted py-4">
+                <tr><td colspan="8" class="text-center text-muted py-4">
                     Nadie lleva {{ minimo }} meses seguidos volando sin ir a estratégicas.
                 </td></tr>
             {% endfor %}

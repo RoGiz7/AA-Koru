@@ -7367,6 +7367,7 @@ def paps_dashboard(request):
     from django.shortcuts import redirect
     from django.urls import reverse
 
+    from . import paps as motor
     from .models import PapMonthly, PapPeriod
 
     periodo, periodos = _paps_periodo(request)
@@ -7433,6 +7434,7 @@ def paps_dashboard(request):
         "puede_regimen": (request.user.has_perm("koru_stats.paps_regimen")
                           or request.user.has_perm("koru_stats.paps_admin")),
         "puede_auditor": request.user.has_perm("koru_stats.auditor_access"),
+        "pendientes": motor.meses_pendientes(),
     })
 
 

@@ -51,6 +51,29 @@
         {% endif %}
     </div>
 
+    {% if pendientes %}
+    <div class="alert alert-warning d-flex align-items-center gap-3 flex-wrap py-2">
+        <i class="fas fa-calendar-xmark fa-lg"></i>
+        <div class="flex-grow-1">
+            <strong>
+                {% if pendientes|length == 1 %}Falta un mes por importar:
+                {% else %}Faltan {{ pendientes|length }} meses por importar:{% endif %}
+            </strong>
+            {{ pendientes|join:", " }}
+            <div class="small">
+                Hasta que entren, el cumplimiento de esos meses no existe y la reincidencia
+                cuenta de menos: un mes que no está no rompe la racha de nadie, pero tampoco
+                la continúa.
+            </div>
+        </div>
+        {% if puede_admin %}
+        <a href="{% url 'koru_stats:paps_importar' %}" class="btn btn-sm btn-warning">
+            <i class="fas fa-file-import me-1"></i>Importar ahora
+        </a>
+        {% endif %}
+    </div>
+    {% endif %}
+
     {% if not periodo %}
         <div class="card"><div class="card-body text-center py-5">
             <i class="fas fa-inbox fa-2x text-muted mb-3 d-block"></i>

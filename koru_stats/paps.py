@@ -1060,6 +1060,39 @@ def recalcular(periodos=None):
 # dominio de las PAPs, y views.py ya tiene 7.600 líneas.
 # ---------------------------------------------------------------------------
 
+def meses_pendientes(hoy=None):
+    """Los meses cerrados que faltan por importar. Lista vacía si está al día.
+
+    ★ Que Koru se dé cuenta solo es mejor que acordarse. Un aviso que sale
+    cuando falta algo y desaparece cuando dejas de deber nada no genera ruido;
+    un recordatorio mensual fijo, sí, y la gente aprende a ignorarlo.
+
+    ⚠ Busca HUECOS, no solo el final. Si faltara un mes de en medio —porque una
+    importación se quedó a medias— también lo canta. El mes en curso no cuenta:
+    todavía no ha cerrado.
+    """
+    from datetime import date
+
+    from .models import PapPeriod
+
+    tengo = {(a, m) for a, m in PapPeriod.objects.values_list("anio", "mes")}
+    if not tengo:
+        return []
+
+    hoy = hoy or date.today()
+    ultimo_cerrado = (hoy.year, hoy.month - 1) if hoy.month > 1 else (hoy.year - 1, 12)
+
+    faltan = []
+    anio, mes = min(tengo)
+    while (anio, mes) <= ultimo_cerrado:
+        if (anio, mes) not in tengo:
+            faltan.append(periodo_txt(anio, mes))
+        mes += 1
+        if mes > 12:
+            mes, anio = 1, anio + 1
+    return faltan
+
+
 def top_estrategicas(periodo, n=10):
     """Los `n` que más estratégicas hicieron en ese mes. None si no está importado.
 
@@ -1131,22 +1164,37 @@ def historial_piloto(main_character_id, meses=24):
 def reincidentes(minimo=3):
     """Quién lleva `minimo` meses SEGUIDOS por debajo del listón.
 
-    ★ DOS DECISIONES QUE CAMBIAN QUIÉN SALE:
+    ★ TRES COSAS QUE NO SON LA MISMA, Y POR ESO NO VAN JUNTAS:
 
-    · SEGUIDOS, no sueltos. Fallar enero, marzo y agosto de años distintos no
-      es un patrón; tres meses encadenados sí. Y la racha se cuenta hacia atrás
-      desde el último mes en que la persona aparece: lo que importa es si sigue
-      pasando, no si pasó en 2024.
+      · DEJÓ DE CUMPLIR — iba bien y lleva meses sin ir. Es la alarma de verdad
+        y por eso va arriba. Que alguien pase de cumplir a no cumplir dice
+        algo; que alguien no haya cumplido nunca, no dice nada nuevo.
+      · NUNCA HA CUMPLIDO — tres años sin llegar al listón. Suelen ser alts o
+        gente que no vuela. Es un censo, no una conversación.
+      · YA NO ESTÁ — su racha no llega al último mes importado: desapareció de
+        la lista de la alianza. Esos NO salen, solo se cuentan. Perseguir a
+        quien se fue hace cuatro meses no es seguimiento, es ruido.
 
-    · UN MES EN EL QUE ALGUIEN NO APARECE CORTA LA RACHA, no la continúa. No
-      sabemos si estaba en la corp, y contar un hueco como fallo es acusar sin
-      dato. La lista sale corta de más, que es el lado correcto por el que
-      equivocarse.
+    ⚠ La primera versión de esto mezclaba las tres y ordenaba por longitud de
+    racha, así que lo primero que se veía eran rachas de 36 meses de gente que
+    nunca ha volado — justo lo menos accionable de todo.
+
+    ★ LAS DOS REGLAS DE LA RACHA:
+
+      · SEGUIDOS, no sueltos, contados hacia atrás desde el último mes en que
+        la persona aparece. Lo que importa es si SIGUE pasando.
+      · UN MES EN EL QUE NO APARECE CORTA LA RACHA, no la continúa. No sabemos
+        si estaba en la corp, y contar un hueco como fallo es acusar sin dato.
 
     «En duda» tampoco cuenta como fallo: si la duda es nuestra —flotas sin
     clasificar— no se le carga a él.
     """
-    from .models import PapMonthly
+    from .models import PapMonthly, PapPeriod
+
+    ultimo = PapPeriod.objects.order_by("-anio", "-mes").first()
+    if not ultimo:
+        return {"minimo": minimo, "activos": [], "inactivos": [], "idos": 0, "ultimo": ""}
+    tope = (ultimo.anio, ultimo.mes)
 
     filas = (PapMonthly.objects
              .select_related("periodo")
@@ -1157,7 +1205,7 @@ def reincidentes(minimo=3):
         clave = f.main_character_id or ("?" + _clave(f.account_name))
         por_persona.setdefault(clave, []).append(f)
 
-    fuera = []
+    fuera, idos = [], 0
     for lineas in por_persona.values():
         racha, anterior = [], None
         for f in lineas:
@@ -1171,6 +1219,20 @@ def reincidentes(minimo=3):
             anterior = f
         if len(racha) < minimo:
             continue
+
+        # ⚠ Si la racha no llega al último mes importado, esa persona ya no
+        # aparece en la lista de la alianza: se fue. Se cuenta y no se enseña.
+        if (racha[0].periodo.anio, racha[0].periodo.mes) != tope:
+            idos += 1
+            continue
+
+        # ¿Llegó a cumplir alguna vez ANTES de la racha? Eso es lo que separa
+        # un deterioro de alguien que nunca ha ido.
+        desde = racha[-1].periodo.anio * 12 + racha[-1].periodo.mes
+        cumplio_antes = any(
+            f.cumple and (f.periodo.anio * 12 + f.periodo.mes) < desde
+            for f in lineas)
+
         paps = sum(x.total for x in racha)
         fuera.append({
             "piloto": racha[0].main_character_name or racha[0].account_name,
@@ -1182,17 +1244,21 @@ def reincidentes(minimo=3):
             "paps": paps,
             "estrategicas": sum(x.estrategicas for x in racha),
             "corp": sum(x.corp for x in racha),
-            # ★ La separación que hace útil la lista: tres meses a cero es
-            # alguien que se ha ido; tres meses volando mucho sin tocar lo
-            # obligatorio es alguien que está y decide no ir. Son dos
-            # conversaciones distintas y no deben salir en la misma tabla.
+            "cumplio_antes": cumplio_antes,
+            # Tres meses a cero es alguien que se ha ido o está AFK; tres meses
+            # volando mucho sin tocar lo obligatorio es alguien que está y
+            # decide no ir. Dos conversaciones distintas, dos tablas distintas.
             "activo": paps > 0,
             "lineas": racha,
         })
 
-    fuera.sort(key=lambda r: (-r["meses"], -r["paps"]))
+    # ★ El deterioro primero, y dentro de cada grupo el que más vuela arriba:
+    # alguien con 134 PAPs y 5 estratégicas importa más que alguien con 4.
+    fuera.sort(key=lambda r: (not r["cumplio_antes"], -r["paps"], -r["meses"]))
     return {
         "minimo": minimo,
+        "ultimo": ultimo.periodo,
+        "idos": idos,
         "activos": [r for r in fuera if r["activo"]],
         "inactivos": [r for r in fuera if not r["activo"]],
     }
