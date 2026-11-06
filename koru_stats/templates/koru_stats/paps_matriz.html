@@ -1,0 +1,119 @@
+{% extends 'allianceauth/base-bs5.html' %}
+{% load i18n koru_stats_tags %}
+
+{% block page_title %}PAPs · detalle{% endblock %}
+
+{% block content %}
+<style>
+.matriz { font-size: .78rem; }
+.matriz th, .matriz td { white-space: nowrap; }
+.matriz thead th { position: sticky; top: 0; z-index: 2; background: var(--bs-body-bg); }
+.matriz .piloto { position: sticky; left: 0; z-index: 1; background: var(--bs-body-bg); }
+.matriz thead .piloto { z-index: 3; }
+.matriz .cero { color: rgba(127,127,127,.35); }
+.matriz .col-rot { writing-mode: vertical-rl; transform: rotate(180deg); height: 8rem;
+                   vertical-align: bottom; font-weight: 600; }
+.envoltura { max-height: 75vh; overflow: auto; }
+</style>
+
+<div class="container-fluid">
+
+    <div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
+        <h4 class="mb-0"><i class="fas fa-table-cells text-info me-2"></i>Detalle por piloto</h4>
+
+        {% if periodos %}
+        <form method="get" class="d-flex align-items-center gap-2 mb-0">
+            <select name="periodo" class="form-select form-select-sm w-auto" onchange="this.form.submit()">
+                {% for p in periodos %}
+                <option value="{{ p.periodo }}" {% if p.pk == periodo.pk %}selected{% endif %}>{{ p.periodo }}</option>
+                {% endfor %}
+            </select>
+            <input type="hidden" name="dim" value="{{ dim }}">
+        </form>
+
+        <div class="btn-group btn-group-sm" role="group">
+            {% for valor, texto in dimensiones %}
+            <a href="?periodo={{ periodo.periodo }}&dim={{ valor }}"
+               class="btn {% if valor == dim %}btn-info{% else %}btn-outline-info{% endif %}">{{ texto }}</a>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <a href="{% url 'koru_stats:paps_dashboard' %}" class="btn btn-sm btn-outline-secondary ms-auto">
+            <i class="fas fa-list-check me-1"></i>Cumplimiento
+        </a>
+        <a href="{% url 'koru_stats:paps_reincidentes' %}" class="btn btn-sm btn-outline-warning">
+            <i class="fas fa-user-clock me-1"></i>Reincidencia
+        </a>
+    </div>
+
+    {% if not datos %}
+        <div class="card"><div class="card-body text-center py-5">
+            <i class="fas fa-table fa-2x text-muted mb-3 d-block"></i>
+            {% if dim == 'nave' %}
+                <p class="mb-1">No hay desglose por nave para {{ periodo.periodo|default:"este mes" }}.</p>
+                <p class="text-muted small mb-0">
+                    La nave solo la trae el CSV de la pantalla de Export, no el JSON de la API.
+                    Si tienes el CSV de ese mes, impórtalo: añadirá las naves sin tocar los números.
+                </p>
+            {% elif dim == 'rol' %}
+                <p class="mb-1">No hay desglose por rol para {{ periodo.periodo|default:"este mes" }}.</p>
+                <p class="text-muted small mb-0">El rol lo trae el JSON de la API; un mes importado solo desde CSV no lo tiene.</p>
+            {% else %}
+                <p class="mb-0">No hay nada que enseñar para este mes.</p>
+            {% endif %}
+        </div></div>
+    {% else %}
+
+    <div class="card">
+        <div class="card-header d-flex align-items-center">
+            <span>{{ datos.periodo.periodo }} — {{ datos.filas|length }} pilotos, {{ datos.columnas|length }} columnas</span>
+            <span class="ms-auto text-muted small">
+                {% if dim == 'nave' %}Del CSV. Cubre casi todas las PAPs del mes, pero no necesariamente todas.
+                {% elif dim == 'rol' %}Del JSON. La suma de roles cuadra exacto con el total.
+                {% else %}Del JSON. Ojo: una misma PAP puede llevar dos etiquetas, así que la fila puede sumar más que su total.
+                {% endif %}
+            </span>
+        </div>
+        <div class="envoltura">
+        <table class="table table-sm table-hover matriz mb-0">
+            <thead>
+                <tr>
+                    <th class="piloto">Piloto</th>
+                    <th class="text-end">Σ</th>
+                    {% for c in datos.columnas %}<th class="col-rot text-center">{{ c }}</th>{% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+            {% for f in datos.filas %}
+                <tr>
+                    <td class="piloto">
+                        {% if puede_auditor and f.linea.main_character_id %}
+                        <a href="{% url 'koru_stats:auditor_pilot' f.linea.main_character_id %}"
+                           class="text-decoration-none" title="Ver en el Auditor">
+                            {{ f.linea.main_character_name|default:f.linea.account_name }}
+                        </a>
+                        {% else %}
+                            {{ f.linea.main_character_name|default:f.linea.account_name }}
+                        {% endif %}
+                    </td>
+                    <td class="text-end fw-bold">{{ f.suma|rknum }}</td>
+                    {% for v in f.celdas %}
+                        <td class="text-center {% if not v %}cero{% endif %}">{{ v }}</td>
+                    {% endfor %}
+                </tr>
+            {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr class="fw-bold border-top">
+                    <td class="piloto">Total</td>
+                    <td class="text-end">{{ datos.gran_total|rknum }}</td>
+                    {% for t in datos.totales %}<td class="text-center">{{ t }}</td>{% endfor %}
+                </tr>
+            </tfoot>
+        </table>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

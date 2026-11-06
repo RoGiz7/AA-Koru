@@ -82,12 +82,14 @@ CABECERAS_FIJAS = frozenset({COL_CUENTA, COL_MES, COL_TOTAL, COL_TOTAL_EST, COL_
 # Los roles del JSON vienen como lista de números SIN nombres. El orden se sacó
 # emparejando `roleTotals` de octubre de 2026 con la tabla «Fleet role» de la
 # web, donde los nueve valores eran distintos y no admitían duda.
-# ⚠ Las dos últimas no se pudieron identificar: estaban a cero ese mes y mueven
-# 3-4 PAPs al mes como mucho. Se guarda el número igual; solo falta el nombre.
+# `FleetCommand` (la 10) salió de la tabla «Fleet role» de febrero de 2025, el
+# único mes visto donde no está a cero.
+# ⚠ La 9 sigue sin nombre: está a cero en casi todos los meses y suma unas 40
+# PAPs en tres años. El número se guarda igual; solo falta la etiqueta.
 ROLES_GNF = [
     "Undefined", "Combat", "Logistics", "Ewar", "Booster", "Support",
     "Interdictors", "Cyno", "CommandDestroyers",
-    "(rol sin identificar 9)", "(rol sin identificar 10)",
+    "(rol sin identificar 9)", "FleetCommand",
 ]
 
 # Semilla del catálogo: la clasificación que declara la propia alianza.
@@ -309,11 +311,20 @@ def analizar_json(contenido, corps=None):
         out.avisos.append(f"El JSON no se puede leer: {exc}")
         return out
 
-    roles = ROLES_GNF
+    roles = list(ROLES_GNF)
     bloques = []
     if isinstance(datos, dict) and isinstance(datos.get("periodos"), list):
         if isinstance(datos.get("roles"), list) and datos["roles"]:
-            roles = [str(r) for r in datos["roles"]]
+            # El fichero manda sobre el código: él sabe con qué mapeo se bajó.
+            # ⚠ Salvo cuando trae un hueco. Un paquete bajado antes de que
+            # supiéramos el nombre de un rol lleva dentro «(rol sin identificar
+            # N)», y esa etiqueta vacía no debe pisar a una que sí sabemos.
+            del_fichero = [str(r) for r in datos["roles"]]
+            roles = [ROLES_GNF[i] if (r.startswith("(rol sin identificar")
+                                      and i < len(ROLES_GNF)
+                                      and not ROLES_GNF[i].startswith("(rol sin"))
+                     else r
+                     for i, r in enumerate(del_fichero)]
         for p in datos["periodos"]:
             if isinstance(p, dict) and isinstance(p.get("datos"), dict):
                 # `fc` y `logi` son opcionales: un paquete bajado antes de que
@@ -650,13 +661,47 @@ def sembrar_catalogo():
     return creadas
 
 
-def resolver_cuentas(nombres):
+def dueno_en(periodo):
+    """{character_id: (main_id, main_nombre)} tal como era al final de ESE mes.
+
+    ★ Sale de `CharacterOwnershipSnapshot`, la foto diaria que ya guarda Koru.
+    Se coge la foto más reciente que NO pase del último día del mes: así una PAP
+    de agosto de 2025 se ata a quien tenía el personaje entonces, no a quien lo
+    tenga hoy.
+
+    ⚠ Las fotos empiezan en junio de 2026. Para los meses anteriores esto
+    devuelve {} y se resuelve contra el Auth de hoy, que es lo único que hay.
+    No se inventa nada: simplemente no se puede saber.
+    """
+    from django.db import connection
+
+    anio, mes = periodo
+    fin = f"{anio + (mes == 12):04d}-{(mes % 12) + 1:02d}-01"
+    try:
+        with connection.cursor() as cur:
+            cur.execute(
+                "SELECT s.character_id, s.main_character_id "
+                "FROM koru_stats_characterownershipsnapshot s "
+                "JOIN (SELECT character_id, MAX(snapshot_date) AS d "
+                "      FROM koru_stats_characterownershipsnapshot "
+                "      WHERE snapshot_date < %s GROUP BY character_id) u "
+                "  ON u.character_id = s.character_id AND u.d = s.snapshot_date",
+                [fin])
+            return {int(c): int(m or 0) for c, m in cur.fetchall() if m}
+    except Exception as exc:
+        logger.warning("koru paps: no hay foto de ownership para %s (%s)", periodo, exc)
+        return {}
+
+
+def resolver_cuentas(nombres, periodo=None):
     """{nombre del fichero: (main_character_id, nombre del main)}.
 
-    Tres pasos, en este orden:
+    Cuatro pasos, en este orden:
       1. `PapAccountAlias` — lo atado a mano manda sobre todo.
       2. El nombre es un personaje del Auth → se sube a su main.
-      3. Nada: se queda a 0 y sale en el informe para atarlo a mano.
+      3. Si hay foto de ownership de ese mes, se corrige con ella: manda de
+         quién ERA el personaje entonces, no de quién es hoy.
+      4. Nada: se queda a 0 y sale en el informe para atarlo a mano.
 
     ⚠ Un nombre que no casa NO se descarta. La fila entra igual con
     `main_character_id = 0`: tirarla haría que el total del mes mintiera, y el
@@ -675,12 +720,15 @@ def resolver_cuentas(nombres):
         if k:
             fuera[k] = (al.main_character_id, al.main_character_name or al.account_name)
 
+    historico = dueno_en(periodo) if periodo else {}
+    nombres_main = {}
+
     pendientes = [n for n in nombres if _clave(n) not in fuera]
     if pendientes:
         ph = ",".join(["%s"] * len(pendientes))
         with connection.cursor() as cur:
             cur.execute(
-                "SELECT ec.character_name, "
+                "SELECT ec.character_name, ec.character_id, "
                 "       COALESCE(main_ec.character_id, ec.character_id), "
                 "       COALESCE(main_ec.character_name, ec.character_name) "
                 "FROM eveonline_evecharacter ec "
@@ -688,8 +736,24 @@ def resolver_cuentas(nombres):
                 "LEFT JOIN authentication_userprofile        up ON up.user_id      = co.user_id "
                 "LEFT JOIN eveonline_evecharacter       main_ec ON main_ec.id      = up.main_character_id "
                 "WHERE ec.character_name IN (" + ph + ")", pendientes)
-            for nombre, main_id, main_nombre in cur.fetchall():
+            for nombre, char_id, main_id, main_nombre in cur.fetchall():
+                # ★ Si hay foto de ese mes, manda la foto.
+                de_entonces = historico.get(int(char_id or 0))
+                if de_entonces:
+                    main_id = de_entonces
+                    main_nombre = ""
                 fuera.setdefault(_clave(nombre), (int(main_id or 0), main_nombre or ""))
+                nombres_main[int(main_id or 0)] = main_nombre or ""
+
+    # El nombre del main que salió de la foto hay que buscarlo aparte.
+    faltan = sorted({mid for mid, nom in fuera.values() if mid and not nom})
+    if faltan:
+        ph = ",".join(["%s"] * len(faltan))
+        with connection.cursor() as cur:
+            cur.execute("SELECT character_id, character_name FROM eveonline_evecharacter "
+                        "WHERE character_id IN (" + ph + ")", faltan)
+            por_id = {int(c): n or "" for c, n in cur.fetchall()}
+        fuera = {k: (mid, nom or por_id.get(mid, "")) for k, (mid, nom) in fuera.items()}
 
     return {n: fuera.get(_clave(n), (0, "")) for n in nombres}
 
@@ -708,6 +772,7 @@ class Informe:
         self.flotas_corregidas = []
         self.descuadres = []
         self.saltados = []           # períodos que ya venían de una fuente mejor
+        self.enriquecidos = []       # [(período, filas)] a los que el CSV puso naves
         self.avisos = []
         self.ya_estaba = False
         self.ok = False
@@ -774,7 +839,6 @@ def importar(contenido, fichero="", usuario=None, periodo_forzado=None, forzar=F
     inf.flotas_nuevas = sorted(set(inf.flotas_nuevas))
     inf.descuadres = [f"{f['cuenta']} ({periodo_txt(*f['periodo'])})" for f in an.descuadres]
 
-    resueltos = resolver_cuentas({f["cuenta"] for f in an.filas})
 
     por_periodo = {}
     for f in an.filas:
@@ -784,21 +848,39 @@ def importar(contenido, fichero="", usuario=None, periodo_forzado=None, forzar=F
         for (anio, mes), filas in sorted(por_periodo.items()):
             per, nuevo = PapPeriod.objects.get_or_create(anio=anio, mes=mes)
 
-            # ⚠ Un CSV NO pisa un mes que ya vino del JSON. Está medido que el
-            # CSV se deja gente fuera y rebaja números; dejarle sobrescribir al
-            # bueno sería empeorar los datos sin avisar.
+            # ⚠ Un CSV NO pisa un mes que ya vino del JSON: está medido que el
+            # CSV se deja gente fuera y rebaja números. Pero TAMPOCO se tira,
+            # porque trae una cosa que el JSON no tiene — el desglose por GRUPO
+            # DE NAVE. Así que aporta solo eso y no toca ni un número.
             if (not forzar and not nuevo and per.origen == ORIGEN_JSON
                     and an.origen == ORIGEN_CSV):
-                inf.saltados.append(periodo_txt(anio, mes))
+                tocadas = _enriquecer_naves(per, filas)
+                if tocadas:
+                    inf.enriquecidos.append((periodo_txt(anio, mes), tocadas))
+                else:
+                    inf.saltados.append(periodo_txt(anio, mes))
                 continue
+
+            # ★ Se resuelve POR MES, con la foto de ownership de su momento.
+            # Antes se resolvía todo contra el Auth de hoy, y eso mudaba en
+            # silencio las PAPs de un personaje que hubiera cambiado de dueño.
+            resueltos = resolver_cuentas({f["cuenta"] for f in filas}, (anio, mes))
+            # ⚠ Lo ya atado NO se vuelve a tocar: la historia se congela según
+            # se escribe. Los que siguen a 0 sí se reintentan, para recoger a
+            # quien se registre en el Auth más adelante.
+            ya_atados = {_clave(x.account_name): (x.main_character_id, x.main_character_name)
+                         for x in PapMonthly.objects.filter(periodo=per)
+                         if x.main_character_id}
+
+            def _atar(cuenta):
+                return ya_atados.get(_clave(cuenta), resueltos.get(cuenta, (0, "")))
 
             per.origen = an.origen
             per.fichero = (fichero or "")[:160]
             per.fichero_hash = hash_fichero
             per.filas = len(filas)
             per.importado_por = usuario if getattr(usuario, "pk", None) else None
-            sin_casar = [f["cuenta"] for f in filas
-                         if not resueltos.get(f["cuenta"], (0, ""))[0]]
+            sin_casar = [f["cuenta"] for f in filas if not _atar(f["cuenta"])[0]]
             per.sin_casar = len(sin_casar)
             per.avisos = "\n".join(an.avisos)[:4000]
             per.save()
@@ -809,7 +891,7 @@ def importar(contenido, fichero="", usuario=None, periodo_forzado=None, forzar=F
             PapMonthly.objects.filter(periodo=per).exclude(account_name__in=vivas).delete()
 
             for f in filas:
-                main_id, main_nombre = resueltos.get(f["cuenta"], (0, ""))
+                main_id, main_nombre = _atar(f["cuenta"])
                 fila, _ = PapMonthly.objects.update_or_create(
                     periodo=per, account_name=f["cuenta"][:100],
                     defaults=dict(
@@ -834,12 +916,97 @@ def importar(contenido, fichero="", usuario=None, periodo_forzado=None, forzar=F
         inf.avisos.append(
             "Meses que ya venían del JSON de la API y NO se han pisado con el CSV "
             "(el CSV trae menos gente y números más bajos): " + ", ".join(inf.saltados))
+    if inf.enriquecidos:
+        inf.avisos.append(
+            "Meses a los que el CSV ha puesto el desglose por nave sin tocar los "
+            "números: " + ", ".join(f"{p} ({n})" for p, n in inf.enriquecidos))
 
     inf.filas = sum(n for _, n in inf.periodos)
     inf.total_paps = an.total_paps
     inf.sin_casar = sorted(set(inf.sin_casar))
     inf.ok = bool(inf.periodos)
     return inf
+
+
+def _enriquecer_naves(periodo, filas):
+    """Le pone a un mes ya importado el desglose por nave que trae un CSV.
+
+    ★ Es la razón de que el CSV siga sirviendo para algo. El JSON de la API es
+    mejor en todo MENOS en una cosa: no dice en qué nave fue cada PAP, y el CSV
+    sí (por grupo: Battleship, Logistics, Interceptor…). Medido sobre los 29
+    meses con CSV, cubre el 98% de sus PAPs.
+
+    ⚠ No toca NI UN número. Solo reemplaza las filas de dimensión `nave`. Si
+    mezclara los totales estaríamos volviendo a meter los números bajos del CSV
+    por la puerta de atrás, que es justo lo que se decidió no hacer.
+    """
+    from .models import PapMonthly, PapMonthlyDetalle
+
+    por_cuenta = {_clave(f.account_name): f
+                  for f in PapMonthly.objects.filter(periodo=periodo)}
+    tocadas = 0
+    for f in filas:
+        fila = por_cuenta.get(_clave(f["cuenta"]))
+        if not fila:
+            continue
+        naves = [(n, v) for d, n, v in f["detalle"] if d == DIM_NAVE and v]
+        if not naves:
+            continue
+        PapMonthlyDetalle.objects.filter(fila=fila, dimension=DIM_NAVE).delete()
+        PapMonthlyDetalle.objects.bulk_create([
+            PapMonthlyDetalle(fila=fila, dimension=DIM_NAVE, nombre=n[:80], paps=v)
+            for n, v in naves])
+        tocadas += 1
+    return tocadas
+
+
+def matriz(periodo, dimension=DIM_FLOTA):
+    """La tabla de toda la vida: cada piloto contra cada columna.
+
+    Es lo que enseñaba el CSV y lo que se pierde al resumir en «estratégicas y
+    actividades». `dimension` elige si las columnas son tipos de flota o grupos
+    de nave.
+    """
+    from django.db.models import Sum
+
+    from .models import PapMonthly, PapMonthlyDetalle, PapPeriod
+
+    try:
+        anio, mes = str(periodo).split("-")[:2]
+        per = PapPeriod.objects.filter(anio=int(anio), mes=int(mes)).first()
+    except (ValueError, TypeError):
+        per = None
+    if not per:
+        return None
+
+    detalles = (PapMonthlyDetalle.objects
+                .filter(fila__periodo=per, dimension=dimension)
+                .values("fila_id", "nombre", "paps"))
+    celdas, totales = {}, {}
+    for d in detalles:
+        if not d["paps"]:
+            continue
+        celdas.setdefault(d["fila_id"], {})[d["nombre"]] = d["paps"]
+        totales[d["nombre"]] = totales.get(d["nombre"], 0) + d["paps"]
+    if not celdas:
+        return None
+
+    # Columnas ordenadas por volumen: lo que más se vuela, primero.
+    columnas = [n for n, _ in sorted(totales.items(), key=lambda x: (-x[1], x[0]))]
+    filas = []
+    for fila in (PapMonthly.objects.filter(periodo=per)
+                 .select_related("periodo").order_by("-total", "account_name")):
+        valores = celdas.get(fila.id)
+        if not valores:
+            continue
+        filas.append({
+            "linea": fila,
+            "celdas": [valores.get(c, 0) for c in columnas],
+            "suma": sum(valores.values()),
+        })
+    return {"periodo": per, "columnas": columnas, "filas": filas,
+            "totales": [totales[c] for c in columnas],
+            "gran_total": sum(totales.values()), "dimension": dimension}
 
 
 def recalcular(periodos=None):

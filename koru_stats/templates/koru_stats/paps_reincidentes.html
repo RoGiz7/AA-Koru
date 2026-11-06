@@ -20,6 +20,9 @@
         <a href="{% url 'koru_stats:paps_dashboard' %}" class="btn btn-sm btn-outline-secondary">
             <i class="fas fa-table me-1"></i>Cumplimiento del mes
         </a>
+        <a href="{% url 'koru_stats:paps_matriz' %}" class="btn btn-sm btn-outline-info">
+            <i class="fas fa-table-cells me-1"></i>Detalle
+        </a>
         <form method="get" class="d-flex align-items-center gap-2 mb-0 ms-auto">
             <span class="text-muted small">Meses seguidos:</span>
             <select name="meses" class="form-select form-select-sm w-auto" onchange="this.form.submit()">

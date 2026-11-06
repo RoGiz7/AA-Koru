@@ -30,9 +30,15 @@
                     <form method="post" enctype="multipart/form-data">
                         {% csrf_token %}
                         <div class="mb-3">
-                            <label class="form-label small">Fichero JSON o CSV</label>
-                            <input type="file" name="fichero" accept=".json,.csv,text/csv,application/json"
+                            <label class="form-label small">Ficheros JSON o CSV</label>
+                            <input type="file" name="fichero" multiple
+                                   accept=".json,.csv,text/csv,application/json"
                                    class="form-control form-control-sm">
+                            <div class="form-text small">
+                                Puedes elegir varios a la vez. Se ordenan solos: primero los JSON
+                                y luego los CSV, que es el orden en que las naves acaban pegadas
+                                a los números buenos.
+                            </div>
                         </div>
                         <div class="mb-3">
                             <label class="form-label small">…o pega el contenido aquí</label>
@@ -92,15 +98,16 @@
         </div>
     </div>
 
-    {% if informe %}
+    {% for informe in informes %}
     <div class="card mt-3">
         <div class="card-header d-flex align-items-center">
-            <span>Qué ha entrado — {{ informe.fichero|default:"sin nombre" }}</span>
+            <span>{{ informe.fichero|default:"sin nombre" }}</span>
             {% if informe.origen %}
             <span class="badge {% if informe.origen == 'json' %}bg-success{% else %}bg-secondary{% endif %} ms-2">
                 {{ informe.origen|upper }}
             </span>
             {% endif %}
+            {% if informe.ya_estaba %}<span class="badge bg-dark ms-2">ya estaba</span>{% endif %}
         </div>
         <div class="card-body">
             {% if informe.periodos %}
@@ -115,11 +122,19 @@
             </div>
             {% endif %}
 
+            {% if informe.enriquecidos %}
+            <div class="alert alert-success py-2 small">
+                <strong>Naves añadidas sin tocar los números:</strong>
+                {% for p, n in informe.enriquecidos %}{{ p }} ({{ n }} pilotos){% if not forloop.last %}, {% endif %}{% endfor %}.
+                Esos meses ya venían del JSON, que es mejor en todo menos en una cosa: no dice
+                en qué nave fue cada PAP. El CSV sí, y es lo único que se ha cogido de él.
+            </div>
+            {% endif %}
+
             {% if informe.saltados %}
             <div class="alert alert-warning py-2 small">
-                <strong>Meses no pisados:</strong> {{ informe.saltados|join:", " }}.
-                Ya venían del JSON de la API y este fichero es un CSV, que trae menos.
-                Marca «forzar» si de verdad quieres sustituirlos.
+                <strong>Meses no tocados:</strong> {{ informe.saltados|join:", " }}.
+                Ya venían del JSON y este CSV no ha aportado ni naves nuevas.
             </div>
             {% endif %}
 
@@ -162,7 +177,7 @@
 
             {% if informe.avisos %}
             <details>
-                <summary class="small text-muted">Todos los avisos ({{ informe.avisos|length }})</summary>
+                <summary class="small text-muted">Avisos ({{ informe.avisos|length }})</summary>
                 <ul class="small text-muted mt-2 mb-0">
                     {% for a in informe.avisos %}<li>{{ a }}</li>{% endfor %}
                 </ul>
@@ -170,7 +185,7 @@
             {% endif %}
         </div>
     </div>
-    {% endif %}
+    {% endfor %}
 </div>
 
 <script>

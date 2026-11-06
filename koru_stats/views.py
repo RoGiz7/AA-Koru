@@ -7439,65 +7439,73 @@ def paps_dashboard(request):
 @login_required
 @permission_required("koru_stats.paps_admin")
 def paps_importar(request):
-    """Subir un fichero (JSON de la API o CSV de Export) y ver qué ha entrado."""
+    """Subir ficheros (JSON de la API o CSV de Export) y ver qué ha entrado.
+
+    Admite varios de golpe, y los ordena solo: primero los JSON y luego los
+    CSV. El orden importa — un CSV sobre un mes que ya vino del JSON le añade
+    el desglose por nave, y al revés el JSON lo pisaría entero.
+    """
     from django.contrib import messages
 
     from . import paps as motor
 
-    informe = None
+    informes = []
     if request.method == "POST":
         pegado = (request.POST.get("pegado") or "").strip()
-        subido = request.FILES.get("fichero")
-        nombre = ""
-        contenido = None
+        subidos = request.FILES.getlist("fichero")
+        forzar = bool(request.POST.get("forzar"))
 
-        if subido:
+        forzado = None
+        texto_periodo = (request.POST.get("periodo_forzado") or "").strip()
+        if texto_periodo:
+            forzado = motor.parse_mes(texto_periodo)
+            if not forzado:
+                messages.error(request, f"No entiendo el período «{texto_periodo}». Usa 2026-10.")
+                subidos, pegado = [], ""
+
+        entradas = []
+        for f in subidos:
             # 16 MB: el paquete entero de 36 meses pesa 0,4 MB, así que esto es
             # un tope para que nadie suba una película, no una restricción real.
-            if subido.size > 16 * 1024 * 1024:
-                messages.error(request, "El fichero pasa de 16 MB. Eso no es una exportación de PAPs.")
-            else:
-                contenido = subido.read()
-                nombre = subido.name
-        elif pegado:
-            contenido = pegado.encode("utf-8")
-            nombre = "pegado a mano"
-        else:
-            messages.error(request, "Elige un fichero o pega el contenido.")
+            if f.size > 16 * 1024 * 1024:
+                messages.error(request, f"{f.name} pasa de 16 MB. Eso no es una exportación de PAPs.")
+                continue
+            entradas.append((f.name, f.read()))
+        if pegado:
+            entradas.append(("pegado a mano", pegado.encode("utf-8")))
 
-        if contenido is not None:
-            forzado = None
-            txt = (request.POST.get("periodo_forzado") or "").strip()
-            if txt:
-                forzado = motor.parse_mes(txt)
-                if not forzado:
-                    messages.error(request, f"No entiendo el período «{txt}». Usa 2026-10.")
-                    contenido = None
+        if not entradas and request.method == "POST" and not texto_periodo:
+            messages.error(request, "Elige uno o varios ficheros, o pega el contenido.")
 
-        if contenido is not None:
+        # ★ JSON primero. Si entrara antes un CSV, el JSON lo sobrescribiría
+        # después y se perdería el desglose por nave que el CSV había puesto.
+        entradas.sort(key=lambda e: (0 if motor.es_json(e[1]) else 1, e[0]))
+
+        for nombre, contenido in entradas:
             try:
-                informe = motor.importar(
-                    contenido, nombre, request.user, forzado,
-                    forzar=bool(request.POST.get("forzar")))
+                inf = motor.importar(contenido, nombre, request.user, forzado, forzar=forzar)
             except Exception as exc:
-                logger.exception("koru paps: la importación ha reventado")
-                messages.error(request, f"La importación ha fallado: {exc}")
+                logger.exception("koru paps: la importación de %s ha reventado", nombre)
+                messages.error(request, f"{nombre}: ha fallado — {exc}")
             else:
-                if informe.ok:
-                    messages.success(
-                        request,
-                        f"Importados {informe.filas} registros en "
-                        f"{len(informe.periodos)} mes(es).")
-                elif informe.ya_estaba:
-                    messages.info(request, "Ese fichero ya estaba importado.")
-                else:
-                    messages.error(request, "No ha entrado nada. Mira los avisos.")
+                informes.append(inf)
+
+        ok = [i for i in informes if i.ok]
+        if ok:
+            messages.success(
+                request,
+                f"{len(ok)} fichero(s) importados · "
+                f"{sum(i.filas for i in ok)} registros en "
+                f"{sum(len(i.periodos) for i in ok)} mes(es).")
+        elif informes and all(i.ya_estaba for i in informes):
+            messages.info(request, "Todo eso ya estaba importado.")
+        elif informes:
+            messages.error(request, "No ha entrado nada. Mira los avisos.")
 
     return render(request, "koru_stats/paps_importar.html", {
-        "informe": informe,
+        "informes": informes,
         "recolector": PAPS_RECOLECTOR,
     })
-
 
 @login_required
 @permission_required("koru_stats.paps_admin")
@@ -7590,6 +7598,39 @@ def paps_catalogo(request):
 
 @login_required
 @permission_required("koru_stats.paps_access")
+def paps_matriz(request):
+    """Cada piloto contra cada columna, como el CSV de toda la vida.
+
+    Dos dimensiones: tipos de flota (del JSON, todos los meses) o grupos de
+    nave (del CSV, los meses que lo tengan). La de nave sale vacía en los meses
+    sin CSV, y eso se dice en pantalla en vez de enseñar una tabla vacía.
+    """
+    from . import paps as motor
+    from .models import PapPeriod
+
+    dim = request.GET.get("dim")
+    if dim not in (motor.DIM_FLOTA, motor.DIM_NAVE, motor.DIM_ROL):
+        dim = motor.DIM_FLOTA
+
+    periodos = list(PapPeriod.objects.all())
+    pedido = (request.GET.get("periodo") or "").strip()
+    elegido = next((p for p in periodos if p.periodo == pedido),
+                   periodos[0] if periodos else None)
+
+    return render(request, "koru_stats/paps_matriz.html", {
+        "periodo": elegido,
+        "periodos": periodos,
+        "dim": dim,
+        "datos": motor.matriz(elegido.periodo, dim) if elegido else None,
+        "dimensiones": [(motor.DIM_FLOTA, "Tipo de flota"),
+                        (motor.DIM_ROL, "Rol en la flota"),
+                        (motor.DIM_NAVE, "Grupo de nave")],
+        "puede_auditor": request.user.has_perm("koru_stats.auditor_access"),
+    })
+
+
+@login_required
+@permission_required("koru_stats.paps_access")
 def paps_reincidentes(request):
     """Quién lleva varios meses seguidos sin llegar al listón.
 
@@ -7629,7 +7670,7 @@ PAPS_RECOLECTOR = r"""(async () => {
     origen: location.origin + base,
     roles: ['Undefined','Combat','Logistics','Ewar','Booster','Support',
             'Interdictors','Cyno','CommandDestroyers',
-            '(rol sin identificar 9)','(rol sin identificar 10)'],
+            '(rol sin identificar 9)','FleetCommand'],
     periodos: []
   };
   for (const p of per) for (const m of p.months) {
